@@ -1,0 +1,10 @@
+---
+- name: Deploy Remnawave Panel
+  hosts: panel
+  become: true
+
+  roles:
+    - role: haproxy_tls_sni
+      when: enable_haproxy_sni | default(false)
+    - remnawave_panel
+    - health_checks

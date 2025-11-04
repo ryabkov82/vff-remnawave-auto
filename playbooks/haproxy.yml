@@ -1,0 +1,6 @@
+---
+- name: Deploy HAProxy TLS SNI
+  hosts: haproxy
+  become: true
+  roles:
+    - haproxy_tls_sni

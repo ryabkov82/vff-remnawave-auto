@@ -1,0 +1,24 @@
+---
+panel_compose_dir: /opt/remnawave/panel
+panel_domain: "{{ hostvars[groups['panel'][0]].fqdn | default('panel.example.com') }}"
+panel_tls_cert: /var/lib/remnawave-panel/ssl_cert.pem
+panel_tls_key:  /var/lib/remnawave-panel/ssl_key.pem
+panel_internal_https_port: 4443
+
+# Добавь этот токен в vault
+panel_api_bearer_token: "{{ vault_panel_api_token | default('CHANGE_ME_IN_VAULT') }}"
+
+cf_dns_api_token: "{{ lookup('env','CF_DNS_API_TOKEN') | default('', true) }}"
+cf_dns_zone: "{{ lookup('env','CF_DNS_ZONE') | default('vpn-for-friends.com', true) }}"
+cf_dns_target_ip: "{{ lookup('env','CF_DNS_TARGET_IP') | default('', true) }}"
+
+# Хотим поднять remna.vpn-for-friends.com и api.vpn-for-friends.com
+cf_dns_records:
+  - name: "remna"
+    type: "A"
+    proxied: false
+    ttl: 300
+  - name: "api"
+    type: "CNAME"
+    value: "remna.vpn-for-friends.com"
+    proxied: false

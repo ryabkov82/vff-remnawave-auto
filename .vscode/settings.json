@@ -1,0 +1,30 @@
+{
+    "ansible.python.interpreterPath": "/bin/python3",
+  
+    "yaml.schemaStore.enable": false,
+  
+    "yaml.schemas": {
+      "./.vscode/schemas/vars.json": [
+        "inventory/group_vars/**/*.yml",
+        "inventory/host_vars/**/*.yml"
+      ],
+      "./.vscode/schemas/requirements.json": [
+        "collections/requirements.yml",
+        "roles/**/requirements.yml"
+      ]
+    },
+  
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "files.eol": "\n",
+  
+    // опционально: подсветка для плейбуков
+    "files.associations": {
+      "playbooks/*.yml": "ansible",
+      "roles/*/tasks/*.yml": "ansible"
+    },
+  
+    // чтобы ansible-lint не вытягивал схемы через редактор
+    "ansibleLint.arguments": ["-c", ".ansible-lint", "--offline"]
+  }
+  

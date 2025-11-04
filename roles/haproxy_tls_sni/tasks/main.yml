@@ -1,0 +1,24 @@
+---
+- name: Install HAProxy
+  ansible.builtin.apt:
+    name: haproxy
+    state: present
+    update_cache: true
+  tags: [haproxy]
+
+- name: Render HAProxy Config
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    mode: "0644"
+    # проверим синтаксис перед заменой файла
+    validate: "/usr/sbin/haproxy -c -f %s"
+  notify: Restart HAProxy
+  tags: [haproxy]
+
+- name: Ensure HAProxy Enabled and Started
+  ansible.builtin.service:
+    name: haproxy
+    state: started
+    enabled: true
+  tags: [haproxy]
