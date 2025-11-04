@@ -5,6 +5,7 @@ BIN  := $(VENV)/bin
 ANSIBLE        ?= $(BIN)/ansible-playbook
 ANSIBLE_ADHOC  ?= $(BIN)/ansible
 ANSIBLE_LINT   ?= $(BIN)/ansible-lint
+ANSIBLE_GALAXY ?= $(BIN)/ansible-galaxy
 
 # Если venv не создан — подскажем
 ifeq (,$(wildcard $(BIN)/ansible-playbook))
@@ -77,7 +78,8 @@ panel: ## Деплой Remnawave Panel (и health-checks)
 	@#   make panel
 	@#   make panel LIMIT=panel
 	@#   make panel TAGS=panel
-	@#   make panel ANSIBLE_FLAGS="-e panel_api_bearer_token=***"
+	@#   make panel TAGS=nginx
+	@#   make panel TAGS=haproxy
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_PANEL) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
 
 nodes: ## Деплой Remnawave Nodes (+ регистрация, health-checks)
@@ -171,4 +173,4 @@ venv: ## Создать локальное venv с ansible-core 2.17
 .PHONY: collections
 collections: ## Установить Ansible collections из requirements.yml
 	$(ANSIBLE) --version >/dev/null
-	ansible-galaxy collection install -r collections/requirements.yml --force
+	$(ANSIBLE_GALAXY) collection install -r collections/requirements.yml --force

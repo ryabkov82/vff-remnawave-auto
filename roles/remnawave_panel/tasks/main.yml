@@ -1,54 +1,57 @@
----
-- name: Create panel dir
+- name: Check required variables
+  ansible.builtin.import_tasks: check.yml
+
+- name: Ensure install directory exists
   ansible.builtin.file:
-    path: "{{ panel_compose_dir }}"
+    path: "{{ remnawave_panel_dir }}"
     state: directory
-    mode: '0755'
-  tags: [panel]
+    owner: "{{ remnawave_panel_user }}"
+    group: "{{ remnawave_panel_group }}"
+    mode: "0755"
 
-- name: Drop docker-compose.yml
-  ansible.builtin.copy:
-    dest: "{{ panel_compose_dir }}/docker-compose.yml"
-    mode: '0644'
-    content: |
-      version: "3.8"
-      services:
-        nginx:
-          image: nginx:alpine
-          volumes:
-            - ./nginx.conf:/etc/nginx/nginx.conf:ro
-            - /var/lib/remnawave-panel:/var/lib/remnawave-panel:ro
-          network_mode: host
-          restart: unless-stopped
-        panel:
-          image: remnawave/panel:{{ remnawave_version }}
-          env_file: .env
-          volumes:
-            - /var/lib/remnawave-panel:/var/lib/remnawave-panel
-          network_mode: host
-          restart: unless-stopped
-  tags: [panel]
+- name: Generate secrets
+  ansible.builtin.import_tasks: secrets.yml
 
-- name: Drop nginx.conf
-  ansible.builtin.copy:
-    dest: "{{ panel_compose_dir }}/nginx.conf"
-    mode: '0644'
-    content: |
-      events {}
-      http {
-        server {
-          listen {{ panel_internal_https_port }} ssl;
-          ssl_certificate     {{ panel_tls_cert }};
-          ssl_certificate_key {{ panel_tls_key }};
-          location / {
-            proxy_pass http://127.0.0.1:8080;
-          }
-        }
-      }
-  tags: [panel]
+- name: Render .env from template (upstream sample + our overrides)
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ remnawave_panel_dir }}/.env"
+    owner: "{{ remnawave_panel_user }}"
+    group: "{{ remnawave_panel_group }}"
+    mode: "0640"
+  notify: Restart remnawave stack
 
-- name: Ensure panel stack is up
+- name: Render docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ remnawave_panel_dir }}/docker-compose.yml"
+    owner: "{{ remnawave_panel_user }}"
+    group: "{{ remnawave_panel_group }}"
+    mode: "0644"
+  notify: Restart remnawave stack
+
+- name: Ensure Remnawave stack is up (compose v2)
   community.docker.docker_compose_v2:
-    project_src: "{{ panel_compose_dir }}"
+    project_src: "{{ remnawave_panel_dir }}"
     state: present
-  tags: [panel]
+    pull: always
+    remove_orphans: true
+
+- name: Wait for health endpoint (metrics)
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ remnawave_panel_metrics_port }}/health"
+    method: GET
+    status_code: 200
+    url_username: "{{ remnawave_panel_metrics_user | default(omit) }}"
+    url_password: "{{ remnawave_panel_metrics_pass | default(omit) }}"
+    force_basic_auth: true
+    timeout: 5
+  register: _health
+  retries: 60
+  delay: 3
+  until: _health.status == 200
+
+- name: Set helpful facts for smoke tests
+  ansible.builtin.set_fact:
+    remnawave_panel_health_url: "http://127.0.0.1:{{ remnawave_panel_metrics_port }}/health"
+    remnawave_panel_metrics_url: "http://127.0.0.1:{{ remnawave_panel_metrics_port }}/metrics"

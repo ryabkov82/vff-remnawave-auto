@@ -1,0 +1,18 @@
+---
+- name: Test nginx config
+  ansible.builtin.command:
+    cmd: /usr/sbin/nginx -t
+  changed_when: false
+  listen: nginx reload
+
+- name: Reload nginx
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
+  listen: nginx reload
+
+- name: Restart nginx
+  ansible.builtin.service:
+    name: nginx
+    state: restarted
+  listen: nginx restart

@@ -1,12 +1,68 @@
 ---
+- name: Ensure health checks dir exists
+  ansible.builtin.file:
+    path: /usr/local/bin
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  tags: [health]
+
 - name: Install health check scripts
   ansible.builtin.copy:
-    dest: "/usr/local/bin/{{ item.name }}"
-    mode: '0755'
-    content: "{{ item.content }}"
+    src: "{{ item.src }}"
+    dest: "/usr/local/bin/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0755"
   loop:
-    - { name: "check_panel.sh", content: "{{ lookup('file', 'files/check_panel.sh') | to_nice_yaml | regex_replace('^---\n','') }}" }
-    - { name: "check_node_api.sh", content: "{{ lookup('file', 'files/check_node_api.sh') | to_nice_yaml | regex_replace('^---\n','') }}" }
-  vars:
-    ansible_python_interpreter: /usr/bin/python3
+    - { src: "check_panel.sh", dest: "check_panel.sh" }
+    - { src: "check_node_api.sh", dest: "check_node_api.sh" }
+  notify: systemd daemon-reload
+  tags: [health]
+
+- name: Install systemd units (services)
+  ansible.builtin.template:
+    src: "check.service.j2"
+    dest: "/etc/systemd/system/{{ item.service }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - { name: "check_panel", cmd: "/usr/local/bin/check_panel.sh", service: "check-panel.service" }
+    - { name: "check_node_api", cmd: "/usr/local/bin/check_node_api.sh", service: "check-node-api.service" }
+  notify: systemd daemon-reload
+  tags: [health]
+
+- name: Install systemd units (timers)
+  ansible.builtin.template:
+    src: "check.timer.j2"
+    dest: "/etc/systemd/system/{{ item.timer }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - { name: "check_panel", timer: "check-panel.timer" }
+    - { name: "check_node_api", timer: "check-node-api.timer" }
+  notify: systemd daemon-reload
+  tags: [health]
+
+- name: Enable and start timers
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - check-panel.timer
+    - check-node-api.timer
+  tags: [health]
+
+# (опционально) Разовый прогон сервисов сейчас (oneshot)
+- name: Run checks once now
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+  loop:
+    - check-panel.service
+    - check-node-api.service
   tags: [health]

@@ -1,0 +1,61 @@
+# HTTP -> HTTPS редирект
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{ nginx_server_name }};
+    location /.well-known/acme-challenge/ {
+        root {{ nginx_webroot }};
+        try_files $uri =404;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# Основной HTTPS
+server {
+    listen {{ nginx_bind_address }}:{{ nginx_external_https_port }} ssl http2;
+    {% if nginx_bind_ipv6 %}listen [::1]:{{ nginx_external_https_port }} ssl http2;{% endif %}
+
+    server_name {{ nginx_server_name }};
+
+{% if nginx_tls_mode == 'letsencrypt' %}
+    ssl_certificate     /etc/letsencrypt/live/{{ nginx_server_name }}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{ nginx_server_name }}/privkey.pem;
+{% else %}
+    ssl_certificate     {{ nginx_selfsigned_dir }}/{{ nginx_server_name }}.crt;
+    ssl_certificate_key {{ nginx_selfsigned_dir }}/{{ nginx_server_name }}.key;
+{% endif %}
+
+    # Базовая защита
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+
+    # Прокси к приложению Remnawave
+    location / {
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_pass http://{{ nginx_upstream_app_host }}:{{ nginx_upstream_app_port }};
+    }
+
+{% if nginx_expose_metrics %}
+    # Метрики (лок/закрыто + basic-auth) → внутренний порт {{ nginx_upstream_metrics_port }}
+    location {{ nginx_metrics_path }} {
+        allow 127.0.0.1;
+{% for cidr in nginx_metrics_allow_cidrs %}
+        allow {{ cidr }};
+{% endfor %}
+        deny all;
+
+        proxy_set_header Host $host;
+        proxy_pass http://{{ nginx_upstream_metrics_host }}:{{ nginx_upstream_metrics_port }}$request_uri;
+
+        # Basic-Auth на upstream
+        proxy_set_header Authorization "Basic {{ (nginx_metrics_basic_auth_user ~ ':' ~ nginx_metrics_basic_auth_pass) | b64encode }}";
+    }
+{% endif %}
+}

@@ -1,24 +1,35 @@
 ---
+- name: Assert required variables
+  ansible.builtin.assert:
+    that:
+      - haproxy_panel_domain | length > 0
+      - haproxy_bind_port   | int > 0
+      - haproxy_nginx_port  | int > 0
+      - haproxy_xray_port   | int > 0
+    fail_msg: "haproxy_panel_domain/bind_port/nginx_port/xray_port must be set."
+  tags: [haproxy]
+
 - name: Install HAProxy
   ansible.builtin.apt:
     name: haproxy
     state: present
     update_cache: true
-  tags: [haproxy]
+  tags: [haproxy, install]
 
-- name: Render HAProxy Config
+- name: Render haproxy.cfg (TCP passthrough with SNI routing)
   ansible.builtin.template:
     src: haproxy.cfg.j2
-    dest: /etc/haproxy/haproxy.cfg
+    dest: "{{ haproxy_cfg_path }}"
+    owner: root
+    group: root
     mode: "0644"
-    # проверим синтаксис перед заменой файла
-    validate: "/usr/sbin/haproxy -c -f %s"
-  notify: Restart HAProxy
-  tags: [haproxy]
+    validate: "haproxy -c -f %s"
+  notify: HAProxy Reconfigure
+  tags: [haproxy, config]
 
-- name: Ensure HAProxy Enabled and Started
+- name: Ensure HAProxy is enabled and started
   ansible.builtin.service:
     name: haproxy
-    state: started
     enabled: true
+    state: started
   tags: [haproxy]
