@@ -1,0 +1,21 @@
+---
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ timezone }}"
+  tags: [common]
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+      - jq
+    state: present
+    update_cache: true
+  tags: [common]
+
+- name: Include OS upgrade tasks
+  ansible.builtin.import_tasks: upgrade.yml
+  when: common_upgrade | bool
+  tags: [upgrade]

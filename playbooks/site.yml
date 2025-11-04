@@ -1,0 +1,18 @@
+---
+- name: Bootstrap Hosts
+  hosts: all
+  become: true
+  roles:
+    - common
+
+- name: Deploy Panel
+  hosts: panel
+  become: true
+  roles:
+    - remnawave_panel
+
+- name: Deploy Nodes
+  hosts: nodes
+  become: true
+  roles:
+    - remnawave_node

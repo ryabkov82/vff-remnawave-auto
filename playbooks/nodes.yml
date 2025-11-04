@@ -1,0 +1,6 @@
+---
+- name: Deploy Remnawave Nodes
+  hosts: nodes
+  become: true
+  roles:
+    - remnawave_node

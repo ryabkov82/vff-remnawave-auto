@@ -1,0 +1,12 @@
+---
+- name: Install health check scripts
+  ansible.builtin.copy:
+    dest: "/usr/local/bin/{{ item.name }}"
+    mode: '0755'
+    content: "{{ item.content }}"
+  loop:
+    - { name: "check_panel.sh", content: "{{ lookup('file', 'files/check_panel.sh') | to_nice_yaml | regex_replace('^---\n','') }}" }
+    - { name: "check_node_api.sh", content: "{{ lookup('file', 'files/check_node_api.sh') | to_nice_yaml | regex_replace('^---\n','') }}" }
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  tags: [health]

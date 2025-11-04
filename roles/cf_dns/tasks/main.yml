@@ -1,0 +1,36 @@
+---
+- name: Cf DNS | Check Required Inputs
+  ansible.builtin.assert:
+    that:
+      - (cf_dns_api_token | trim | length) > 0
+      - (cf_dns_zone | trim | length) > 0
+      - ((cf_dns_records | default(cf_dns_records_default)) | length) > 0
+    fail_msg: "cf_dns_api_token, cf_dns_zone и cf_dns_records обязательны"
+  tags: ["cf_dns"]
+
+- name: Cf DNS | Determine Target IP
+  ansible.builtin.set_fact:
+    cf_dns_target_ip_resolved: >-
+      {{ cf_dns_target_ip
+         | default(hostvars[inventory_hostname].ansible_host
+         | default(inventory_hostname), true) | trim }}
+  tags: ["cf_dns"]
+
+- name: Cf DNS | Ensure DNS Records
+  community.general.cloudflare_dns:
+    zone: "{{ cf_dns_zone | trim }}"
+    record: "{{ item.name | trim }}"
+    type: "{{ item.type | default('A') }}"
+    value: "{{ (item.value | default('')) | default(cf_dns_target_ip_resolved, true) | trim }}"
+    ttl: "{{ item.ttl | default(cf_dns_ttl) }}"
+    proxied: "{{ item.proxied | default(cf_dns_proxied_default) | bool }}"
+    solo: "{{ item.solo | default(cf_dns_solo_default) | bool }}"
+    api_token: "{{ cf_dns_api_token | trim }}"
+    state: "{{ cf_dns_state | default('present') }}"
+    timeout: 60
+  loop: "{{ cf_dns_records | default(cf_dns_records_default) }}"
+  loop_control:
+    label: >-
+      {{ item.name }} {{ item.type | default('A') }}
+      -> {{ (item.value | default('')) | default(cf_dns_target_ip_resolved, true) | trim }}
+  tags: ["cf_dns"]

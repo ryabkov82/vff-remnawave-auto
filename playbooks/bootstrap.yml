@@ -1,0 +1,7 @@
+---
+- name: Bootstrap hosts (packages, Docker)
+  hosts: all
+  become: true
+  roles:
+    - common
+    - docker_engine

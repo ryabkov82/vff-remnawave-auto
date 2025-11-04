@@ -1,0 +1,5 @@
+---
+- name: Register node in panel (placeholder)
+  ansible.builtin.debug:
+    msg: "Call Panel API with bearer token to register node if absent (to be implemented)."
+  tags: [register]

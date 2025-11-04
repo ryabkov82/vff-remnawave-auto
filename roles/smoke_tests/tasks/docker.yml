@@ -1,0 +1,50 @@
+---
+- name: Gather Service Facts
+  ansible.builtin.service_facts:
+
+- name: Assert Docker Service Is Running
+  ansible.builtin.assert:
+    that:
+      - "'docker.service' in ansible_facts.services"
+      - "ansible_facts.services['docker.service'].state == 'running'"
+    fail_msg: "❌ Docker is not running or not installed"
+    success_msg: "✅ Docker service is active"
+
+- name: Check Docker Client Version
+  ansible.builtin.command:
+    argv: ["docker", "--version"]
+  register: smoke_tests_docker_version
+  changed_when: false
+
+- name: Show Docker Client Version
+  ansible.builtin.debug:
+    msg: "{{ smoke_tests_docker_version.stdout | default('no output') }}"
+
+- name: Check Docker Daemon Info
+  ansible.builtin.command:
+    argv: ["docker", "info"]
+  register: smoke_tests_docker_info
+  changed_when: false
+  failed_when: smoke_tests_docker_info.rc != 0
+
+- name: Pull Hello-World Image (Optional)
+  ansible.builtin.command:
+    argv: ["docker", "pull", "hello-world:latest"]
+  register: smoke_tests_docker_pull
+  changed_when: "'Downloaded newer image' in smoke_tests_docker_pull.stdout"
+  when: (smoke_run_hello | default(true)) | bool
+
+- name: Run Hello-World Container (Optional)
+  ansible.builtin.command:
+    argv: ["docker", "run", "--rm", "hello-world:latest"]
+  register: smoke_tests_docker_run
+  changed_when: false
+  failed_when: >
+    (smoke_run_hello | default(true)) | bool and
+    ('Hello from Docker!' not in smoke_tests_docker_run.stdout | default(''))
+  when: (smoke_run_hello | default(true)) | bool
+
+- name: Show Hello-World Output (Optional)
+  ansible.builtin.debug:
+    var: smoke_tests_docker_run.stdout
+  when: (smoke_run_hello | default(true)) | bool

@@ -1,0 +1,25 @@
+global
+  daemon
+  maxconn 4096
+  log /dev/log local0
+
+defaults
+  log     global
+  mode    tcp
+  option  tcplog
+  timeout connect 5s
+  timeout client  2m
+  timeout server  2m
+
+frontend fe_tls
+  bind *:{{ haproxy_frontend_port }}
+  tcp-request inspect-delay 5s
+  tcp-request content accept if { req_ssl_hello_type 1 }
+  use_backend be_panel if { req.ssl_sni -i {{ haproxy_sni_panel }} }
+  default_backend be_reality
+
+backend be_panel
+  server panel 127.0.0.1:{{ haproxy_panel_backend_port }}
+
+backend be_reality
+  server reality 127.0.0.1:{{ haproxy_reality_backend_port }}

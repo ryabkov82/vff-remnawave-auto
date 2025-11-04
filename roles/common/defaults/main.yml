@@ -1,0 +1,6 @@
+common_upgrade: true           # включить обновление пакетов
+common_dist_upgrade: true     # если true — делать full-upgrade (ядро/зависимости)
+common_autoremove: true        # apt autoremove/clean
+common_reboot_if_needed: true  # перезагружать, если требуется
+common_reboot_timeout: 900     # секунд ждать после reboot
+common_apt_noninteractive: true
