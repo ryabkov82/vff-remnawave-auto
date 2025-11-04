@@ -1,0 +1,13 @@
+[Unit]
+Description=Timer for health check: {{ item.name }}
+
+[Timer]
+# Период запуска — раз в минуту (под себя можешь поменять)
+OnUnitActiveSec=60s
+AccuracySec=10s
+Unit={{ item.name | replace('_','-') }}.service
+RandomizedDelaySec=5s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=Health check: {{ item.name }}
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart={{ item.cmd }}
+TimeoutSec=15
+# Логи в journalctl -u {{ item.name }}.service
+# Выход !=0 подсветится в systemd как failed
+
+[Install]
+WantedBy=multi-user.target

@@ -1,25 +1,158 @@
----
-# Установка и запуск smoke для панели
+# roles/smoke_tests/tasks/panel.yml
 
-- name: Install Panel Smoke Script
-  ansible.builtin.copy:
-    dest: /usr/local/bin/smoke_panel.sh
-    mode: "0755"
-    content: >-
-      {{ lookup('file', 'files/smoke_panel.sh')
-         | to_nice_yaml
-         | regex_replace('^---\n', '') }}
+# Входные переменные (могут быть переопределены в group_vars):
+# - smoke_panel_domain
+# - smoke_expected_ip
+# - smoke_panel_check_metrics (bool)
+# - smoke_panel_metrics_port
+# - smoke_panel_metrics_user
+# - smoke_panel_metrics_pass
+# - nginx_external_https_port
+# - nginx_tls_mode
+# - haproxy_bind_addr
+# - haproxy_bind_port
+
+- name: Set Defaults For Smoke Variables
+  ansible.builtin.set_fact:
+    _smoke_panel_domain: "{{ smoke_panel_domain | default(remnawave_panel_frontend_domain) }}"
+    _smoke_expected_ip: "{{ smoke_expected_ip | default(omit) }}"
+    _smoke_check_metrics: "{{ smoke_panel_check_metrics | default(true) | bool }}"
+    _smoke_metrics_port: "{{ smoke_panel_metrics_port | default(remnawave_panel_metrics_port | default(3001)) }}"
+    _smoke_metrics_user: "{{ smoke_panel_metrics_user | default(remnawave_panel_metrics_user | default('admin')) }}"
+    _smoke_metrics_pass: "{{ smoke_panel_metrics_pass | default(remnawave_panel_metrics_pass | default('')) }}"
+    _smoke_https_port: "{{ nginx_external_https_port | default(4443) }}"
+    _smoke_validate_certs_public: "{{ (nginx_tls_mode | default('letsencrypt')) != 'selfsigned' }}"
+    _hap_bind_addr: "{{ haproxy_bind_addr | default('0.0.0.0') }}"
+    _hap_bind_port: "{{ haproxy_bind_port | default(443) | int }}"
   tags: ["smoke", "panel"]
 
-- name: Run Panel Smoke
-  ansible.builtin.command:
-    argv: ["/usr/local/bin/smoke_panel.sh"]
-  register: smoke_tests_panel_out
+# ===== DNS =====
+
+- name: Ensure dig Is Available (dnsutils)
+  ansible.builtin.package:
+    name: dnsutils
+    state: present
+  become: true
+  tags: ["smoke", "panel", "dns"]
+
+- name: Resolve A Via Dig (IPv4)
+  ansible.builtin.command: "dig +short A {{ _smoke_panel_domain }}"
+  register: _dig_v4
   changed_when: false
-  failed_when: smoke_tests_panel_out.rc != 0
-  tags: ["smoke", "panel"]
+  failed_when: false
+  tags: ["smoke", "panel", "dns"]
 
-- name: Show Panel Smoke Output
+- name: Resolve AAAA Via Dig (IPv6)
+  ansible.builtin.command: "dig +short AAAA {{ _smoke_panel_domain }}"
+  register: _dig_v6
+  changed_when: false
+  failed_when: false
+  tags: ["smoke", "panel", "dns"]
+
+- name: Use Resolved IPv4 Addresses (Already Clean)
+  ansible.builtin.set_fact:
+    _resolved_ipv4: "{{ _dig_v4.stdout_lines | default([]) | list | unique }}"
+  tags: ["smoke", "panel", "dns"]
+
+- name: Use Resolved IPv6 Addresses (Already Clean)
+  ansible.builtin.set_fact:
+    _resolved_ipv6: "{{ _dig_v6.stdout_lines | default([]) | list | unique }}"
+  tags: ["smoke", "panel", "dns"]
+
+- name: Fail If DNS Has No A Records
+  ansible.builtin.assert:
+    that: _resolved_ipv4 | length > 0
+    fail_msg: "No A records for {{ _smoke_panel_domain }}. DNS resolution failed."
+  tags: ["smoke", "panel", "dns"]
+
+- name: Assert Expected IPv4 Matches (Optional)
+  ansible.builtin.assert:
+    that: _smoke_expected_ip in _resolved_ipv4
+    fail_msg: >-
+      DNS A for {{ _smoke_panel_domain }} does not contain expected {{ _smoke_expected_ip }}.
+      Got: {{ _resolved_ipv4 | join(', ') }}
+  when: _smoke_expected_ip is defined
+  tags: ["smoke", "panel", "dns"]
+
+# ===== Nginx (Loopback 4443) =====
+
+- name: Wait For TCP On Nginx HTTPS Loopback
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: "{{ _smoke_https_port | int }}"
+    state: started
+    timeout: 20
+  tags: ["smoke", "panel", "nginx"]
+
+- name: Check HTTPS On Panel Root Via Nginx Loopback
+  ansible.builtin.uri:
+    url: "https://127.0.0.1:{{ _smoke_https_port }}/"
+    method: GET
+    status_code: [200, 301, 302]
+    return_content: false
+    timeout: 12
+    follow_redirects: all
+    validate_certs: false          # CN не совпадёт с 127.0.0.1
+  register: _https_local
+  retries: 5
+  delay: 3
+  until: _https_local.status in [200, 301, 302]
+  tags: ["smoke", "panel", "nginx"]
+
+# ===== HAProxy (Public 443) =====
+
+- name: Wait For HAProxy 443
+  ansible.builtin.wait_for:
+    host: "{{ _hap_bind_addr }}"
+    port: "{{ _hap_bind_port }}"
+    state: started
+    timeout: 20
+  tags: ["smoke", "haproxy"]
+
+- name: Check Public HTTPS To Panel Via Domain (Through HAProxy)
+  ansible.builtin.uri:
+    url: "https://{{ _smoke_panel_domain }}/"
+    method: GET
+    status_code: [200, 301, 302]
+    return_content: false
+    timeout: 12
+    follow_redirects: all
+    validate_certs: "{{ _smoke_validate_certs_public }}"
+  register: _https_public
+  retries: 5
+  delay: 3
+  until: _https_public.status in [200, 301, 302]
+  tags: ["smoke", "panel", "public", "haproxy"]
+
+# ===== Metrics (Local, Optional) =====
+
+- name: Check Metrics Endpoint Locally (Basic-Auth)
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ _smoke_metrics_port }}/metrics"
+    method: GET
+    status_code: 200
+    url_username: "{{ _smoke_metrics_user }}"
+    url_password: "{{ _smoke_metrics_pass }}"
+    force_basic_auth: true
+    return_content: false
+    timeout: 6
+  register: _metrics
+  retries: 10
+  delay: 3
+  until: _metrics.status == 200
+  when: _smoke_check_metrics
+  tags: ["smoke", "panel", "metrics"]
+
+# ===== Summary =====
+
+- name: Smoke Summary (Panel)
   ansible.builtin.debug:
-    var: smoke_tests_panel_out.stdout_lines
+    msg: >-
+      Panel smoke OK.
+      DNS A: {{ _resolved_ipv4 | join(', ') }};
+      Nginx(127.0.0.1:{{ _smoke_https_port }}): {{ _https_local.status }};
+      Public(443 {{ _smoke_panel_domain }}): {{ _https_public.status }};
+      Metrics: {{
+        (not _smoke_check_metrics) | ternary('skipped', (_metrics.status | default('n/a')))
+      }}
   tags: ["smoke", "panel"]

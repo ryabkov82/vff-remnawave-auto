@@ -1,0 +1,47 @@
+---
+nginx_bind_address: "127.0.0.1"
+nginx_bind_ipv6: false
+
+# Режим сертификата: letsencrypt | letse ncrypt_dns01 | selfsigned
+nginx_tls_mode: "letsencrypt"
+
+# Порт, на котором слушает фронт Nginx (TLS), т.к. :443 занят HAProxy (SNI passthrough)
+nginx_external_https_port: 4443
+
+# Основной домен панели
+nginx_server_name: "{{ remnawave_panel_frontend_domain | default('panel.example.com') }}"
+
+# Апстрим Remnawave Panel (локальный backend)
+nginx_upstream_app_host: "127.0.0.1"
+nginx_upstream_app_port: "{{ remnawave_panel_app_port | default(3000) }}"
+
+# (опц.) Проксирование метрик по защищённому пути (basic-auth → локальный 127.0.0.1:3001)
+nginx_expose_metrics: true
+nginx_metrics_path: "/metrics"
+nginx_upstream_metrics_host: "127.0.0.1"
+nginx_upstream_metrics_port: "{{ remnawave_panel_metrics_port | default(3001) }}"
+nginx_metrics_basic_auth_user: "{{ remnawave_panel_metrics_user | default('admin') }}"
+nginx_metrics_basic_auth_pass: "{{ remnawave_panel_metrics_pass | default('') }}"
+nginx_metrics_allow_cidrs: ["127.0.0.1/32"]  # добавь свои CIDR Prometheus
+
+# Директории
+nginx_sites_dir: /etc/nginx/sites-available
+nginx_sites_enabled_dir: /etc/nginx/sites-enabled
+nginx_webroot: /var/www/letsencrypt
+
+# Let’s Encrypt (общие)
+nginx_letsencrypt_email: "admin@{{ nginx_server_name | regex_replace('^[^\\.]+\\.', '') }}"
+nginx_certbot_package: certbot
+
+# DNS-01 (Cloudflare) — токен с правами DNS:Edit для зоны
+nginx_cf_api_token: "{{ vault_cf_dns_api_token }}"
+
+# Self-signed
+nginx_selfsigned_dir: /etc/ssl/selfsigned
+nginx_selfsigned_valid_days: 825
+
+# Управляющие флаги
+# Принудительно перевыпустить сертификат (выполнить блок http-01/dns-01 даже если cert уже есть)
+nginx_force_issue: false
+# Гонять certbot renew --dry-run в конце роли (только если сертификат уже существует)
+nginx_renew_dry_run: false

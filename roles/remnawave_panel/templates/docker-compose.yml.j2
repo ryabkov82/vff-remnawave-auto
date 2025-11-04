@@ -1,0 +1,81 @@
+# Mirrors: https://raw.githubusercontent.com/remnawave/backend/refs/heads/main/docker-compose-prod.yml
+# Binds to loopback only, per official docs.
+services:
+  remnawave-db:
+    image: postgres:17.6
+    container_name: 'remnawave-db'
+    hostname: remnawave-db
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER={{ remnawave_panel_pg_user }}
+      - POSTGRES_PASSWORD={{ remnawave_panel_pg_password }}
+      - POSTGRES_DB={{ remnawave_panel_pg_db }}
+      - TZ=UTC
+    ports:
+      - "127.0.0.1:{{ remnawave_panel_pg_port }}:5432"
+    volumes:
+      - remnawave-db-data:/var/lib/postgresql/data
+    networks:
+      - remnawave-network
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 3s
+      timeout: 10s
+      retries: 3
+
+  remnawave:
+    image: remnawave/backend:{{ remnawave_panel_version }}
+    container_name: 'remnawave'
+    hostname: remnawave
+    restart: always
+    ports:
+      - "127.0.0.1:{{ remnawave_panel_app_port }}:3000"
+      - "127.0.0.1:{{ remnawave_panel_metrics_port }}:{{ remnawave_panel_metrics_port }}"
+    env_file:
+      - .env
+    networks:
+      - remnawave-network
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -f http://localhost:${METRICS_PORT:-{{ remnawave_panel_metrics_port }}}/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      remnawave-db:
+        condition: service_healthy
+      remnawave-redis:
+        condition: service_healthy
+
+  remnawave-redis:
+    image: valkey/valkey:8.1-alpine
+    container_name: remnawave-redis
+    hostname: remnawave-redis
+    restart: always
+    networks:
+      - remnawave-network
+    volumes:
+      - remnawave-redis-data:/data
+    healthcheck:
+      test: ['CMD', 'valkey-cli', 'ping']
+      interval: 3s
+      timeout: 10s
+      retries: 3
+
+networks:
+  remnawave-network:
+    name: remnawave-network
+    driver: bridge
+    external: false
+
+volumes:
+  remnawave-db-data:
+    driver: local
+    external: false
+    name: remnawave-db-data
+  remnawave-redis-data:
+    driver: local
+    external: false
+    name: remnawave-redis-data

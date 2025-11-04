@@ -1,0 +1,15 @@
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root {{ nginx_webroot }};
+        try_files $uri =404;
+    }
+
+    location / {
+        return 200 "acme-challenge-ready";
+        add_header Content-Type text/plain;
+    }
+}

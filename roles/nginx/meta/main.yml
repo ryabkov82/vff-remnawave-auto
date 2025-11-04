@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  author: VFF
+  description: Nginx reverse proxy with TLS (Let's Encrypt or self-signed) for Remnawave Panel
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+  galaxy_tags:
+    - nginx
+    - tls
+    - letsencrypt
+    - reverseproxy
+dependencies: []

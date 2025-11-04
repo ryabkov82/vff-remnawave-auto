@@ -1,25 +1,84 @@
 global
-  daemon
-  maxconn 4096
-  log /dev/log local0
+    log /dev/log    local0
+    log /dev/log    local1 notice
+    chroot /var/lib/haproxy
+    stats socket /run/haproxy/admin.sock mode 660 level admin
+    stats timeout 30s
+    user haproxy
+    group haproxy
+    daemon
+
+    ca-base /etc/ssl/certs
+    crt-base /etc/ssl/private
+
+    # Не обязательно для TCP passthrough, но безопасные дефолты не помешают
+    ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305
+    ssl-default-bind-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
+    ssl-default-bind-options ssl-min-ver TLSv1.2 no-tls-tickets
 
 defaults
-  log     global
-  mode    tcp
-  option  tcplog
-  timeout connect 5s
-  timeout client  2m
-  timeout server  2m
+    mode tcp
+    log  global
+    option tcplog
+    option  dontlognull
+    option  srvtcpka
+    option  clitcpka
+    timeout connect {{ haproxy_timeout_connect }}
+    timeout client  {{ haproxy_timeout_client }}
+    timeout server  {{ haproxy_timeout_server }}
+    timeout client-fin {{ haproxy_timeout_client_fin }}
+    timeout server-fin {{ haproxy_timeout_server_fin }}
+    timeout tunnel  {{ haproxy_timeout_tunnel }}
 
-frontend fe_tls
-  bind *:{{ haproxy_frontend_port }}
-  tcp-request inspect-delay 5s
-  tcp-request content accept if { req_ssl_hello_type 1 }
-  use_backend be_panel if { req.ssl_sni -i {{ haproxy_sni_panel }} }
-  default_backend be_reality
+    errorfile 400 /etc/haproxy/errors/400.http
+    errorfile 403 /etc/haproxy/errors/403.http
+    errorfile 408 /etc/haproxy/errors/408.http
+    errorfile 500 /etc/haproxy/errors/500.http
+    errorfile 502 /etc/haproxy/errors/502.http
+    errorfile 503 /etc/haproxy/errors/503.http
+    errorfile 504 /etc/haproxy/errors/504.http
+
+frontend https_in
+    bind {{ haproxy_bind_addr }}:{{ haproxy_bind_port }}
+    mode tcp
+    option tcplog
+
+    # Ждём ClientHello, чтобы извлечь SNI
+    tcp-request inspect-delay {{ haproxy_inspect_delay }}
+    tcp-request content accept if { req_ssl_hello_type 1 }
+
+    # Снимем SNI в лог/для отладки (до 256 байт)
+    tcp-request content capture req.ssl_sni len 256
+
+    # ACL для маршрутизации
+    acl is_tls     req.ssl_hello_type 1
+    acl is_panel   req.ssl_sni -i {{ haproxy_panel_domain }}
+
+    # Если не TLS — уводим сразу в XRAY (прямой TCP без задержки)
+    use_backend be_xray if !is_tls
+
+    # Для TLS включаем клиентские keep-alive (полезно для туннеля)
+    option clitcpka
+
+    use_backend be_panel if is_panel
+    default_backend be_xray
 
 backend be_panel
-  server panel 127.0.0.1:{{ haproxy_panel_backend_port }}
+    mode tcp
+    option srvtcpka
+    server nginx_local {{ haproxy_nginx_host }}:{{ haproxy_nginx_port }} check inter 2s rise 2 fall 3
 
-backend be_reality
-  server reality 127.0.0.1:{{ haproxy_reality_backend_port }}
+backend be_xray
+    mode tcp
+    option srvtcpka
+    server xray_local {{ haproxy_xray_host }}:{{ haproxy_xray_port }} check inter 2s rise 2 fall 3
+
+{% if haproxy_stats_enabled %}
+listen stats
+    bind {{ haproxy_stats_bind }}
+    mode http
+    stats enable
+    stats realm HAProxy\ Statistics
+    stats uri {{ haproxy_stats_uri }}
+    stats auth {{ haproxy_stats_user }}:{{ haproxy_stats_pass }}
+{% endif %}

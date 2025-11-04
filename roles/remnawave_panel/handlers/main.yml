@@ -1,0 +1,4 @@
+- name: Restart remnawave stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ remnawave_panel_dir }}"
+    state: restarted

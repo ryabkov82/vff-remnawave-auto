@@ -1,0 +1,42 @@
+---
+remnawave_panel_frontend_domain: remna.vpn-for-friends.com
+remnawave_panel_sub_public_domain: remna.vpn-for-friends.com/api/sub
+
+remnawave_panel_telegram_enabled: true
+remnawave_panel_telegram_bot_token: "{{ vault_remnawave_panel_telegram_bot_token }}"
+remnawave_panel_telegram_users_chat_id: "-1003288172821"     # канал/чат для событий по пользователям
+remnawave_panel_telegram_nodes_chat_id: "-1003288172821"     # для нод
+remnawave_panel_telegram_crm_chat_id:   "-1003288172821"     # для CRM/платежей
+
+# Вебхук (опционально, если у тебя есть внешний приёмник событий)
+remnawave_panel_webhook_enabled: false
+# remnawave_panel_webhook_url: "https://your-endpoint.example.com/remnawave"
+# remnawave_panel_webhook_secret_header: "{{ vault_remnawave_panel_webhook_secret_header }}"  # 64 символа
+
+# метрики
+remnawave_panel_metrics_user: admin
+remnawave_panel_metrics_pass: "{{ vault_remnawave_panel_metrics_pass }}"
+
+# postgres
+remnawave_panel_pg_user: postgres
+remnawave_panel_pg_db: postgres
+remnawave_panel_pg_password: "{{ vault_remnawave_panel_pg_password }}"
+
+# JWT
+remnawave_panel_jwt_auth_secret: "{{ vault_remnawave_panel_jwt_auth_secret }}"
+remnawave_panel_jwt_api_tokens_secret: "{{ vault_remnawave_panel_jwt_api_tokens_secret }}"
+
+cf_dns_api_token: "{{ vault_cf_dns_api_token }}"
+cf_dns_zone: "vpn-for-friends.com"
+cf_dns_target_ip: "77.239.127.199"
+
+# Хотим поднять remna.vpn-for-friends.com и api.vpn-for-friends.com
+cf_dns_records:
+  - name: "remna"
+    type: "A"
+    proxied: false
+    ttl: 300
+  - name: "api"
+    type: "CNAME"
+    value: "remna.vpn-for-friends.com"
+    proxied: false

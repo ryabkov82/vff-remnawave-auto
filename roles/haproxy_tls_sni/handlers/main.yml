@@ -1,5 +1,32 @@
 ---
-- name: Restart HAProxy
+- name: Reload HAProxy
+  ansible.builtin.service:
+    name: haproxy
+    state: reloaded
+  listen: HAProxy Reconfigure
+
+- name: Wait HAProxy Bind After Reload
+  ansible.builtin.wait_for:
+    host: "{{ haproxy_bind_addr }}"
+    port: "{{ haproxy_bind_port }}"
+    state: started
+    timeout: 15
+  register: _hap_bind_after_reload
+  failed_when: false
+  listen: HAProxy Reconfigure
+
+- name: Restart HAProxy (Fallback)
   ansible.builtin.service:
     name: haproxy
     state: restarted
+  when: _hap_bind_after_reload is failed
+  listen: HAProxy Reconfigure
+
+- name: Wait HAProxy Bind After Restart
+  ansible.builtin.wait_for:
+    host: "{{ haproxy_bind_addr }}"
+    port: "{{ haproxy_bind_port }}"
+    state: started
+    timeout: 15
+  when: _hap_bind_after_reload is failed
+  listen: HAProxy Reconfigure
