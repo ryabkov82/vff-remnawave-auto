@@ -1,0 +1,23 @@
+---
+# Обязательные переменные (см. group_vars)
+cf_dns_api_token: ""
+cf_dns_zone: ""
+
+# Общие настройки
+cf_dns_ttl: 300                    # 300 = Auto в Cloudflare API
+cf_dns_proxied_default: false       # включить оранжевую тучку по умолчанию
+cf_dns_solo_default: false         # не удалять другие записи с тем же именем
+
+# Куда указывать запись по умолчанию:
+#  - явный cf_dns_target_ip
+#  - иначе ansible_host
+#  - иначе inventory_hostname
+cf_dns_target_ip: ""
+
+cf_dns_state: present
+
+# Пример набора записей на случай, если cf_dns_records не задан
+cf_dns_records_default:
+  - { name: "panel", type: "A" }        # значение подставится из cf_dns_target_ip_resolved
+#  - { name: "panel", type: "AAAA", value: "2001:db8::1" }
+#  - { name: "api.panel", type: "CNAME", value: "panel.example.com", proxied: false }

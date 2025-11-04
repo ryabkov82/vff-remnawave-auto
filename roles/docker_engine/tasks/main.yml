@@ -1,0 +1,55 @@
+---
+- name: Prereqs for Docker repo
+  ansible.builtin.apt:
+    name: [ca-certificates, gnupg, python3-docker]
+    state: present
+    update_cache: true
+
+- name: Keyrings dir
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Docker GPG key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+    force: true
+
+- name: Map architecture for Docker APT repo
+  vars:
+    arch_map:
+      x86_64: amd64
+      amd64: amd64
+      aarch64: arm64
+      arm64: arm64
+  ansible.builtin.set_fact:
+    docker_engine_apt_arch: "{{ arch_map.get(ansible_facts.architecture | default(ansible_architecture), 'amd64') }}"
+
+- name: Docker apt repo
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch={{ docker_engine_apt_arch }} signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/ubuntu {{ ansible_facts.distribution_release }} stable
+    filename: docker
+    state: present
+    update_cache: true
+
+- name: Install Docker Engine
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+    update_cache: true
+
+- name: Ensure docker running
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true

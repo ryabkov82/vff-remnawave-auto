@@ -1,0 +1,93 @@
+- name: Ensure apt cache paths are absolute
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/00fix-cache-dir
+    mode: '0644'
+    content: |
+      Dir::Cache "/var/cache/apt";
+      Dir::Cache::archives "/var/cache/apt/archives";
+
+- name: Ensure apt archive policy allows big kernel downloads
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/99archives
+    mode: '0644'
+    content: |
+      APT::Archives::MaxSize "0";
+      APT::Keep-Downloaded-Packages "false";
+
+- name: Ensure apt cache dirs exist with correct permissions
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: '/var/cache/apt/archives', mode: '0755' }
+    - { path: '/var/cache/apt/archives/partial', mode: '0700' }
+
+- name: Ensure noninteractive apt (suppress prompts)
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/99-noninteractive
+    mode: '0644'
+    content: |
+      Dpkg::Options {
+        "--force-confdef";
+        "--force-confold";
+      };
+  when: common_apt_noninteractive | bool
+
+- name: Avoid needrestart prompts
+  ansible.builtin.copy:
+    dest: /etc/needrestart/conf.d/zzz-ansible.conf
+    mode: '0644'
+    content: |
+      $nrconf{restart} = 'a';
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Safe upgrade (apt upgrade)
+  ansible.builtin.apt:
+    upgrade: true
+  when: common_upgrade | bool and not common_dist_upgrade | bool
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    NEEDRESTART_MODE: a
+
+- name: Full upgrade (kernel allowed)
+  ansible.builtin.apt:
+    update_cache: true
+    upgrade: dist
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    NEEDRESTART_MODE: a
+    APT_LISTCHANGES_FRONTEND: none
+
+- name: Autoremove unused packages
+  ansible.builtin.apt:
+    autoremove: true
+    purge: true
+  when: common_autoremove | bool
+
+- name: Autoclean
+  ansible.builtin.apt:
+    autoclean: true
+  when: common_autoremove | bool
+
+- name: Check if reboot is required
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: common_reboot_flag
+
+- name: Reboot if required
+  ansible.builtin.reboot:
+    reboot_timeout: "{{ common_reboot_timeout }}"
+    msg: "Rebooting after package upgrades"
+  when: common_reboot_if_needed | bool and common_reboot_flag.stat.exists
+
+- name: Wait for SSH after reboot (best effort)
+  ansible.builtin.wait_for_connection:
+    timeout: 120
+  when: common_reboot_if_needed | bool and common_reboot_flag.stat.exists

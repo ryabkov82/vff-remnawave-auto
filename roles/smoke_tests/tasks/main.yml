@@ -1,0 +1,17 @@
+---
+# Центральная точка: подключаем независимые smoke-блоки
+
+- name: Include Panel Smoke Tests
+  ansible.builtin.import_tasks: panel.yml
+  when: (smoke_enable_panel | default(true)) | bool
+  tags: ["smoke", "panel"]
+
+- name: Include Node TLS Smoke Tests
+  ansible.builtin.import_tasks: node_tls.yml
+  when: (smoke_enable_node_tls | default(true)) | bool
+  tags: ["smoke", "node", "tls"]
+
+- name: Include Docker Smoke Tests
+  ansible.builtin.import_tasks: docker.yml
+  when: (smoke_enable_docker | default(true)) | bool
+  tags: ["smoke", "docker"]

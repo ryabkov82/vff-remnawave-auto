@@ -1,0 +1,5 @@
+- name: Manage Cloudflare DNS for Panel
+  hosts: panel
+  become: false
+  roles:
+    - cf_dns

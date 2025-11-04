@@ -1,0 +1,7 @@
+---
+- name: 🔥 Remnawave Smoke Tests
+  hosts: all
+  become: true
+  roles:
+    - role: smoke_tests
+      tags: ["smoke"]

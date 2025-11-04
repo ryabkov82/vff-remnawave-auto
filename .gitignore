@@ -1,0 +1,11 @@
+*.retry
+*.log
+.DS_Store
+__pycache__/
+.venv/
+.env
+/files/ca/ca.key
+/var/
+collections/
+!.gitkeep
+!collections/requirements.yml
