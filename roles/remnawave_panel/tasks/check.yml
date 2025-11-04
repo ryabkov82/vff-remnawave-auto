@@ -1,0 +1,8 @@
+- name: Assert required vars are provided
+  ansible.builtin.assert:
+    that:
+      - remnawave_panel_frontend_domain | length > 0
+      - remnawave_panel_sub_public_domain | length > 0
+    fail_msg: |
+      remnawave_panel_frontend_domain and remnawave_panel_sub_public_domain must be set.
+      See roles/remnawave_panel/README.md

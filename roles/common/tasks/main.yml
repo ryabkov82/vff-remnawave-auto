@@ -11,6 +11,7 @@
       - curl
       - gnupg
       - jq
+      - mc
     state: present
     update_cache: true
   tags: [common]

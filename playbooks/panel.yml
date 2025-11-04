@@ -2,9 +2,24 @@
 - name: Deploy Remnawave Panel
   hosts: panel
   become: true
+  gather_facts: true
+  serial: 1
 
   roles:
+    - role: common           # базовые пакеты/настройки
+      tags: [base]
+
+    - role: docker_engine    # Docker + compose v2 ОБЯЗАТЕЛЬНО перед панелью
+      tags: [docker]
+
+    - role: remnawave_panel  # поднимает postgres/redis/backend, ждёт /health
+      tags: [panel]
+
+    - role: nginx
+      tags: [nginx]
+
     - role: haproxy_tls_sni
-      when: enable_haproxy_sni | default(false)
-    - remnawave_panel
-    - health_checks
+      tags: [haproxy]
+
+    - role: health_checks    # таймеры/скрипты проверок
+      tags: [health]

@@ -1,0 +1,53 @@
+remnawave_panel_dir: "/opt/remnawave"
+remnawave_panel_user: root
+remnawave_panel_group: root
+
+
+# Image tag: upstream uses `remnawave/backend:2` in docker-compose-prod.yml
+remnawave_panel_version: "2"
+
+
+# Ports bound on loopback, per official docs
+remnawave_panel_app_port: 3000
+remnawave_panel_metrics_port: 3001
+remnawave_panel_pg_port: 6767
+
+
+# Domains (MUST be set by inventory/group vars)
+remnawave_panel_frontend_domain: ""
+remnawave_panel_sub_public_domain: ""
+
+
+# Secrets (auto-generated if empty)
+remnawave_panel_jwt_auth_secret: ""
+remnawave_panel_jwt_api_tokens_secret: ""
+remnawave_panel_metrics_user: "admin"
+remnawave_panel_metrics_pass: ""
+remnawave_panel_webhook_enabled: false
+remnawave_panel_webhook_url: "https://webhook.site/placeholder"
+remnawave_panel_webhook_secret_header: "" # must be exactly 64 chars if enabled
+
+
+# Postgres container env
+remnawave_panel_pg_user: postgres
+remnawave_panel_pg_password: ""
+remnawave_panel_pg_db: postgres
+
+
+# Scaling
+remnawave_panel_api_instances: 1
+
+
+# Optional Telegram notifications
+remnawave_panel_telegram_enabled: false
+remnawave_panel_telegram_bot_token: "change_me"
+remnawave_panel_telegram_users_chat_id: "change_me"
+remnawave_panel_telegram_nodes_chat_id: "change_me"
+remnawave_panel_telegram_crm_chat_id: "change_me"
+remnawave_panel_telegram_users_thread_id: ""
+remnawave_panel_telegram_nodes_thread_id: ""
+remnawave_panel_telegram_crm_thread_id: ""
+
+
+# Arbitrary env overrides (raw key→value map merged last)
+remnawave_panel_env_overrides: {}
