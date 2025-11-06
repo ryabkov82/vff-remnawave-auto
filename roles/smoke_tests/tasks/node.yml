@@ -1,0 +1,27 @@
+# Входные переменные:
+# - smoke_node_port (по умолчанию 2222)
+# - smoke_node_container (по умолчанию remnanode)
+
+- name: Set defaults for node smoke
+  ansible.builtin.set_fact:
+    _smoke_node_port: "{{ smoke_node_port | default(2222) }}"
+    _smoke_node_container: "{{ smoke_node_container | default('remnanode') }}"
+
+- name: Node | Container is running
+  ansible.builtin.command: "docker ps --format '{{ \"{{.Names}}\" }}' --filter name={{ _smoke_node_container }}"
+  register: _ps
+  changed_when: false
+
+- name: Node | Fail if container not running
+  ansible.builtin.assert:
+    that:
+      - _ps.stdout is search(_smoke_node_container)
+    fail_msg: "Container {{ _smoke_node_container }} is not running"
+
+- name: Node | TCP is listening
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ _smoke_node_port }}"
+    state: started
+    delay: 0
+    timeout: 3
