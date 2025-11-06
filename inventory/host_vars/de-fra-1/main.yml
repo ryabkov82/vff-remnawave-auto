@@ -1,0 +1,8 @@
+remnawave_node_write_env: true
+remnawave_node_port: 2222
+remnawave_node_env_content: |
+  NODE_PORT={{ remnawave_node_port }}
+  SECRET_KEY={{ remnawave_secret_key }}
+
+node_address: "77.239.127.199"
+remnawave_node_country_code: "DE"

@@ -3,4 +3,14 @@
   hosts: nodes
   become: true
   roles:
-    - remnawave_node
+    - role: common           # базовые пакеты/настройки
+      tags: [base]
+
+    - role: docker_engine    # Docker + compose v2 ОБЯЗАТЕЛЬНО перед панелью
+      tags: [docker]
+
+    - role: remnawave_register_node
+      tags: [register_node]
+
+    - role: remnawave_node
+      tags: [node]

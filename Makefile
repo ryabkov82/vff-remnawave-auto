@@ -87,7 +87,8 @@ nodes: ## Деплой Remnawave Nodes (+ регистрация, health-checks)
 	@#   make nodes
 	@#   make nodes LIMIT=nodes
 	@#   make nodes LIMIT=node-nl-1
-	@#   make nodes TAGS=register
+	@#   make nodes LIMIT=de-fra-1 TAGS=node
+	@#   make nodes LIMIT=de-fra-1 TAGS=register_node
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_NODES) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
 
 haproxy: ## Настройка HAProxy TCP SNI-перекидки
@@ -99,8 +100,9 @@ haproxy: ## Настройка HAProxy TCP SNI-перекидки
 smoke: ## Smoke-тесты панели и нод
 	@# Примеры:
 	@#   make smoke
-	@#   make smoke LIMIT=panel
-	@#   make smoke LIMIT=nodes
+	@#   make smoke LIMIT=panel TAGS=smoke_panel
+	@#   make smoke LIMIT=nodes TAGS=smoke_node
+	@#   make smoke LIMIT=de-fra-1 TAGS=smoke_node
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SMOKE) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
 
 # --- Smoke tests (Docker only) ---

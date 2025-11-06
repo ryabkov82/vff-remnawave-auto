@@ -1,0 +1,28 @@
+- name: Create host log dir (optional)
+  when: remnawave_node_enable_host_logs
+  ansible.builtin.file:
+    path: "{{ remnawave_node_log_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install logrotate (Debian/Ubuntu)
+  when: remnawave_node_enable_host_logs and remnawave_node_manage_logrotate
+  ansible.builtin.package:
+    name: logrotate
+    state: present
+
+- name: Configure logrotate for remnanode
+  when: remnawave_node_enable_host_logs and remnawave_node_manage_logrotate
+  ansible.builtin.template:
+    src: logrotate-remnanode.j2
+    dest: /etc/logrotate.d/remnanode
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Force logrotate test run (idempotent)
+  when: remnawave_node_enable_host_logs and remnawave_node_manage_logrotate
+  ansible.builtin.command: logrotate -vf /etc/logrotate.d/remnanode
+  changed_when: false

@@ -1,0 +1,18 @@
+services:
+  {{ remnawave_node_container_name }}:
+    container_name: {{ remnawave_node_container_name }}
+    hostname: {{ remnawave_node_container_name }}
+    image: {{ remnawave_node_image }}
+    network_mode: {{ remnawave_node_network_mode }}
+    restart: {{ remnawave_node_restart_policy }}
+    env_file:
+      - .env
+{% if remnawave_node_enable_host_logs or (remnawave_node_geo_files | length > 0) %}
+    volumes:
+{% if remnawave_node_enable_host_logs %}
+      - "{{ remnawave_node_log_dir }}:/var/log/remnanode"
+{% endif %}
+{% for f in remnawave_node_geo_files %}
+      - "{{ remnawave_node_dir }}/{{ f.dest_name | basename }}:/usr/local/share/xray/{{ f.dest_name | basename }}"
+{% endfor %}
+{% endif %}

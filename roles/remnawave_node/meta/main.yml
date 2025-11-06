@@ -1,0 +1,5 @@
+galaxy_info:
+  author: vff
+  description: Install & run Remnawave Node via Docker Compose
+  license: MIT
+  min_ansible_version: "2.15"

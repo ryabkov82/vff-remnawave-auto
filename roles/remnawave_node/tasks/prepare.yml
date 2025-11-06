@@ -1,0 +1,38 @@
+- name: Ensure docker is present (expect roles/docker_engine ran earlier)
+  ansible.builtin.command: docker --version
+  changed_when: false
+
+- name: Create project dir
+  ansible.builtin.file:
+    path: "{{ remnawave_node_dir }}"
+    state: directory
+    owner: "{{ remnawave_node_owner }}"
+    group: "{{ remnawave_node_group }}"
+    mode: "{{ remnawave_node_mode }}"
+
+- name: Write .env if requested
+  when: remnawave_node_write_env
+  ansible.builtin.copy:
+    dest: "{{ remnawave_node_dir }}/.env"
+    content: "{{ remnawave_node_env_content }}"
+    owner: "{{ remnawave_node_owner }}"
+    group: "{{ remnawave_node_group }}"
+    mode: "0640"
+
+- name: Place docker-compose.yml (raw from panel or Jinja template)
+  when: remnawave_node_compose_raw | length > 0
+  ansible.builtin.copy:
+    dest: "{{ remnawave_node_dir }}/docker-compose.yml"
+    content: "{{ remnawave_node_compose_raw }}"
+    owner: "{{ remnawave_node_owner }}"
+    group: "{{ remnawave_node_group }}"
+    mode: "0644"
+
+- name: Render docker-compose.yml from template (if no raw given)
+  when: remnawave_node_compose_raw | length == 0
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ remnawave_node_dir }}/docker-compose.yml"
+    owner: "{{ remnawave_node_owner }}"
+    group: "{{ remnawave_node_group }}"
+    mode: "0644"

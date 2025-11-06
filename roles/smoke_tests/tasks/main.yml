@@ -4,9 +4,14 @@
 - name: Include Panel Smoke Tests
   ansible.builtin.import_tasks: panel.yml
   when: (smoke_enable_panel | default(true)) | bool
-  tags: ["smoke", "panel"]
+  tags: ["smoke_panel"]
+
+- name: Include Node Smoke Tests
+  ansible.builtin.import_tasks: node.yml
+  when: (smoke_enable_node | default(true)) | bool
+  tags: ["smoke_node"]
 
 - name: Include Docker Smoke Tests
   ansible.builtin.import_tasks: docker.yml
   when: (smoke_enable_docker | default(true)) | bool
-  tags: ["smoke", "docker"]
+  tags: ["smoke_docker"]

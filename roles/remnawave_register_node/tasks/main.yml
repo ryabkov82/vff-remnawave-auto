@@ -1,5 +1,169 @@
 ---
-- name: Register node in panel (placeholder)
-  ansible.builtin.debug:
-    msg: "Call Panel API with bearer token to register node if absent (to be implemented)."
-  tags: [register]
+- name: "Register Node | prechecks & vars"
+  when: remnawave_register_enabled | bool
+  block:
+    - name: "Assert panel URL and API token provided"
+      ansible.builtin.assert:
+        that:
+          - remnawave_panel_url | length > 0
+          - remnawave_panel_api_token | length > 0
+        fail_msg: "Set remnawave_panel_url and remnawave_panel_api_token (TOKEN храните в Vault)."
+
+    - name: "Derive node identity"
+      ansible.builtin.set_fact:
+        _node_name: "{{ remnawave_node_name | default(inventory_hostname) }}"
+        _node_address: "{{ remnawave_node_address
+                           | default(hostvars[inventory_hostname].ansible_host
+                           | default(inventory_hostname)) }}"
+        _node_port: "{{ remnawave_node_port | int }}"
+
+    - name: "Lookup inbound list"
+      delegate_to: localhost
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_url }}/api/config-profiles/inbounds"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ remnawave_panel_api_token }}"
+          Accept: "application/json"
+      register: _inb_resp
+      failed_when: _inb_resp.status not in [200]
+
+    # 1) сначала вычисляем сам объект (exact match c trim)
+    - name: "Pick inbound object by exact tag"
+      ansible.builtin.set_fact:
+        _inbound_obj: >-
+          {{
+            (_inb_resp.json.response.inbounds | default([])
+              | selectattr('tag','equalto', (remnawave_inbound_tag | default('') | trim))
+              | list | first) | default({})
+          }}
+
+    # 2) затем — производные поля из него
+    - name: "Extract inbound uuid/profile from object"
+      ansible.builtin.set_fact:
+        _inbound_uuid: "{{ _inbound_obj.uuid | default('') }}"
+        _profile_uuid_from_inb: "{{ _inbound_obj.profileUuid | default('') }}"
+
+    # отладка и проверка
+    - name: "Debug: available inbound tags (first 10)"
+      when: _inbound_uuid | length == 0
+      ansible.builtin.debug:
+        msg: "{{ (_inb_resp.json.response.inbounds | map(attribute='tag') | list)[:10] }}"
+
+    - name: "Ensure inbound found"
+      ansible.builtin.assert:
+        that: _inbound_uuid | length > 0
+        fail_msg: "Inbound with tag '{{ remnawave_inbound_tag }}' not found in panel."
+
+    - name: "Decide profile UUID"
+      ansible.builtin.set_fact:
+        _profile_uuid: >-
+          {{ (remnawave_profile_uuid | default('') | length > 0)
+              | ternary(remnawave_profile_uuid, _profile_uuid_from_inb) }}
+
+    - name: "Ensure profile UUID present"
+      ansible.builtin.assert:
+        that:
+          - _profile_uuid | length > 0
+        fail_msg: "Profile UUID is required. Set remnawave_profile_uuid or ensure inbound.profileUuid exists."
+
+    - name: "List nodes"
+      delegate_to: localhost
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_url }}/api/nodes"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ remnawave_panel_api_token }}"
+          Accept: "application/json"
+      register: _nodes
+      failed_when: _nodes.status not in [200]
+
+    - name: "Pick existing node by name (if any)"
+      ansible.builtin.set_fact:
+        _node_obj: "{{ (_nodes.json.response
+                        | selectattr('name', 'equalto', _node_name)
+                        | list | first) | default({}) }}"
+        _node_found: >-
+          {{ (_nodes.json.response
+              | selectattr('name','equalto', _node_name)
+              | list | length) > 0 }}
+
+    # 1) Сборка payload (нативные типы благодаря jinja2_native=True)
+    - name: Build payload (typed)
+      ansible.builtin.set_fact:
+        _payload:
+          name: "{{ _node_name }}"
+          address: "{{ _node_address }}"
+          port: "{{ remnawave_node_port | int }}"
+          isTrafficTrackingActive: "{{ remnawave_node_is_traffic_tracking_active | bool }}"
+          trafficLimitBytes: "{{ remnawave_node_traffic_limit_bytes | int }}"
+          notifyPercent: "{{ remnawave_node_notify_percent | int }}"
+          trafficResetDay: "{{ remnawave_node_traffic_reset_day | int }}"
+          countryCode: "{{ remnawave_node_country_code }}"
+          consumptionMultiplier: "{{ remnawave_node_consumption_multiplier | float }}"
+          configProfile:
+            activeConfigProfileUuid: "{{ _profile_uuid }}"
+            activeInbounds:
+              - "{{ _inbound_uuid }}"
+          providerUuid: "{{ (remnawave_node_provider_uuid | default('')) or omit }}"
+
+    # (опционально, разово: убедиться в типах — должны быть int/float/bool)
+    # - name: Check payload types
+    #   ansible.builtin.debug:
+    #     msg:
+    #       port_type: "{{ _payload.port | type_debug }}"
+    #       limit_type: "{{ _payload.trafficLimitBytes | type_debug }}"
+    #       notify_type: "{{ _payload.notifyPercent | type_debug }}"
+    #       reset_type: "{{ _payload.trafficResetDay | type_debug }}"
+    #       cons_type: "{{ _payload.consumptionMultiplier | type_debug }}"
+    #       tracking_type: "{{ _payload.isTrafficTrackingActive | type_debug }}"
+
+    # 2) POST (просто передаём собранный dict)
+    - name: Create node if absent
+      when: not _node_found
+      delegate_to: localhost
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_url }}/api/nodes"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ remnawave_panel_api_token }}"
+          Content-Type: "application/json"
+          Accept: "application/json"
+        body_format: json
+        body: "{{ _payload }}"
+      register: _created
+      failed_when: _created.status not in [200, 201]
+
+    # UUID — берём из найденного объекта или из ответа создания
+    - name: "Set node UUID fact"
+      ansible.builtin.set_fact:
+        remnawave_node_uuid: "{{ (_node_found | ternary(_node_obj.uuid, _created.json.response.uuid)) }}"
+
+    # PATCH выполняем только если нода была (инициализирована в панели) и нужно добавить инбаунд
+    - name: "Ensure inbound is active on existing node (idempotent PATCH)"
+      when: _node_found
+      block:
+        - name: "Collect current inbound UUIDs"
+          ansible.builtin.set_fact:
+            _curr_inb_uuids: "{{ _node_obj.configProfile.activeInbounds
+                                | map(attribute='uuid') | list | default([]) }}"
+        - name: "Merge inbound UUIDs"
+          ansible.builtin.set_fact:
+            _new_inb_uuids: "{{ (_curr_inb_uuids + [_inbound_uuid]) | unique }}"
+        - name: "PATCH node configProfile if changed"
+          when: _new_inb_uuids | length != _curr_inb_uuids | length
+          delegate_to: localhost
+          ansible.builtin.uri:
+            url: "{{ remnawave_panel_url }}/api/nodes/{{ remnawave_node_uuid }}"
+            method: PATCH
+            headers:
+              Authorization: "Bearer {{ remnawave_panel_api_token }}"
+              Content-Type: "application/json"
+              Accept: "application/json"
+            body_format: json
+            body:
+              configProfile:
+                activeConfigProfileUuid: "{{ _profile_uuid }}"
+                activeInbounds: "{{ _new_inb_uuids }}"
+          register: _patched
+          failed_when: _patched.status not in [200]

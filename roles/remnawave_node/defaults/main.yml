@@ -1,0 +1,37 @@
+# Где живёт проект ноды
+remnawave_node_dir: /opt/remnanode
+
+# Варианты, как передать docker-compose:
+# 1) как "сырой" YAML из панели — remnawave_node_compose_raw
+# 2) или заполнить шаблон templates/docker-compose.yml.j2 — см. vars ниже
+remnawave_node_compose_raw: ""     # если не пусто — будет записан как есть
+remnawave_node_image: "remnawave/node:latest"
+remnawave_node_container_name: "remnanode"
+remnawave_node_restart_policy: "always"
+remnawave_node_network_mode: "host"
+
+# Если используем .env
+remnawave_node_write_env: false
+remnawave_node_env_content: |-
+  # пример: если хочешь писать .env этой ролью — включи write_env и заполни
+  # PANEL_URL=https://panel.example.com
+  # NODE_TOKEN=xxxxx
+  # NODE_PORT=2222
+
+# Опциональные geo-файлы (монтируются по одному файлу, как советуют доки)
+# Пример элемента: { src: "files/geo-zapret.dat", dest_name: "geo-zapret.dat" }
+remnawave_node_geo_files: []
+
+# Логи Xray внутри контейнера (если хочешь хранить на хосте)
+remnawave_node_enable_host_logs: true
+remnawave_node_log_dir: /var/log/remnanode
+remnawave_node_manage_logrotate: true
+remnawave_node_logrotate_size: 50M
+remnawave_node_logrotate_rotate: 5
+
+# Управление состоянием
+remnawave_node_state: started   # started|restarted|stopped
+remnawave_node_pull: true       # docker compose pull перед апом
+remnawave_node_owner: root
+remnawave_node_group: root
+remnawave_node_mode: "0755"
