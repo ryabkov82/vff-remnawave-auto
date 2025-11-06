@@ -1,0 +1,32 @@
+- name: Pull images (optional)
+  when: remnawave_node_pull
+  community.docker.docker_compose_v2:
+    project_src: "{{ remnawave_node_dir }}"
+    pull: always
+  register: _pull
+
+- name: Up the node
+  community.docker.docker_compose_v2:
+    project_src: "{{ remnawave_node_dir }}"
+    state: present
+  register: _up
+  notify: Restart remnawave node
+
+- name: Ensure desired state
+  when: remnawave_node_state in ['stopped','restarted']
+  community.docker.docker_compose_v2:
+    project_src: "{{ remnawave_node_dir }}"
+    state: "{{ 'stopped' if remnawave_node_state == 'stopped' else 'present' }}"
+  register: _state
+
+# Базовый "smoke": контейнер существует и up
+- name: Check container is running
+  ansible.builtin.command: docker ps --format '{{ "{{.Names}}" }}' --filter "name={{ remnawave_node_container_name }}"
+  register: _ps
+  changed_when: false
+
+- name: Fail if container not running
+  ansible.builtin.assert:
+    that:
+      - _ps.stdout is search(remnawave_node_container_name)
+    fail_msg: "Remnawave node container is not running. Check docker compose logs."

@@ -1,0 +1,4 @@
+- name: Restart remnawave node
+  community.docker.docker_compose_v2:
+    project_src: "{{ remnawave_node_dir }}"
+    state: restarted

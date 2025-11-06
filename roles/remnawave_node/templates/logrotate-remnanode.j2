@@ -1,0 +1,8 @@
+{{ remnawave_node_log_dir }}/*.log {
+    size {{ remnawave_node_logrotate_size }}
+    rotate {{ remnawave_node_logrotate_rotate }}
+    compress
+    missingok
+    notifempty
+    copytruncate
+}

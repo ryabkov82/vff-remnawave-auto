@@ -1,0 +1,30 @@
+# БАЗОВОЕ
+remnawave_register_enabled: true
+
+# Доступ к панели
+remnawave_panel_url: ""                 # напр. https://remna.vpn-for-friends.com
+remnawave_panel_api_token: ""           # хранить в Vault!
+
+# Идентичность ноды
+remnawave_node_name: "{{ inventory_hostname }}"
+remnawave_node_address: >-
+  {{ hostvars[inventory_hostname].node_address
+     | default(hostvars[inventory_hostname].ansible_host
+     | default(inventory_hostname)) }}
+
+# Порт берём из .env вашего деплоя ноды
+# Ищем строку вида NODE_PORT=2222 в remnawave_node_env_content; если не нашли — 2222
+remnawave_node_port: "{{ (remnawave_node_env_content | default('') | regex_search('(?m)^NODE_PORT=([0-9]+)', '\\1')) | default('2222') | int }}"
+
+# Профиль/инбаунды
+remnawave_inbound_tag: "VLESS TCP REALITY"  # какой инбаунд активировать
+remnawave_profile_uuid: ""                  # можно пусто — возьмём из inbound.profileUuid
+
+# Прочие поля ноды
+remnawave_node_country_code: "XX"
+remnawave_node_consumption_multiplier: 0.1
+remnawave_node_is_traffic_tracking_active: false
+remnawave_node_traffic_limit_bytes: 0
+remnawave_node_notify_percent: 0
+remnawave_node_traffic_reset_day: 1
+remnawave_node_provider_uuid: ""            # опционально; если пусто — не отправляем

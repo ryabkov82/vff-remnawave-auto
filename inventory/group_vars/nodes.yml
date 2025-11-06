@@ -1,0 +1,16 @@
+remnawave_node_dir: /opt/remnanode
+remnawave_node_image: remnawave/node:latest
+remnawave_node_container_name: remnanode
+remnawave_node_network_mode: host
+remnawave_node_restart_policy: always
+remnawave_node_pull: true
+remnawave_node_enable_host_logs: true
+remnawave_node_log_dir: /var/log/remnanode
+remnawave_node_manage_logrotate: true
+remnawave_node_geo_files: []
+
+remnawave_node_register_enabled: true
+remnawave_inbound_tag: "VLESS TCP REALITY"
+remnawave_profile_uuid: ""   # или явный UUID профиля, если хочешь фиксировать
+remnawave_node_consumption_multiplier: 0.1
+remnawave_panel_url: "https://remna.vpn-for-friends.com"

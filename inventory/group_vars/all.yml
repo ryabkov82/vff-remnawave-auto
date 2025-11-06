@@ -5,14 +5,5 @@ timezone: Europe/Berlin
 remnawave_version: "latest"
 docker_compose_dir: /opt/remnawave
 
-# Совместный хост: включить HAProxy TCP passthrough на :443
-enable_haproxy_sni: true
-haproxy_frontend_port: 443
-haproxy_panel_backend_port: 4443
-haproxy_reality_backend_port: 8444
-haproxy_sni_panel: "{{ hostvars[inventory_hostname].fqdn | default('panel.example.com') }}"
-haproxy_sni_reality: "www.cloudflare.com"
-
-# Node API mTLS
-mtls_ca_dir: /etc/remnawave/ca
-node_api_port: 2222
+# маппинг имени переменной, чтобы роль увидела нужное имя
+remnawave_panel_api_token: "{{ vault_remnawave_panel_api_token }}"

@@ -1,36 +1,11 @@
----
-- name: Create node dir
-  ansible.builtin.file:
-    path: /opt/remnawave/node
-    state: directory
-    mode: '0755'
-  tags: [node]
+- name: "Remnawave Node | Prepare host"
+  ansible.builtin.import_tasks: prepare.yml
 
-- name: Drop docker-compose.yml for node
-  ansible.builtin.copy:
-    dest: /opt/remnawave/node/docker-compose.yml
-    mode: '0644'
-    content: |
-      version: "3.8"
-      services:
-        node:
-          image: remnawave/node:{{ remnawave_version }}
-          env_file: .env
-          volumes:
-            - /var/lib/remnawave-node:/var/lib/remnawave-node
-          network_mode: host
-          restart: unless-stopped
-        xray:
-          image: ghcr.io/xtls/xray-core:latest
-          command: ["-config", "/etc/xray/config.json"]
-          volumes:
-            - /etc/xray:/etc/xray:ro
-          network_mode: host
-          restart: unless-stopped
-  tags: [node]
+- name: "Remnawave Node | Optional geo mounts"
+  ansible.builtin.import_tasks: geo.yml
 
-- name: Ensure node stack is up
-  community.docker.docker_compose_v2:
-    project_src: /opt/remnawave/node
-    state: present
-  tags: [node]
+- name: "Remnawave Node | Compose up"
+  ansible.builtin.import_tasks: compose.yml
+
+- name: "Remnawave Node | Logs & logrotate"
+  ansible.builtin.import_tasks: logs.yml
