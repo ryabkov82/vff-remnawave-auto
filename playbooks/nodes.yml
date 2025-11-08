@@ -12,5 +12,8 @@
     - role: remnawave_register_node
       tags: [register_node]
 
+    - role: remnawave_add_host
+      tags: [register_host]
+
     - role: remnawave_node
       tags: [node]

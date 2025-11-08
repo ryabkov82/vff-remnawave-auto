@@ -1,0 +1,269 @@
+---
+# Add or reconcile a Host in Remnawave Panel and bind it to a Node.
+# Prefers UUIDs from previous steps; if missing, resolves by names.
+
+- name: "Fail if required variables are missing"
+  ansible.builtin.assert:
+    that:
+      - remnawave_panel_api_token is defined
+      - remnawave_panel_api_token | length > 0
+      - remnawave_panel_api_base is defined
+      - rw_host_remark is not none
+      - rw_host_address is not none
+    fail_msg: >-
+      Missing required inputs: remnawave_panel_api_token, remnawave_panel_api_base,
+      rw_host_remark, rw_host_address
+
+- name: Compose API headers
+  ansible.builtin.set_fact:
+    _rw_headers:
+      Authorization: "Bearer {{ remnawave_panel_api_token }}"
+      Content-Type: "application/json"
+
+# ==================== Resolve NODE UUID ====================
+- name: Use provided node UUID if present
+  ansible.builtin.set_fact:
+    _node_uuid: "{{ rw_host_node_uuid }}"
+  when: rw_host_node_uuid is defined and (rw_host_node_uuid | default('') | length) > 0
+
+- name: Resolve node UUID by name when absent
+  when: _node_uuid is not defined
+  block:
+    - name: GET /api/nodes
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}/nodes"
+        method: GET
+        headers: "{{ _rw_headers }}"
+        return_content: true
+        status_code: [200]
+      register: _nodes_resp
+
+    - name: Pick node by exact name
+      vars:
+        _candidates: "{{ (_nodes_resp.json.response | default([])) | selectattr('name', 'equalto', rw_node_name) | list }}"
+      ansible.builtin.set_fact:
+        _node_obj: "{{ _candidates | first if (_candidates | length) == 1 else {} }}"
+        _node_uuid: "{{ (_candidates | first).uuid if (_candidates | length) == 1 else '' }}"
+      failed_when: (_candidates | length) != 1
+      ignore_errors: false
+
+# ==================== Resolve INBOUND/PROFILE UUIDs ====================
+# Priority order:
+# 1) both rw_host_inbound_uuid and rw_host_inbound_config_profile_uuid provided -> use them
+# 2) if only inbound uuid provided and no profile -> try to get profile via /config-profiles/inbounds
+# 3) else resolve by: profile name (optional) + inbound tag
+
+- name: Use provided inbound/profile UUIDs if present
+  ansible.builtin.set_fact:
+    _inbound_uuid: "{{ rw_host_inbound_uuid }}"
+    _profile_uuid: "{{ rw_host_inbound_config_profile_uuid }}"
+  when: (rw_host_inbound_uuid | default('') | length) > 0
+        and (rw_host_inbound_config_profile_uuid | default('') | length) > 0
+
+- name: Lookup profileUuid by inbound uuid (when inbound given but profile missing)
+  when: _inbound_uuid is defined and (_profile_uuid is not defined)
+  block:
+    - name: GET /api/config-profiles/inbounds
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}/config-profiles/inbounds"
+        method: GET
+        headers: "{{ _rw_headers }}"
+        return_content: true
+        status_code: [200]
+      register: _inb_list_resp
+
+    - name: Find inbound object by uuid
+      vars:
+        _all_inb: "{{ _inb_list_resp.json.response.inbounds | default([]) }}"
+        _match: "{{ _all_inb | selectattr('uuid', 'equalto', _inbound_uuid) | list }}"
+      ansible.builtin.set_fact:
+        _profile_uuid: "{{ (_match | first).profileUuid if (_match | length) == 1 else '' }}"
+      failed_when: (_match | length) != 1
+
+- name: Resolve inbound/profile by names when inbound uuid is absent
+  when: _inbound_uuid is not defined
+  block:
+    - name: Try resolve by profile name (if provided)
+      when: rw_config_profile_name is not none
+      block:
+        - name: GET /api/config-profiles
+          ansible.builtin.uri:
+            url: "{{ remnawave_panel_api_base }}/config-profiles"
+            method: GET
+            headers: "{{ _rw_headers }}"
+            return_content: true
+            status_code: [200]
+          register: _profiles_resp
+
+        - name: Pick profile by name
+          vars:
+            _profiles: "{{ (_profiles_resp.json.response.configProfiles | default([])) | list }}"
+            _prof_candidates: "{{ _profiles | selectattr('name', 'equalto', rw_config_profile_name) | list }}"
+          ansible.builtin.set_fact:
+            _profile_obj: "{{ _prof_candidates | first if (_prof_candidates | length) == 1 else {} }}"
+            _profile_uuid: "{{ (_prof_candidates | first).uuid if (_prof_candidates | length) == 1 else '' }}"
+          failed_when: (_prof_candidates | length) != 1
+
+        - name: Pick inbound by tag in selected profile
+          vars:
+            _inb_candidates: "{{ (_profile_obj.inbounds | default([])) | selectattr('tag', 'equalto', rw_inbound_tag) | list }}"
+          ansible.builtin.set_fact:
+            _inbound_uuid: "{{ (_inb_candidates | first).uuid if (_inb_candidates | length) == 1 else '' }}"
+          failed_when: (_inb_candidates | length) != 1
+
+    - name: Else resolve inbound globally by tag to get both uuids
+      when: (rw_config_profile_name is none) and (_inbound_uuid|default('') | length == 0)
+      block:
+        - name: GET /api/config-profiles/inbounds
+          ansible.builtin.uri:
+            url: "{{ remnawave_panel_api_base }}/config-profiles/inbounds"
+            method: GET
+            headers: "{{ _rw_headers }}"
+            return_content: true
+            status_code: [200]
+          register: _inb_resp_all
+
+        - name: Pick inbound object by exact tag (must be unique)
+          vars:
+            _inb_candidates: "{{ (_inb_resp_all.json.response.inbounds | default([])) | selectattr('tag', 'equalto', rw_inbound_tag) | list }}"
+          ansible.builtin.set_fact:
+            _inbound_obj: "{{ _inb_candidates | first if (_inb_candidates | length) == 1 else {} }}"
+            _inbound_uuid: "{{ (_inb_candidates | first).uuid if (_inb_candidates | length) == 1 else '' }}"
+            _profile_uuid: "{{ (_inb_candidates | first).profileUuid if (_inb_candidates | length) == 1 else '' }}"
+          failed_when: (_inb_candidates | length) != 1
+
+- name: Final assert on resolved UUIDs
+  ansible.builtin.assert:
+    that:
+      - _node_uuid is defined
+      - _node_uuid | length > 0
+      - _inbound_uuid is defined
+      - _inbound_uuid | length > 0
+      - _profile_uuid is defined
+      - _profile_uuid | length > 0
+    fail_msg: "Failed to resolve Node/Profile/Inbound UUIDs. Check names or provide explicit UUIDs."
+
+# ==================== Hosts discovery / create or reconcile ====================
+- name: Get all hosts
+  ansible.builtin.uri:
+    url: "{{ remnawave_panel_api_base }}/hosts"
+    method: GET
+    headers: "{{ _rw_headers }}"
+    return_content: true
+    status_code: [200]
+  register: _rw_hosts_resp
+
+- name: Parse hosts list
+  ansible.builtin.set_fact:
+    _rw_hosts: "{{ (_rw_hosts_resp.json.response | default([])) | list }}"
+
+- name: Select existing host by rule
+  ansible.builtin.set_fact:
+    _rw_existing: >-
+      {%- if rw_host_match_by == 'address_port' -%}
+      {{ _rw_hosts | selectattr('address', 'equalto', rw_host_address)
+                    | selectattr('port', 'equalto', rw_host_port | int)
+                    | list | first | default(None) }}
+      {%- else -%}
+      {{ _rw_hosts | selectattr('remark', 'equalto', rw_host_remark) | list | first | default(None) }}
+      {%- endif -%}
+
+- name: Maybe delete existing host if force_recreate
+  when: _rw_existing is not none and rw_host_force_recreate | bool
+  block:
+    - name: Delete host
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}/hosts/{{ _rw_existing.uuid }}"
+        method: DELETE
+        headers: "{{ _rw_headers }}"
+        status_code: [200]
+      register: _rw_delete
+
+    - name: Clear existing after delete
+      ansible.builtin.set_fact:
+        _rw_existing: null
+
+- name: Build create payload
+  ansible.builtin.set_fact:
+    _rw_create_body:
+      remark: "{{ rw_host_remark }}"
+      address: "{{ rw_host_address }}"
+      port: "{{ rw_host_port | int }}"
+      path: "{{ rw_host_path }}"
+      sni: "{{ rw_host_sni }}"
+      host: "{{ rw_host_host }}"
+      alpn: "{{ rw_host_alpn }}"
+      fingerprint: "{{ rw_host_fingerprint }}"
+      securityLayer: "{{ rw_host_security_layer }}"
+      inbound:
+        configProfileUuid: "{{ _profile_uuid }}"
+        configProfileInboundUuid: "{{ _inbound_uuid }}"
+      serverDescription: "{{ rw_host_server_description }}"
+      tag: "{{ rw_host_tag }}"
+      isHidden: "{{ rw_host_is_hidden | bool }}"
+      overrideSniFromAddress: "{{ rw_host_override_sni_from_address | bool }}"
+      vlessRouteId: "{{ rw_host_vless_route_id }}"
+      allowInsecure: "{{ rw_host_allow_insecure | bool }}"
+      shuffleHost: "{{ rw_host_shuffle_host | bool }}"
+      mihomoX25519: "{{ rw_host_mihomo_x25519 | bool }}"
+      nodes: ["{{ _node_uuid }}"]
+
+- name: Create host if missing
+  when: _rw_existing is none
+  block:
+    - name: POST /api/hosts
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}/hosts"
+        method: POST
+        headers: "{{ _rw_headers }}"
+        body_format: json
+        body: "{{ _rw_create_body }}"
+        status_code: [201]
+        return_content: true
+      register: _rw_created
+
+    - name: Set fact with created host
+      ansible.builtin.set_fact:
+        remnawave_created_host: "{{ _rw_created.json.response }}"
+        remnawave_created_host_uuid: "{{ _rw_created.json.response.uuid }}"
+
+- name: Reconcile inbound on existing host (bulk set-inbound)
+  when: _rw_existing is not none and rw_host_set_inbound_if_exists | bool
+  block:
+    - name: POST /api/hosts/bulk/set-inbound
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}/hosts/bulk/set-inbound"
+        method: POST
+        headers: "{{ _rw_headers }}"
+        body_format: json
+        body:
+          uuids: ["{{ _rw_existing.uuid }}"]
+          configProfileUuid: "{{ _profile_uuid }}"
+          configProfileInboundUuid: "{{ _inbound_uuid }}"
+        status_code: [200]
+        return_content: true
+      register: _rw_bulk_inbound
+
+- name: Optionally set port on existing host (bulk set-port)
+  when: _rw_existing is not none and rw_host_set_port_if_exists | bool
+  block:
+    - name: POST /api/hosts/bulk/set-port
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}/hosts/bulk/set-port"
+        method: POST
+        headers: "{{ _rw_headers }}"
+        body_format: json
+        body:
+          uuids: ["{{ _rw_existing.uuid }}"]
+          port: "{{ rw_host_port | int }}"
+        status_code: [200]
+        return_content: true
+      register: _rw_bulk_port
+
+- name: Output result
+  ansible.builtin.debug:
+    msg:
+      created: "{{ _rw_existing is none }}"
+      host_uuid: >-
+        {{ (remnawave_created_host_uuid
+            if (_rw_existing is none) else _rw_existing.uuid) }}

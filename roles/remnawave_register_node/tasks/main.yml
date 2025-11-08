@@ -167,3 +167,9 @@
                 activeInbounds: "{{ _new_inb_uuids }}"
           register: _patched
           failed_when: _patched.status not in [200]
+
+    - name: "Expose UUID facts for subsequent roles"
+      ansible.builtin.set_fact:
+        remnawave_node_uuid: "{{ remnawave_node_uuid }}"
+        remnawave_inbound_uuid: "{{ _inbound_uuid }}"
+        remnawave_profile_uuid: "{{ _profile_uuid }}"

@@ -1,0 +1,52 @@
+---
+# Если не задано явно, в задачах возьмём "https://{{ remnawave_panel_frontend_domain }}/api"
+remnawave_api_base_url: ""
+
+# Что обновляем: профиль по имени (или укажи UUID вместо/вдобавок)
+remnawave_profile_name: "default"
+remnawave_profile_uuid: ""
+
+# Политики поведения роли
+remnawave_tag_collision_mode: "auto_prefix"   # [fail|auto_prefix]
+remnawave_update_mode: "upsert"               # [upsert|replace]
+remnawave_validate_config: true
+
+# Шаблон автопрефикса для конфликтующих тегов (исп-ся при 409)
+# Доступные подстановки: {{ profile_name }}, {{ tag }}
+remnawave_tag_prefix_template: "{{ profile_name }}__{{ tag }}"
+
+# Секреты Reality (обычно задаются в inventory/group_vars/* через vault)
+remnawave_reality_private_key: ""
+remnawave_reality_short_id: ""
+
+# Набор инбаундов для upsert (по tag). По умолчанию пусто — ничего не меняем.
+remnawave_inbounds: []
+# Пример структуры одного инбаунда (для справки):
+# remnawave_inbounds:
+#   - tag: "vless_reality_tcp_443"
+#     listen: "0.0.0.0"
+#     port: 443
+#     type: "vless"
+#     sniffing:
+#       enabled: true
+#       destOverride: ["http", "tls"]
+#     settings:
+#       clients: []
+#     streamSettings:
+#       network: "tcp"
+#       security: "reality"
+#       realitySettings:
+#         show: false
+#         dest: "www.cloudflare.com:443"
+#         xver: 0
+#         serverNames: ["www.cloudflare.com"]
+#         privateKey: "{{ remnawave_reality_private_key }}"
+#         shortIds: ["{{ remnawave_reality_short_id }}"]
+#         maxTimeDiff: 0
+#         fingerprint: "chrome"
+
+# Регистрация инбаундов в сквад (опционально)
+remnawave_register_inbounds_in_squad: true
+remnawave_internal_squad_name: "Default-Squad"
+# Можно вместо имени указать UUID сквада — быстрее:
+remnawave_internal_squad_uuid: ""

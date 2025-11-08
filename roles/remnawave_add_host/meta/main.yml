@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  author: vff-remnawave-auto
+  description: Create/Sync Remnawave Host; prefer UUIDs, fallback to names
+  license: MIT
+  min_ansible_version: "2.12"
+dependencies: []
