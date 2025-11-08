@@ -6,3 +6,5 @@ remnawave_node_env_content: |
 
 node_address: "77.239.127.199"
 remnawave_node_country_code: "DE"
+remnawave_host_remark: "🇩🇪 1 vpn-for-friends"
+remnawave_host_sni: ""

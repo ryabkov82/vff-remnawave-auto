@@ -89,6 +89,7 @@ nodes: ## Деплой Remnawave Nodes (+ регистрация, health-checks)
 	@#   make nodes LIMIT=node-nl-1
 	@#   make nodes LIMIT=de-fra-1 TAGS=node
 	@#   make nodes LIMIT=de-fra-1 TAGS=register_node
+	@#   make nodes LIMIT=de-fra-1 TAGS=register_host
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_NODES) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
 
 haproxy: ## Настройка HAProxy TCP SNI-перекидки
