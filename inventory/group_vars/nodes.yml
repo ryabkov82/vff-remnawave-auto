@@ -10,7 +10,6 @@ remnawave_node_manage_logrotate: true
 remnawave_node_geo_files: []
 
 remnawave_node_register_enabled: true
-remnawave_inbound_tag: "VLESS TCP REALITY"
 remnawave_profile_uuid: ""   # или явный UUID профиля, если хочешь фиксировать
 remnawave_node_consumption_multiplier: 0.1
 remnawave_panel_url: "https://remna.vpn-for-friends.com"

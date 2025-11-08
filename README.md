@@ -20,6 +20,28 @@ make panel
 make dns LIMIT=panel TAGS=cf_dns
 ```
 
+### ➕ Добавить inbound (после панели, до нод)
+После успешного развертывания панели можно автоматически добавить Reality-inbound в профиль панели:
+
+```bash
+make inbounds
+```
+
+Примеры:
+```bash
+# ограничить по хосту
+make inbounds LIMIT=panel
+
+# явно указать UUID профиля
+make inbounds EXTRA='-e remnawave_profile_uuid=7988e3a1-5a32-461a-9136-c9475e92f19a'
+```
+
+Inbound будет создан или обновлён идемпотентно (по `tag`), а затем автоматически зарегистрирован во **внутреннем скваде** `Default-Squad`.
+
+> Подробности см. в [roles/remnawave_inbounds/README.md](roles-remnawave_inbounds-README.md)
+
+---
+
 ### Развернуть ноду
 ```bash
 make nodes LIMIT=node-name TAGS=node
@@ -47,6 +69,7 @@ make nodes LIMIT=node-name TAGS=smoke_node
 | Раздел | Файл | Описание |
 |--------|------|----------|
 | Панель | [docs/remnawave_panel.md](docs/remnawave_panel.md) | Установка панели и сервисов |
+| Inbounds | [roles/remnawave_inbounds/README.md](roles-remnawave_inbounds-README.md) | Добавление и регистрация inbound’ов |
 | HAProxy | [docs/haproxy_tls_sni.md](docs/haproxy_tls_sni.md) | Совместная работа панели и Xray |
 | Ноды | [docs/remnawave_node.md](docs/remnawave_node.md) | Запуск контейнера с SECRET_KEY |
 | Регистрация ноды | [docs/remnawave_register_node.md](docs/remnawave_register_node.md) | API-регистрация ноды |
@@ -79,6 +102,7 @@ Client
 inventory/group_vars/panel/vault.yml
 inventory/host_vars/<node>/vault.yml
 ```
+
 > **Не коммитим** содержимое Vault в git.
 
 ---

@@ -34,7 +34,7 @@ rw_host_inbound_uuid: "{{ remnawave_inbound_uuid | default('') }}"
 # Fallback: names to resolve if UUIDs are absent
 rw_node_name: "{{ inventory_hostname }}"        # default per request
 rw_config_profile_name: null                    # optional if inbound lookup returns profileUuid
-rw_inbound_tag: "VLESS TCP REALITY"            # default per request
+rw_inbound_tag: "{{ remnawave_inbound_tag }}"   # default per request
 
 # Behaviour
 rw_host_match_by: "remark"          # remark | address_port
