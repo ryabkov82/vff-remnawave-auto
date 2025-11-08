@@ -40,3 +40,41 @@ cf_dns_records:
     type: "CNAME"
     value: "remna.vpn-for-friends.com"
     proxied: false
+
+# Remnawave API / Inbounds (внешний интерфейс роли)
+remnawave_api_base_url: "https://{{ remnawave_panel_frontend_domain }}/api"
+
+remnawave_profile_name: "Default-Profile"
+# remnawave_profile_uuid: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+remnawave_tag_collision_mode: "auto_prefix"
+remnawave_update_mode: "upsert"
+remnawave_validate_config: true
+
+remnawave_reality_private_key: "{{ vault_reality_private_key }}"
+remnawave_reality_short_id: "{{ vault_reality_short_id }}"
+
+remnawave_inbounds:
+  - tag: "{{ remnawave_inbound_tag }}"
+    listen: "127.0.0.1"
+    port: 8444
+    type: "vless"
+    sniffing:
+      enabled: true
+      destOverride: ["http", "tls", "quic", "fakedns"]
+      metadataOnly: false
+    settings:
+      clients: []
+      decryption: "none"
+    streamSettings:
+      network: "tcp"
+      security: "reality"
+      realitySettings:
+        show: false
+        dest: "www.cloudflare.com:443"
+        xver: 0
+        serverNames: ["www.cloudflare.com", "cloudflare.com"]
+        privateKey: "{{ remnawave_reality_private_key }}"
+        shortIds: ["{{ remnawave_reality_short_id }}"]
+        maxTimeDiff: 0
+        fingerprint: "chrome"

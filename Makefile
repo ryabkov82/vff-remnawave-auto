@@ -22,6 +22,7 @@ PLAY_HAPROXY   ?= playbooks/haproxy.yml
 PLAY_SMOKE     ?= playbooks/smoke.yml
 PLAY_SITE      ?= playbooks/site.yml
 PLAY_DNS       ?= playbooks/dns.yml
+PLAY_INBOUNDS  ?= playbooks/inbounds.yml
 
 # Доп. флаги для ansible/ansible-playbook (например: --ask-vault-pass, -e var=val)
 ANSIBLE_FLAGS ?=
@@ -82,6 +83,20 @@ panel: ## Деплой Remnawave Panel (и health-checks)
 	@#   make panel TAGS=haproxy
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_PANEL) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
 
+## Добавить/обновить inbound'ы в профиле (через API панели)
+inbounds:  ## make inbounds [LIMIT=panel] [TAGS=inbounds] [EXTRA='-e remnawave_profile_uuid=...']
+	@# Примеры:
+	@#  make inbounds
+	@# 	ограничить конкретным хостом/группой
+	@#	make inbounds LIMIT=panel
+	@# 	выполнить только тэг inbounds (указан на роли)
+	@#	make inbounds TAGS=inbounds
+	@# 	разово переопределить профиль по UUID (пример)
+	@#	make inbounds EXTRA='-e remnawave_profile_uuid=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+	@# 	разово подменить базовый URL API (если нужно)
+	@#	make inbounds EXTRA='-e remnawave_api_base_url=https://remna.vpn-for-friends.com/api'	
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_INBOUNDS) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
+
 nodes: ## Деплой Remnawave Nodes (+ регистрация, health-checks)
 	@# Примеры:
 	@#   make nodes
@@ -89,6 +104,7 @@ nodes: ## Деплой Remnawave Nodes (+ регистрация, health-checks)
 	@#   make nodes LIMIT=node-nl-1
 	@#   make nodes LIMIT=de-fra-1 TAGS=node
 	@#   make nodes LIMIT=de-fra-1 TAGS=register_node
+	@#   make nodes LIMIT=de-fra-1 TAGS=register_host
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_NODES) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
 
 haproxy: ## Настройка HAProxy TCP SNI-перекидки

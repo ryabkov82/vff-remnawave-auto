@@ -1,0 +1,43 @@
+# Default variables for remnawave_add_host
+# Доступ к панели
+remnawave_panel_api_base: "{{ (remnawave_panel_url | default('')) | ternary(remnawave_panel_url ~ '/api', '') }}"
+
+remnawave_panel_api_token: ""           # хранить в Vault!
+
+# Required host params
+rw_host_remark: "{{ remnawave_host_remark }}"    # e.g. "DE-FRA-1 VLESS TCP Reality"
+rw_host_address: "{{ node_address }}"   # public hostname to publish in subscription
+rw_host_port: 443
+rw_host_path: ""
+rw_host_sni: "{{ remnawave_host_sni }}"
+rw_host_host: ""
+rw_host_alpn: null
+rw_host_fingerprint: "chrome"       # default per request
+rw_host_security_layer: DEFAULT     # DEFAULT | TLS | NONE
+
+# Cosmetic/flags
+rw_host_tag: "PROD"
+rw_host_server_description: ""
+rw_host_view_position: 9999
+rw_host_is_hidden: false
+rw_host_override_sni_from_address: false
+rw_host_allow_insecure: false
+rw_host_shuffle_host: false
+rw_host_mihomo_x25519: false
+rw_host_vless_route_id: null        # integer or null
+
+# Binding (prefer UUIDs from previous steps; otherwise resolve by names)
+rw_host_node_uuid: "{{ remnawave_node_uuid | default('') }}"
+rw_host_inbound_config_profile_uuid: "{{ remnawave_profile_uuid | default('') }}"
+rw_host_inbound_uuid: "{{ remnawave_inbound_uuid | default('') }}"
+
+# Fallback: names to resolve if UUIDs are absent
+rw_node_name: "{{ inventory_hostname }}"        # default per request
+rw_config_profile_name: null                    # optional if inbound lookup returns profileUuid
+rw_inbound_tag: "{{ remnawave_inbound_tag }}"   # default per request
+
+# Behaviour
+rw_host_match_by: "remark"          # remark | address_port
+rw_host_force_recreate: false
+rw_host_set_inbound_if_exists: true
+rw_host_set_port_if_exists: false

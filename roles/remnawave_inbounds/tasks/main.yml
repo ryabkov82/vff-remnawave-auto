@@ -1,0 +1,356 @@
+---
+- name: Build internal var map
+  ansible.builtin.set_fact:
+    _ri:
+      api_base_url: >-
+        {{ remnawave_api_base_url
+           | default('https://' ~ remnawave_panel_frontend_domain ~ '/api') }}
+      api_token: "{{ remnawave_panel_api_token | default('') }}"
+      profile_name: "{{ remnawave_profile_name | default('default') }}"
+      profile_uuid: "{{ remnawave_profile_uuid | default('') }}"
+      tag_collision_mode: "{{ remnawave_tag_collision_mode | default('auto_prefix') }}"
+      update_mode: "{{ remnawave_update_mode | default('upsert') }}"
+      validate_config: "{{ (remnawave_validate_config | default(true)) | bool }}"
+      tag_prefix_tpl: "{{ remnawave_tag_prefix_template | default('{profile_name}__{tag}') }}"
+      reality_private_key: "{{ remnawave_reality_private_key | default('') }}"
+      reality_short_id: "{{ remnawave_reality_short_id | default('') }}"
+      inbounds: "{{ remnawave_inbounds | default([]) }}"
+      register_in_squad: "{{ (remnawave_register_inbounds_in_squad | default(true)) | bool }}"
+      squad_name: "{{ remnawave_internal_squad_name | default('Default-Squad') }}"
+      squad_uuid: "{{ remnawave_internal_squad_uuid | default('') }}"
+
+- name: Assert required inputs
+  ansible.builtin.assert:
+    that:
+      - _ri.api_base_url | length > 0
+      - _ri.api_token | length > 0
+      - (_ri.profile_uuid | length > 0) or (_ri.profile_name | length > 0)
+      - _ri.inbounds is iterable
+    fail_msg: "Missing required inputs (api_base_url/api_token/profile/inbounds)."
+
+# === 1) Получаем список профилей
+- name: Get config profiles
+  ansible.builtin.uri:
+    url: "{{ _ri.api_base_url }}/config-profiles"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ _ri.api_token }}"
+    return_content: true
+    status_code: 200
+  register: _profiles
+
+# 1) Вытащим список профилей из возможных мест
+- name: Extract config profile list from API response
+  ansible.builtin.set_fact:
+    _cp_list: >-
+      {{
+        _profiles.json.response.configProfiles
+        | default(_profiles.json.configProfiles)
+        | default(_profiles.json.response.items)
+        | default(_profiles.json.items)
+        | default([])
+      }}
+
+# 2) Если список пуст — упасть с диагностикой
+- name: Ensure profiles list is not empty
+  ansible.builtin.assert:
+    that:
+      - _cp_list | length > 0
+    fail_msg: >-
+      Remnawave returned no config profiles. Check API token/URL and that at least
+      one config profile exists in the panel.
+      Raw keys present: {{
+        _profiles.json.keys() | list
+      }}
+
+# 1) Выбрать по UUID, если он задан
+- name: Pick target profile by UUID (fast path)
+  when: _ri.profile_uuid | length > 0
+  ansible.builtin.set_fact:
+    _target_profile: >-
+      {{ _cp_list | selectattr('uuid', 'equalto', _ri.profile_uuid) | list | first }}
+
+# 2) Иначе — выбрать по имени (точное совпадение)
+- name: Pick target profile by name (exact)
+  when:
+    - (_ri.profile_uuid | length == 0)
+    - _target_profile is not defined
+  ansible.builtin.set_fact:
+    _target_profile: >-
+      {{ _cp_list | selectattr('name', 'equalto', _ri.profile_name) | list | first }}
+
+# 3) Если не нашли — fallback на регистронезависимый поиск
+- name: Pick target profile by name (case-insensitive fallback)
+  when:
+    - (_ri.profile_uuid | length == 0)
+    - (_target_profile is not defined) or (_target_profile is none)
+  vars:
+    want: "{{ _ri.profile_name | string | lower }}"
+    cand: "{{ _cp_list | selectattr('name', 'defined') | list }}"
+  ansible.builtin.set_fact:
+    _target_profile: >-
+      {{ (cand | selectattr('name', 'match', '^' ~ want ~ '$', ignorecase=True) | list | first) | default(None) }}
+
+# 4) Жёстко проверяем, что это mapping и достаём UUID
+- name: Normalize and validate target_uuid
+  ansible.builtin.assert:
+    that:
+      - _target_profile is mapping
+      - _target_profile.uuid is defined
+    fail_msg: >-
+      Config profile not found. Looked for name='{{ _ri.profile_name }}' uuid='{{ _ri.profile_uuid }}'.
+      Available profiles: {{ _cp_list | map(attribute='name') | list }}
+  register: _assert_profile
+
+- name: Set target_uuid
+  ansible.builtin.set_fact:
+    target_uuid: "{{ _target_profile.uuid | string | trim }}"
+
+# === 2) Получаем полный профиль (включая config)
+- name: Get full profile by uuid (with config)
+  ansible.builtin.uri:
+    url: "{{ _ri.api_base_url }}/config-profiles/{{ target_uuid }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ _ri.api_token }}"
+    return_content: true
+    status_code: 200
+  register: _profile_full
+
+# === 3) Готовим merged-config (идемпотентный upsert/replace по tag)
+- name: Build merged config (idempotent upsert/replace by tag)
+  vars:
+    current_cfg: "{{ _profile_full.json.response.config | default({}) }}"
+    current_inbounds: "{{ current_cfg.inbounds | default([]) }}"
+    current_map: "{{ dict((current_inbounds | map(attribute='tag') | list) | zip(current_inbounds)) }}"
+    desired_map: "{{ dict((_ri.inbounds | default([])) | map(attribute='tag') | zip(_ri.inbounds)) }}"
+    merged_map: >-
+      {%- set m = current_map.copy() -%}
+      {%- for t, ib in desired_map.items() -%}
+        {%- if _ri.update_mode == 'replace' or t not in m -%}
+          {%- set _ = m.update({t: ib}) -%}
+        {%- else -%}
+          {%- set _ = m.update({t: m[t] | combine(ib, recursive=True)}) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{- m -}}
+    merged_inbounds_unsorted: "{{ merged_map.values() | list }}"
+    merged_inbounds: "{{ merged_inbounds_unsorted | sort(attribute='tag') }}"
+    current_inbounds_sorted: "{{ current_inbounds | sort(attribute='tag') }}"
+    needs_update: "{{ (merged_inbounds | to_nice_json) != (current_inbounds_sorted | to_nice_json) }}"
+    merged_config: "{{ current_cfg | combine({'inbounds': merged_inbounds}, recursive=True) }}"
+  ansible.builtin.set_fact:
+    _merged_config: "{{ merged_config }}"
+    _needs_update: "{{ needs_update }}"
+
+- name: Validate tag uniqueness (local check)
+  when: _ri.validate_config
+  ansible.builtin.assert:
+    that:
+      - >
+        (_merged_config.inbounds | map(attribute='tag') | list | length)
+        ==
+        (_merged_config.inbounds | map(attribute='tag') | list | unique | length)
+    fail_msg: "Inbound tags are not unique inside the profile (local check)."
+
+# === 4) Если нет изменений — выходим
+- name: No changes — skip PATCH
+  ansible.builtin.debug:
+    msg: "No changes in inbounds — skipping PATCH."
+  when: not _needs_update
+
+# === 5) PATCH профиля с обновлённым config
+- name: PATCH config profile with merged config
+  when: _needs_update
+  ansible.builtin.uri:
+    url: "{{ _ri.api_base_url }}/config-profiles"
+    method: PATCH
+    headers:
+      Authorization: "Bearer {{ _ri.api_token }}"
+      Content-Type: "application/json"
+    status_code: [200, 409]
+    body_format: json
+    body:
+      uuid: "{{ _target_profile.uuid }}"
+      config: "{{ _merged_config }}"
+  register: _patch
+
+# === 6) Обработка 409 (глобальная коллизия тегов) — автопрефикс + retry
+- name: Handle global tag conflict (409) with auto-prefix
+  when:
+    - _needs_update
+    - _patch.status | default(200) == 409
+    - _ri.tag_collision_mode == 'auto_prefix'
+  block:
+    - name: Build auto-prefixed inbounds for desired tags only (list)
+      ansible.builtin.set_fact:
+        _prefixed: >-
+          {%- set arr = [] -%}
+          {%- set desired = (_ri.inbounds | map(attribute='tag') | list) -%}
+          {%- for ib in _merged_config.inbounds -%}
+            {%- set t = ib.tag -%}
+            {%- if t in desired -%}
+              {%- set new_tag = _ri.tag_prefix_tpl
+                | replace('{profile_name}', _target_profile.name | string)
+                | replace('{tag}', t | string) -%}
+              {%- set _ = arr.append( ib | combine({'tag': new_tag}, recursive=True) ) -%}
+            {%- else -%}
+              {%- set _ = arr.append( ib ) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{- arr -}}
+
+    - name: Build auto-prefixed config
+      ansible.builtin.set_fact:
+        _prefixed_config: "{{ _merged_config | combine({'inbounds': _prefixed | sort(attribute='tag')}, recursive=True) }}"
+
+    - name: Retry PATCH with auto-prefixed tags
+      ansible.builtin.uri:
+        url: "{{ _ri.api_base_url }}/config-profiles"
+        method: PATCH
+        headers:
+          Authorization: "Bearer {{ _ri.api_token }}"
+          Content-Type: "application/json"
+        status_code: 200
+        body_format: json
+        body:
+          uuid: "{{ _target_profile.uuid }}"
+          config: "{{ _prefixed_config }}"
+      register: _patch_retry
+
+# === 7) Результат
+- name: Summary
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        'Updated profile ' ~ _target_profile.name ~
+        ' (uuid=' ~ target_uuid ~ ').'
+        if (_needs_update and (_patch.status|default(200) == 200 or _patch_retry.status|default(200) == 200))
+        else
+        'No update required.'
+      }}
+  changed_when: _needs_update | bool
+
+# 8) (Опционально) Регистрация инбаундов в internal squad (по умолчанию Default-Squad)
+- name: Re-fetch profile (to get inbound UUIDs by tag)
+  when: _ri.register_in_squad
+  ansible.builtin.uri:
+    url: "{{ _ri.api_base_url }}/config-profiles/{{ target_uuid }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ _ri.api_token }}"
+    return_content: true
+    status_code: 200
+  register: _profile_refetched
+
+- name: "Build map: tag -> inbound uuid"
+  when: _ri.register_in_squad
+  vars:
+    _inbounds_list: "{{ _profile_refetched.json.response.inbounds | default([]) }}"
+  ansible.builtin.set_fact:
+    _tag_to_uuid_map: >-
+      {{
+        dict(
+          (_inbounds_list | map(attribute='tag') | list)
+          |
+          zip(_inbounds_list | map(attribute='uuid') | list)
+        )
+      }}
+
+- name: Collect desired inbound UUIDs by tags
+  when: _ri.register_in_squad
+  vars:
+    _desired_tags: "{{ (_ri.inbounds | map(attribute='tag')) | list }}"
+  ansible.builtin.set_fact:
+    _desired_inbound_uuids: >-
+      {{
+        _desired_tags
+        | map('extract', _tag_to_uuid_map) | list
+        | select('defined') | list
+      }}
+
+- name: Fail if some desired tags not found in profile.inbounds
+  when: _ri.register_in_squad
+  ansible.builtin.assert:
+    that:
+      - _desired_inbound_uuids | length == (_ri.inbounds | length)
+    fail_msg: >-
+      Some desired inbound tags were not found in profile's inbounds.
+      Missing tags: {{
+        (_ri.inbounds | map(attribute='tag') | list)
+        | difference(_tag_to_uuid_map.keys() | list)
+      }}
+
+- name: Get internal squads
+  when: _ri.register_in_squad
+  ansible.builtin.uri:
+    url: "{{ _ri.api_base_url }}/internal-squads"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ _ri.api_token }}"
+    return_content: true
+    status_code: 200
+  register: _squads
+
+- name: Extract internal squads list
+  when: _ri.register_in_squad
+  ansible.builtin.set_fact:
+    _squads_list: >-
+      {{
+        _squads.json.response.internalSquads
+        | default(_squads.json.internalSquads)
+        | default([])
+      }}
+
+- name: Pick internal squad by uuid or name
+  when: _ri.register_in_squad
+  ansible.builtin.set_fact:
+    _target_squad: >-
+      {{
+        (_squads_list | selectattr('uuid', 'equalto', _ri.squad_uuid) | list | first)
+        if (_ri.squad_uuid | length > 0)
+        else
+        (_squads_list | selectattr('name', 'equalto', _ri.squad_name) | list | first)
+      }}
+  failed_when: _target_squad is not defined or _target_squad is none
+
+- name: Get internal squad by uuid (with current inbounds)
+  when: _ri.register_in_squad
+  ansible.builtin.uri:
+    url: "{{ _ri.api_base_url }}/internal-squads/{{ _target_squad.uuid }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ _ri.api_token }}"
+    return_content: true
+    status_code: 200
+  register: _squad_full
+
+- name: Build merged inbounds list for squad
+  when: _ri.register_in_squad
+  vars:
+    _existing_inb_objs: "{{ _squad_full.json.response.inbounds | default([]) }}"
+    _existing_inb_uuids: "{{ _existing_inb_objs | map(attribute='uuid') | list }}"
+  ansible.builtin.set_fact:
+    _merged_squad_inbound_uuids: "{{ (_existing_inb_uuids + _desired_inbound_uuids) | unique | list }}"
+
+- name: PATCH internal squad with merged inbounds
+  when: _ri.register_in_squad
+  ansible.builtin.uri:
+    url: "{{ _ri.api_base_url }}/internal-squads"
+    method: PATCH
+    headers:
+      Authorization: "Bearer {{ _ri.api_token }}"
+      Content-Type: "application/json"
+    status_code: 200
+    body_format: json
+    body:
+      uuid: "{{ _target_squad.uuid }}"
+      inbounds: "{{ _merged_squad_inbound_uuids }}"
+  register: _squad_patch
+
+- name: Squad registration summary
+  when: _ri.register_in_squad
+  ansible.builtin.debug:
+    msg: >-
+      Registered inbounds ({{ _desired_inbound_uuids | length }}) into internal squad
+      '{{ _target_squad.name }}' (uuid={{ _target_squad.uuid }}).
