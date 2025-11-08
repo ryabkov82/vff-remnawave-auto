@@ -1,0 +1,167 @@
+- name: "Assert API base and token provided"
+  ansible.builtin.assert:
+    that:
+      - (remnawave_panel_api_base | length) > 0
+      - (remnawave_panel_api_token | length) > 0
+    fail_msg: "Нужно задать remnawave_panel_url (или remnawave_panel_api_base) и remnawave_panel_api_token"
+
+- name: "Build headers"
+  ansible.builtin.set_fact:
+    _rw_hdr:
+      Authorization: "Bearer {{ remnawave_panel_api_token }}"
+      Content-Type: "application/json"
+
+# ── Resolve node ────────────────────────────────────────────────────────────────
+- name: "Resolve node by UUID or name"
+  block:
+    - name: "If UUID known — get one node"
+      when: remnawave_node_uuid | length > 0
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}/nodes/{{ remnawave_node_uuid }}"
+        method: GET
+        headers: "{{ _rw_hdr }}"
+        return_content: true
+        status_code: [200, 400, 404]
+        timeout: "{{ remnawave_timeout }}"
+      register: _node_one
+
+    - name: "If UUID unknown — list nodes and find by name"
+      when: (remnawave_node_uuid | length) == 0
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}/nodes"
+        method: GET
+        headers: "{{ _rw_hdr }}"
+        return_content: true
+        timeout: "{{ remnawave_timeout }}"
+      register: _nodes_all
+
+    - name: "Pick node object"
+      ansible.builtin.set_fact:
+        _node_obj: >-
+          {{
+            (remnawave_node_uuid | length > 0)
+            | ternary(
+                (_node_one.json.response | default({})),
+                (
+                  (_nodes_all.json.response | default([]))
+                  | selectattr('name','equalto', remnawave_node_name)
+                  | list | first | default({})
+                )
+              )
+          }}
+
+    - name: "Fail if node not found"
+      ansible.builtin.fail:
+        msg: "Node not found by uuid='{{ remnawave_node_uuid }}' or name='{{ remnawave_node_name }}'"
+      when: (_node_obj | length) == 0
+
+# ── Discover related hosts ─────────────────────────────────────────────────────
+- name: "Fetch all hosts"
+  ansible.builtin.uri:
+    url: "{{ remnawave_panel_api_base }}/hosts"
+    method: GET
+    headers: "{{ _rw_hdr }}"
+    return_content: true
+    timeout: "{{ remnawave_timeout }}"
+  register: _hosts_all
+
+- name: "Build list of host UUIDs attached to node"
+  ansible.builtin.set_fact:
+    _host_uuids: >-
+      {{
+        (_hosts_all.json.response | default([]))
+        | selectattr('nodes','defined')
+        | selectattr('nodes','contains', _node_obj.uuid)
+        | map(attribute='uuid') | list
+      }}
+
+# ── Dry-run summary ────────────────────────────────────────────────────────────
+- name: "DRY-RUN summary"
+  when: remnawave_dry_run | bool
+  ansible.builtin.debug:
+    msg:
+      node_uuid: "{{ _node_obj.uuid }}"
+      node_name: "{{ _node_obj.name }}"
+      will_delete_hosts: "{{ remnawave_delete_hosts }}"
+      host_uuids: "{{ _host_uuids }}"
+
+# ── Guard: prevent orphan hosts unless explicitly allowed ──────────────────────
+# По умолчанию не удаляем ноду, если за ней остаются привязанные hosts и каскад не включён
+- name: "Safety guard — abort when hosts remain attached and cascade is disabled"
+  when:
+    - not remnawave_dry_run | bool
+    - not (remnawave_delete_hosts | bool)
+    - (_host_uuids | length) > 0
+    - not (remnawave_allow_orphan_hosts | default(false) | bool)
+  ansible.builtin.fail:
+    msg: >-
+      Node '{{ _node_obj.name }}' ({{ _node_obj.uuid }}) has {{ _host_uuids | length }} attached host(s).
+      Either set remnawave_delete_hosts=true for cascade removal, or confirm with remnawave_allow_orphan_hosts=true.
+
+# ── Cascade: delete hosts first (bulk) ─────────────────────────────────────────
+- name: "Bulk delete hosts attached to node"
+  when:
+    - remnawave_delete_hosts | bool
+    - not remnawave_dry_run | bool
+    - _host_uuids | length > 0
+  ansible.builtin.uri:
+    url: "{{ remnawave_panel_api_base }}/hosts/bulk/delete"
+    method: POST
+    headers: "{{ _rw_hdr }}"
+    body_format: json
+    body:
+      uuids: "{{ _host_uuids }}"
+    return_content: true
+    status_code: [200, 400]
+    timeout: "{{ remnawave_timeout }}"
+  register: _bulk_hosts
+
+# Подтвердим, что хосты действительно исчезли (если удаляли каскадом)
+- name: "Wait until hosts are deleted (confirm catalog)"
+  when:
+    - remnawave_delete_hosts | bool
+    - not remnawave_dry_run | bool
+    - _host_uuids | length > 0
+  retries: 10
+  delay: 2
+  until: >
+    (
+      ( (_check_hosts.json.response | default([]))
+        | selectattr('uuid','in', _host_uuids) | list | length
+      ) == 0
+    )
+  ansible.builtin.uri:
+    url: "{{ remnawave_panel_api_base }}/hosts"
+    method: GET
+    headers: "{{ _rw_hdr }}"
+    return_content: true
+    status_code: [200]
+    timeout: "{{ remnawave_timeout }}"
+  register: _check_hosts
+
+# ── Delete node and confirm ────────────────────────────────────────────────────
+- name: "Delete node"
+  when: not remnawave_dry_run | bool
+  ansible.builtin.uri:
+    url: "{{ remnawave_panel_api_base }}/nodes/{{ _node_obj.uuid }}"
+    method: DELETE
+    headers: "{{ _rw_hdr }}"
+    return_content: true
+    status_code: [200, 204, 404]   # 404 если уже удалена/нет — считаем идемпотентно ок
+    timeout: "{{ remnawave_timeout }}"
+  register: _del_node
+  changed_when: "_del_node.status in [200, 204]"
+
+- name: "Wait until node is gone (404)"
+  when: not remnawave_dry_run | bool
+  retries: 10
+  delay: 2
+  until: _get_node.status == 404
+  ansible.builtin.uri:
+    url: "{{ remnawave_panel_api_base }}/nodes/{{ _node_obj.uuid }}"
+    method: GET
+    headers: "{{ _rw_hdr }}"
+    return_content: true
+    status_code: [200, 404]
+    timeout: "{{ remnawave_timeout }}"
+  register: _get_node

@@ -1,0 +1,20 @@
+# ===== Доступ к панели Remnawave =====
+# Пример: remnawave_panel_url: "https://panel.example.com"
+remnawave_panel_url: ""
+remnawave_panel_api_base: "{{ (remnawave_panel_url | default('')) | ternary(remnawave_panel_url ~ '/api', '') }}"
+remnawave_panel_api_token: ""           # хранить в Vault!
+
+# ===== Цель =====
+# Можно указать UUID или имя ноды (приоритет у UUID)
+remnawave_node_uuid: ""
+remnawave_node_name: ""
+
+# ===== Целевое состояние =====
+remnawave_enable_state: false           # false = disable, true = enable
+
+# Отключить также все хосты, привязанные к этой ноде
+remnawave_disable_hosts_of_node: true
+
+# ===== Поведение =====
+remnawave_dry_run: false
+remnawave_timeout: 30
