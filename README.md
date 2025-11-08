@@ -24,7 +24,7 @@ make panel
    ```
    пример:
    ```yaml
-   vault_remnawave_panel_api_token: "eyJhbGciOi..."
+   vault_remnawave_panel_api_token: "eyJhbGciO..."
    ```
 
    > Этот токен используется для API-вызовов и автоматического добавления inbound’ов.
