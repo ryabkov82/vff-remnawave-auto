@@ -1,0 +1,169 @@
+- name: "Assert API base and token provided"
+  ansible.builtin.assert:
+    that:
+      - (remnawave_panel_api_base | length) > 0
+      - (remnawave_panel_api_token | length) > 0
+    fail_msg: "Нужно задать remnawave_panel_url (или remnawave_panel_api_base) и remnawave_panel_api_token"
+
+- name: "Build headers"
+  ansible.builtin.set_fact:
+    _rw_hdr:
+      Authorization: "Bearer {{ remnawave_panel_api_token }}"
+      Content-Type: "application/json"
+
+# ── Resolve node ────────────────────────────────────────────────────────────────
+- name: "Resolve node object (by uuid or name)"
+  block:
+    - name: "If UUID known — get one node"
+      when: remnawave_node_uuid | length > 0
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}/nodes/{{ remnawave_node_uuid }}"
+        method: GET
+        headers: "{{ _rw_hdr }}"
+        return_content: true
+        status_code: [200, 400, 404]
+        timeout: "{{ remnawave_timeout }}"
+      register: _node_one
+
+    - name: "If UUID unknown — list nodes and find by name"
+      when: (remnawave_node_uuid | length) == 0
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}/nodes"
+        method: GET
+        headers: "{{ _rw_hdr }}"
+        return_content: true
+        timeout: "{{ remnawave_timeout }}"
+      register: _nodes_all
+
+    - name: "Pick node object"
+      ansible.builtin.set_fact:
+        _node_obj: >-
+          {{
+            (
+              (remnawave_node_uuid | length > 0)
+              | ternary(
+                  (_node_one.json.response | default({})),
+                  (
+                    (_nodes_all.json.response | default([]))
+                    | selectattr('name','equalto', remnawave_node_name)
+                    | list | first | default({})
+                  )
+                )
+            )
+          }}
+
+    - name: "Fail if node not found"
+      ansible.builtin.fail:
+        msg: "Node not found by uuid='{{ remnawave_node_uuid }}' or name='{{ remnawave_node_name }}'"
+      when: (_node_obj | length) == 0
+
+# На всякий случай перечитаем полную карточку ноды по UUID (актуальный статус/флаги)
+- name: "Refresh node by UUID"
+  ansible.builtin.uri:
+    url: "{{ remnawave_panel_api_base }}/nodes/{{ _node_obj.uuid }}"
+    method: GET
+    headers: "{{ _rw_hdr }}"
+    return_content: true
+    status_code: [200]
+    timeout: "{{ remnawave_timeout }}"
+  register: _node_full
+
+- name: "Extract current disabled/desired flags"
+  ansible.builtin.set_fact:
+    _cur_disabled: "{{ (_node_full.json.response.isDisabled | default(false)) | bool }}"
+    _want_disabled: "{{ not (remnawave_enable_state | bool) }}"
+
+# ── DRY-RUN summary ────────────────────────────────────────────────────────────
+- name: "Dry-run summary"
+  when: remnawave_dry_run | bool
+  ansible.builtin.debug:
+    msg:
+      node_uuid: "{{ _node_full.json.response.uuid | default(_node_obj.uuid) }}"
+      node_name: "{{ _node_full.json.response.name | default(_node_obj.name) }}"
+      current_isDisabled: "{{ _cur_disabled }}"
+      target_isDisabled: "{{ _want_disabled }}"
+
+# ── Optional: toggle all hosts of this node (bulk) ─────────────────────────────
+- name: "When requested, toggle all hosts attached to the node (bulk)"
+  when: remnawave_disable_hosts_of_node | bool
+  block:
+    - name: "Fetch all hosts"
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}/hosts"
+        method: GET
+        headers: "{{ _rw_hdr }}"
+        return_content: true
+        timeout: "{{ remnawave_timeout }}"
+      register: _hosts_all
+
+    - name: "Collect host UUIDs bound to node"
+      ansible.builtin.set_fact:
+        _hosts_of_node: >-
+          {{
+            (_hosts_all.json.response | default([]))
+            | selectattr('nodes','defined')
+            | selectattr('nodes','contains', _node_obj.uuid)
+            | map(attribute='uuid') | list
+          }}
+
+    - name: "DRY-RUN summary for hosts"
+      when: remnawave_dry_run | bool
+      ansible.builtin.debug:
+        msg:
+          action: "{{ (remnawave_enable_state | bool) | ternary('bulk enable', 'bulk disable') }}"
+          node_uuid: "{{ _node_obj.uuid }}"
+          host_uuids: "{{ _hosts_of_node }}"
+
+    - name: "Bulk toggle hosts (enable/disable)"
+      when: not remnawave_dry_run | bool and (_hosts_of_node | length > 0)
+      ansible.builtin.uri:
+        url: >-
+          {{ remnawave_panel_api_base }}/hosts/bulk/{{ (remnawave_enable_state | bool) | ternary('enable', 'disable') }}
+        method: POST
+        headers: "{{ _rw_hdr }}"
+        body_format: json
+        body: { uuids: "{{ _hosts_of_node }}" }
+        return_content: true
+        status_code: [200, 400]
+        timeout: "{{ remnawave_timeout }}"
+      register: _bulk_hosts
+
+# ── Toggle node via actions endpoint ───────────────────────────────────────────
+- name: "Skip if node already in desired state"
+  when:
+    - not remnawave_dry_run | bool
+    - _cur_disabled == _want_disabled
+  ansible.builtin.debug:
+    msg: "Node already in desired state (isDisabled={{ _cur_disabled }})"
+
+- name: "Toggle node via action endpoint"
+  when:
+    - not remnawave_dry_run | bool
+    - _cur_disabled != _want_disabled
+  ansible.builtin.uri:
+    url: >-
+      {{ remnawave_panel_api_base }}/nodes/{{ _node_obj.uuid }}/actions/{{ _want_disabled | ternary('disable', 'enable') }}
+    method: POST
+    headers: "{{ _rw_hdr }}"
+    return_content: true
+    status_code: [200, 400, 404]
+    timeout: "{{ remnawave_timeout }}"
+  register: _node_action
+  changed_when: true
+
+- name: "Wait until node reflects desired disabled state"
+  when:
+    - not remnawave_dry_run | bool
+    - _cur_disabled != _want_disabled
+  retries: 10
+  delay: 2
+  until: >
+    (_check.json.response.isDisabled | default(false) | bool) == (_want_disabled | bool)
+  ansible.builtin.uri:
+    url: "{{ remnawave_panel_api_base }}/nodes/{{ _node_obj.uuid }}"
+    method: GET
+    headers: "{{ _rw_hdr }}"
+    return_content: true
+    status_code: [200]
+    timeout: "{{ remnawave_timeout }}"
+  register: _check

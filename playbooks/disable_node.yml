@@ -1,0 +1,7 @@
+---
+- name: Disable/Enable Remnawave Node (optionally its hosts)
+  hosts: nodes
+  become: true
+  roles:
+    - role: remnawave_disable_node
+      tags: [disable_node]

@@ -1,0 +1,19 @@
+# Доступ к панели
+# Пример: remnawave_panel_url: "https://panel.example.com"
+remnawave_panel_api_base: "{{ (remnawave_panel_url | default('')) | ternary(remnawave_panel_url ~ '/api', '') }}"
+remnawave_panel_api_token: ""           # хранить в Vault!
+
+# Кого удаляем
+remnawave_node_uuid: ""                 # если пусто — ищем по имени
+remnawave_node_name: "{{ inventory_hostname }}"    # альтернативный способ (берётся первая точная запись)
+
+# Поведение
+remnawave_delete_hosts: true            # удалять связанные с нодой хосты перед удалением
+remnawave_dry_run: false                # только показать, что будет удалено (ничего не трогаем)
+
+# Разрешить удалять ноду, оставляя за ней привязанные хосты (не рекомендуется)
+# Используется только если remnawave_delete_hosts = false
+remnawave_allow_orphan_hosts: false
+
+# Прочее
+remnawave_timeout: 30

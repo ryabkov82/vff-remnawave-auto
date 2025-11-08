@@ -8,7 +8,7 @@ remnawave_panel_api_token: ""           # хранить в Vault!
 # Идентичность ноды
 remnawave_node_name: "{{ inventory_hostname }}"
 remnawave_node_address: >-
-  {{ hostvars[inventory_hostname].node_address
+  {{ hostvars[inventory_hostname].remnawave_node_address
      | default(hostvars[inventory_hostname].ansible_host
      | default(inventory_hostname)) }}
 

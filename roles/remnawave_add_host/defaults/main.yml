@@ -6,7 +6,7 @@ remnawave_panel_api_token: ""           # хранить в Vault!
 
 # Required host params
 rw_host_remark: "{{ remnawave_host_remark }}"    # e.g. "DE-FRA-1 VLESS TCP Reality"
-rw_host_address: "{{ node_address }}"   # public hostname to publish in subscription
+rw_host_address: "{{ remnawave_host_address }}"   # public hostname to publish in subscription
 rw_host_port: 443
 rw_host_path: ""
 rw_host_sni: "{{ remnawave_host_sni }}"
