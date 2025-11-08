@@ -3,14 +3,22 @@
   hosts: nodes
   become: true
   roles:
-    - role: common           # базовые пакеты/настройки
+    - role: common
       tags: [base]
 
-    - role: docker_engine    # Docker + compose v2 ОБЯЗАТЕЛЬНО перед панелью
+    - role: docker_engine
       tags: [docker]
 
     - role: remnawave_register_node
       tags: [register_node]
+
+    # DNS для домена хоста (создаём A/AAAA или CNAME)
+    - role: cf_dns
+      when:
+        - cf_dns_zone is defined
+        - cf_dns_records is defined
+        - (cf_dns_records | length) > 0
+      tags: [cf_dns]
 
     - role: remnawave_add_host
       tags: [register_host]

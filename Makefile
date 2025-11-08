@@ -23,6 +23,9 @@ PLAY_SMOKE     ?= playbooks/smoke.yml
 PLAY_SITE      ?= playbooks/site.yml
 PLAY_DNS       ?= playbooks/dns.yml
 PLAY_INBOUNDS  ?= playbooks/inbounds.yml
+# === Плейбуки для отключения/удаления нод ===
+PLAY_DISABLE_NODE ?= playbooks/disable_node.yml
+PLAY_DELETE_NODE  ?= playbooks/delete_node.yml
 
 # Доп. флаги для ansible/ansible-playbook (например: --ask-vault-pass, -e var=val)
 ANSIBLE_FLAGS ?=
@@ -105,7 +108,27 @@ nodes: ## Деплой Remnawave Nodes (+ регистрация, health-checks)
 	@#   make nodes LIMIT=de-fra-1 TAGS=node
 	@#   make nodes LIMIT=de-fra-1 TAGS=register_node
 	@#   make nodes LIMIT=de-fra-1 TAGS=register_host
+	@#   make nodes LIMIT=de-fra-1 TAGS=register_host EXTRA='-e rw_host_force_recreate=true'
+	@#   make nodes LIMIT=de-fra-1 TAGS=cf_dns
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_NODES) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
+
+disable-node: ## Отключить/включить ноду (опц.: отключить её хосты)
+	@# Примеры:
+	@#   make disable-node LIMIT=de-fra-1
+	@#   make disable-node EXTRA='-e remnawave_node_uuid=UUID -e remnawave_enable_state=false'
+	@#   make disable-node EXTRA='-e remnawave_node_name=de-fra-1 -e remnawave_enable_state=false -e remnawave_disable_hosts_of_node=true'
+	@#   # DRY-RUN:
+	@#   make disable-node EXTRA='-e remnawave_node_name=de-fra-1 -e remnawave_enable_state=false -e remnawave_dry_run=true'
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_DISABLE_NODE) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
+
+delete-node: ## Удалить ноду (опц.: каскадно удалить связанные хосты)
+	@# Примеры:
+	@#   make delete-node LIMIT=de-fra-1
+	@#   make delete-node EXTRA='-e remnawave_node_uuid=UUID -e remnawave_delete_hosts=true'
+	@#   make delete-node EXTRA='-e remnawave_node_name=de-fra-1 -e remnawave_delete_hosts=false'
+	@#   # DRY-RUN:
+	@#   make delete-node EXTRA='-e remnawave_node_name=de-fra-1 -e remnawave_dry_run=true'
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_DELETE_NODE) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
 
 haproxy: ## Настройка HAProxy TCP SNI-перекидки
 	@# Примеры:

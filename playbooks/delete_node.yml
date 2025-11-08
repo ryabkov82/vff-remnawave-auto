@@ -1,0 +1,7 @@
+---
+- name: Delete Remnawave Node (optionally cascade delete hosts)
+  hosts: nodes
+  become: true
+  roles:
+    - role: remnawave_delete_node
+      tags: [delete_node]
