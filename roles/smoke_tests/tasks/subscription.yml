@@ -1,0 +1,41 @@
+---
+- name: Subscription | Assert input
+  ansible.builtin.assert:
+    that:
+      - smoke_subscription_domain is defined
+      - smoke_subscription_domain | length > 0
+    fail_msg: "smoke_subscription_domain must be set."
+  when: smoke_subscription_enabled | bool
+  tags: [smoke, subscription]
+
+- name: Subscription | DNS resolve A/AAAA
+  ansible.builtin.getent:
+    database: ahosts
+    key: "{{ smoke_subscription_domain }}"
+  register: _sub_dns
+  when: smoke_subscription_enabled | bool
+  tags: [smoke, subscription]
+
+- name: Subscription | TCP 443 reachable
+  ansible.builtin.wait_for:
+    host: "{{ smoke_subscription_domain }}"
+    port: 443
+    timeout: "{{ smoke_subscription_timeout }}"
+    state: started
+  when: smoke_subscription_enabled | bool
+  tags: [smoke, subscription]
+
+- name: Subscription | HTTPS GET
+  ansible.builtin.uri:
+    url: "https://{{ smoke_subscription_domain }}{{ smoke_subscription_path }}"
+    method: GET
+    status_code: "{{ smoke_subscription_expect_status }}"
+    validate_certs: true
+    return_content: false
+    timeout: "{{ smoke_subscription_timeout }}"
+  register: _sub_http
+  retries: "{{ smoke_subscription_retries }}"
+  delay: "{{ smoke_subscription_delay }}"
+  until: _sub_http.status in smoke_subscription_expect_status
+  when: smoke_subscription_enabled | bool
+  tags: [smoke, subscription]

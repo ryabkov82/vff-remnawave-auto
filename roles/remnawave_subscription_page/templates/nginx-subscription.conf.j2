@@ -1,0 +1,85 @@
+upstream remnawave-subscription-page {
+    server 127.0.0.1:{{ remnawave_sub_app_port }};
+}
+
+# HTTP -> HTTPS + ACME (public 80)
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{ remnawave_sub_public_domain }};
+
+    # ACME http-01 через webroot
+    location ^~ /.well-known/acme-challenge/ {
+        root {{ nginx_webroot | default('/var/www/letsencrypt') }};
+        default_type "text/plain";
+        try_files $uri =404;
+        access_log off;
+    }
+
+    # Остальное — редирект на https (HAProxy:443 -> nginx:4443)
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    server_name {{ remnawave_sub_public_domain }};
+
+    # слушаем ЛОКАЛЬНО, не 443
+    listen {{ remnawave_nginx_bind_address | default('127.0.0.1') }}:{{ remnawave_nginx_external_https_port }} ssl http2;
+    {% if nginx_bind_ipv6 | default(false) %}
+    listen [::1]:{{ remnawave_nginx_external_https_port }} ssl http2;
+    {% endif %}
+
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_session_timeout 1d;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_tickets off;
+    ssl_certificate     "{{ remnawave_nginx_ssl_fullchain }}";
+    ssl_certificate_key "{{ remnawave_nginx_ssl_privkey }}";
+    ssl_stapling        on;
+    ssl_stapling_verify on;
+
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_buffers 16 8k;
+    gzip_http_version 1.1;
+    gzip_min_length 256;
+    gzip_types
+      application/atom+xml
+      application/geo+json
+      application/javascript
+      application/x-javascript
+      application/json
+      application/ld+json
+      application/manifest+json
+      application/rdf+xml
+      application/rss+xml
+      application/xhtml+xml
+      application/xml
+      font/eot font/otf font/ttf
+      image/svg+xml
+      text/css text/javascript text/plain text/xml;
+
+    # Lightweight health endpoint that does NOT touch upstream
+    location = /healthz {
+        access_log off;
+        add_header Content-Type text/plain;
+        return 200 "ok\n";
+    }
+
+    location / {
+        proxy_http_version 1.1;
+        proxy_pass http://remnawave-subscription-page;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+}

@@ -1,0 +1,85 @@
+---
+- name: Ensure webroot dir exists (for http-01)
+  ansible.builtin.file:
+    path: "{{ nginx_webroot }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0755"
+  when: not _cert_present or (nginx_force_issue | bool)
+
+- name: Install certbot (http-01)
+  ansible.builtin.apt:
+    name: "{{ nginx_certbot_package }}"
+    state: present
+  when: not _cert_present or (nginx_force_issue | bool)
+
+- name: Render temporary HTTP site for ACME challenge (http-01)
+  ansible.builtin.template:
+    src: site-http-challenge.conf.j2
+    dest: "{{ nginx_sites_dir }}/{{ nginx_server_name }}.challenge.conf"
+    mode: "0644"
+  when: not _cert_present or (nginx_force_issue | bool)
+  notify: nginx reload
+
+- name: Enable temporary challenge site (http-01)
+  ansible.builtin.file:
+    src: "{{ nginx_sites_dir }}/{{ nginx_server_name }}.challenge.conf"
+    dest: "{{ nginx_sites_enabled_dir }}/{{ nginx_server_name }}.challenge.conf"
+    state: link
+  when: not _cert_present or (nginx_force_issue | bool)
+  notify: nginx reload
+
+- name: Disable default site if present (port 80)
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  when: not _cert_present or (nginx_force_issue | bool)
+  notify: nginx reload
+
+- name: Apply nginx changes before certbot
+  ansible.builtin.meta: flush_handlers
+  when: not _cert_present or (nginx_force_issue | bool)
+
+- name: Ensure ACME challenge subdir exists
+  ansible.builtin.file:
+    path: "{{ nginx_webroot }}/.well-known/acme-challenge"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0755"
+  when: not _cert_present or (nginx_force_issue | bool)
+
+- name: Obtain certificate via certbot (webroot http-01)
+  ansible.builtin.command:
+    cmd: >
+      certbot certonly --agree-tos --non-interactive
+      --email {{ nginx_letsencrypt_email }}
+      --webroot -w {{ nginx_webroot }}
+      -d {{ nginx_server_name }}
+  args:
+    creates: "/etc/letsencrypt/live/{{ nginx_server_name }}/fullchain.pem"
+  when: not _cert_present or (nginx_force_issue | bool)
+  register: _certbot_http
+  changed_when: "_certbot_http.rc == 0"
+
+# Уберём временный сайт ACME-челленджа после получения сертификата
+- name: Disable temporary challenge site (http-01)
+  ansible.builtin.file:
+    path: "{{ nginx_sites_enabled_dir }}/{{ nginx_server_name }}.challenge.conf"
+    state: absent
+  when:
+    - (_cert_present | default(false)) or (_certbot_http is defined and _certbot_http.rc == 0)
+  notify: nginx reload
+
+- name: Remove temporary challenge config file (http-01)
+  ansible.builtin.file:
+    path: "{{ nginx_sites_dir }}/{{ nginx_server_name }}.challenge.conf"
+    state: absent
+  when:
+    - (_cert_present | default(false)) or (_certbot_http is defined and _certbot_http.rc == 0)
+  notify: nginx reload
+
+# Применим удаление немедленно, чтобы в active-конфиге не висел challenge-сайт
+- name: Apply nginx changes after cleanup (http-01)
+  ansible.builtin.meta: flush_handlers

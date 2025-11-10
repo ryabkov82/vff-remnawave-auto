@@ -45,3 +45,6 @@ nginx_selfsigned_valid_days: 825
 nginx_force_issue: false
 # Гонять certbot renew --dry-run в конце роли (только если сертификат уже существует)
 nginx_renew_dry_run: false
+
+# Управление vhost (если false, роль не рендерит конфиг сайта и не дергает reload)
+nginx_manage_vhost: true

@@ -6,6 +6,9 @@ haproxy_bind_port: 443
 # Домен панели, по которому маршрутизируем на Nginx
 haproxy_panel_domain: "{{ remnawave_panel_frontend_domain | default('panel.example.com') }}"
 
+haproxy_nginx_sni_domains:
+  - "{{ haproxy_panel_domain }}"
+
 # Бэкенды (локальные)
 haproxy_nginx_host: "127.0.0.1"
 haproxy_nginx_port: "{{ nginx_external_https_port | default(4443) }}"

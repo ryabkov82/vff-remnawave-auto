@@ -1,0 +1,101 @@
+---
+# tasks/main.yml — systemd Nginx only
+
+- name: Assert local-docker DNS usage makes sense
+  ansible.builtin.assert:
+    that:
+      - not remnawave_sub_use_local_docker_dns | bool
+        or (remnawave_sub_deploy_mode == 'bundled')
+    fail_msg: >-
+      remnawave_sub_use_local_docker_dns=true допустим только в bundled-сценарии
+      (общая docker-сеть с alias 'remnawave'). Для системного Nginx оставьте false.
+
+- name: Detect deploy mode locally (fallback)
+  ansible.builtin.set_fact:
+    remnawave_sub_deploy_mode: >-
+      {{
+        remnawave_sub_deploy_mode
+        | default(
+            'separate' if ('subscription' in groups and inventory_hostname in groups['subscription'])
+            else 'bundled'
+          )
+      }}
+
+- name: Guess panel domain from panel group if not provided
+  ansible.builtin.set_fact:
+    haproxy_panel_domain: >-
+      {{
+        haproxy_panel_domain
+        | default(
+            (hostvars[groups['panel'][0]].remnawave_panel_frontend_domain)
+            if ('panel' in groups and groups['panel'])
+            else 'panel.example.com'
+          )
+      }}
+
+- name: Ensure subscription dir exists
+  ansible.builtin.file:
+    path: "{{ remnawave_sub_dir }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+
+- name: Render docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ remnawave_sub_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Render .env for subscription page
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ remnawave_sub_dir }}/.env"
+    owner: root
+    group: root
+    mode: "0640"
+
+- name: Install app-config.json from string (if provided)
+  when: remnawave_sub_appconfig_enabled | bool and (remnawave_sub_appconfig_content | length > 0)
+  ansible.builtin.copy:
+    content: "{{ remnawave_sub_appconfig_content }}"
+    dest: "{{ remnawave_sub_dir }}/app-config.json"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Copy app-config.json from source file
+  when: remnawave_sub_appconfig_enabled | bool and (remnawave_sub_appconfig_content | length == 0)
+  ansible.builtin.copy:
+    src: "{{ remnawave_sub_appconfig_src }}"
+    dest: "{{ remnawave_sub_dir }}/app-config.json"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: (Optional) Update SUB_PUBLIC_DOMAIN in panel .env
+  when: remnawave_sub_update_panel_env | bool
+  block:
+    - name: Ensure SUB_PUBLIC_DOMAIN=... in panel .env
+      ansible.builtin.lineinfile:
+        path: "{{ remnawave_panel_root_dir }}/.env"
+        regexp: '^SUB_PUBLIC_DOMAIN='
+        line: "SUB_PUBLIC_DOMAIN={{ remnawave_sub_public_domain }}"
+        create: true
+        owner: root
+        group: root
+        mode: "0640"
+      notify: Restart Panel Stack
+
+- name: Start/Update Subscription-Page Stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ remnawave_sub_dir }}"
+    state: present
+    pull: always
+  notify: Reload Nginx (systemd)
+
+- name: Configure Nginx for Subscription Page
+  when: remnawave_sub_manage_nginx | bool
+  ansible.builtin.include_tasks: nginx.yml

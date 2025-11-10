@@ -26,6 +26,8 @@ PLAY_INBOUNDS  ?= playbooks/inbounds.yml
 # === Плейбуки для отключения/удаления нод ===
 PLAY_DISABLE_NODE ?= playbooks/disable_node.yml
 PLAY_DELETE_NODE  ?= playbooks/delete_node.yml
+# === Subscription Page ===
+PLAY_SUB ?= playbooks/subscription.yml
 
 # Доп. флаги для ansible/ansible-playbook (например: --ask-vault-pass, -e var=val)
 ANSIBLE_FLAGS ?=
@@ -130,6 +132,20 @@ delete-node: ## Удалить ноду (опц.: каскадно удалит�
 	@#   make delete-node EXTRA='-e remnawave_node_name=de-fra-1 -e remnawave_dry_run=true'
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_DELETE_NODE) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
 
+sub: ## Deploy subscription page (auto detect bundled/separate)
+	@# Примеры:
+	@# Separate (два хоста: panel + subscription):
+	@# make sub
+	@# Bundled (на панельном хосте):
+	@# make sub LIMIT=panel
+	@# Только DNS для sub-домена:
+	@# make sub TAGS=cf_dns
+	@# Только выпуск сертификата:
+	@# make sub TAGS=cert
+	@# Только перегенерация vhost-а и reload Nginx:
+	@# make sub TAGS=nginx
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
+
 haproxy: ## Настройка HAProxy TCP SNI-перекидки
 	@# Примеры:
 	@#   make haproxy
@@ -151,6 +167,13 @@ smoke-docker: ## Запуск только Docker smoke-тестов
 	@#   make smoke-docker LIMIT=de-fra-1
 	@#   make smoke-docker LIMIT=de-fra-1 ANSIBLE_FLAGS='-e smoke_run_hello=false'
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SMOKE) $(LIMIT_FLAG) --tags docker $(ANSIBLE_FLAGS) $(EXTRA)
+
+# --- Smoke tests (Subscription only) ---
+smoke-sub: ## Запуск только Subscription smoke-тестов
+	@# Примеры:
+	@#   make smoke-sub
+	@#   make smoke-sub LIMIT=de-fra-1
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SMOKE) $(LIMIT_FLAG) --tags smoke_subscription $(ANSIBLE_FLAGS) $(EXTRA)
 
 site: ## Полный сценарий (site.yml)
 	@# Примеры:

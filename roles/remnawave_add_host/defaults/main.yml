@@ -22,7 +22,7 @@ rw_host_view_position: 9999
 rw_host_is_hidden: false
 rw_host_override_sni_from_address: false
 rw_host_allow_insecure: false
-rw_host_shuffle_host: false
+rw_host_shuffle_host: true
 rw_host_mihomo_x25519: false
 rw_host_vless_route_id: null        # integer or null
 

@@ -1,0 +1,37 @@
+---
+# Render and enable dedicated vhost for subscription domain (systemd Nginx)
+
+- name: Ensure Nginx sites dirs exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ remnawave_nginx_sites_dir }}"
+    - "{{ remnawave_nginx_sites_enabled_dir }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Render Subscription Nginx vhost
+  ansible.builtin.template:
+    src: nginx-subscription.conf.j2
+    dest: "{{ remnawave_nginx_sites_dir }}/{{ remnawave_nginx_subscription_site }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload Nginx (systemd)
+
+- name: Enable Subscription Nginx vhost (symlink)
+  ansible.builtin.file:
+    src: "{{ remnawave_nginx_sites_dir }}/{{ remnawave_nginx_subscription_site }}"
+    dest: "{{ remnawave_nginx_sites_enabled_dir }}/{{ remnawave_nginx_subscription_site }}"
+    state: link
+    owner: root
+    group: root
+  notify: Reload Nginx (systemd)
+
+- name: Validate Nginx config
+  ansible.builtin.command: nginx -t
+  changed_when: false

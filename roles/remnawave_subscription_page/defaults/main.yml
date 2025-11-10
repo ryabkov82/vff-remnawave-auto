@@ -1,0 +1,41 @@
+# remnawave_subscription_page — systemd Nginx only
+remnawave_sub_deploy_mode: "bundled"
+remnawave_sub_dir: /opt/remnawave/subscription
+remnawave_sub_container_name: remnawave-subscription-page
+remnawave_sub_image: remnawave/subscription-page:latest
+remnawave_sub_app_port: 3010
+remnawave_sub_public_domain: sub.example.com
+haproxy_panel_domain: panel.example.com
+remnawave_sub_update_panel_env: true
+remnawave_panel_root_dir: /opt/remnawave
+remnawave_sub_use_local_docker_dns: false  # включай ТОЛЬКО если панель и субстраница в одной docker-сети с alias "remnawave"
+remnawave_panel_base_url: "https://{{ remnawave_panel_frontend_domain }}"
+remnawave_sub_env:
+  APP_PORT: "{{ remnawave_sub_app_port }}"
+  REMNAWAVE_PANEL_URL: >-
+    {{
+      'http://remnawave:3000'
+      if remnawave_sub_use_local_docker_dns | bool
+      else remnawave_panel_base_url
+    }}
+  META_TITLE: "Subscription page"
+  META_DESCRIPTION: "Subscription page for Friends Connect"
+  CUSTOM_SUB_PREFIX: ""
+  MARZBAN_LEGACY_LINK_ENABLED: "false"
+  MARZBAN_LEGACY_SECRET_KEY: ""
+  REMNAWAVE_API_TOKEN: ""
+  CADDY_AUTH_API_TOKEN: ""
+  CLOUDFLARE_ZERO_TRUST_CLIENT_ID: ""
+  CLOUDFLARE_ZERO_TRUST_CLIENT_SECRET: ""
+remnawave_sub_appconfig_enabled: true
+remnawave_sub_appconfig_src: "{{ role_path }}/files/app-config.json"
+remnawave_sub_appconfig_content: ""
+remnawave_sub_manage_nginx: true
+remnawave_nginx_sites_dir: /etc/nginx/sites-available
+remnawave_nginx_sites_enabled_dir: /etc/nginx/sites-enabled
+remnawave_nginx_subscription_site: subscription.conf
+remnawave_nginx_ssl_fullchain: "/etc/letsencrypt/live/{{ remnawave_sub_public_domain }}/fullchain.pem"
+remnawave_nginx_ssl_privkey: "/etc/letsencrypt/live/{{ remnawave_sub_public_domain }}/privkey.pem"
+
+remnawave_nginx_bind_address: "{{ nginx_bind_address | default('127.0.0.1') }}"
+remnawave_nginx_external_https_port: "{{ nginx_external_https_port | default(4443) }}"

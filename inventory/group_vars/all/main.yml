@@ -8,3 +8,7 @@ docker_compose_dir: /opt/remnawave
 # маппинг имени переменной, чтобы роль увидела нужное имя
 remnawave_panel_api_token: "{{ vault_remnawave_panel_api_token }}"
 remnawave_inbound_tag: "VLESS TCP REALITY"
+
+cf_dns_api_token: "{{ vault_cf_dns_api_token }}"
+
+remnawave_sub_public_domain: sub.vpn-for-friends.com

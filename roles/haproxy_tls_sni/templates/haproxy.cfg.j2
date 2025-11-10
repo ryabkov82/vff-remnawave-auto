@@ -52,7 +52,11 @@ frontend https_in
 
     # ACL для маршрутизации
     acl is_tls     req.ssl_hello_type 1
-    acl is_panel   req.ssl_sni -i {{ haproxy_panel_domain }}
+    # Все домены, которые должны идти на Nginx (панель, подписка и т.п.)
+    # Можно перечислять хоть десятки доменов в одном ACL.
+    {% set _nginx_domains = (haproxy_nginx_sni_domains | default([haproxy_panel_domain])) %}
+    
+    acl is_nginx_sni req.ssl_sni -i {{ _nginx_domains | join(' ') }}
 
     # Если не TLS — уводим сразу в XRAY (прямой TCP без задержки)
     use_backend be_xray if !is_tls
@@ -60,7 +64,7 @@ frontend https_in
     # Для TLS включаем клиентские keep-alive (полезно для туннеля)
     option clitcpka
 
-    use_backend be_panel if is_panel
+    use_backend be_panel if is_nginx_sni
     default_backend be_xray
 
 backend be_panel

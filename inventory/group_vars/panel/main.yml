@@ -1,6 +1,5 @@
 ---
 remnawave_panel_frontend_domain: remna.vpn-for-friends.com
-remnawave_panel_sub_public_domain: remna.vpn-for-friends.com/api/sub
 
 remnawave_panel_telegram_enabled: true
 remnawave_panel_telegram_bot_token: "{{ vault_remnawave_panel_telegram_bot_token }}"
@@ -26,7 +25,6 @@ remnawave_panel_pg_password: "{{ vault_remnawave_panel_pg_password }}"
 remnawave_panel_jwt_auth_secret: "{{ vault_remnawave_panel_jwt_auth_secret }}"
 remnawave_panel_jwt_api_tokens_secret: "{{ vault_remnawave_panel_jwt_api_tokens_secret }}"
 
-cf_dns_api_token: "{{ vault_cf_dns_api_token }}"
 cf_dns_zone: "vpn-for-friends.com"
 cf_dns_target_ip: "77.239.127.199"
 

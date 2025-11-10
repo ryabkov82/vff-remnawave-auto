@@ -1,0 +1,4 @@
+# Хост(ы) отдельной страницы подписки
+#remnawave_sub_public_domain: sub.vpn-for-friends.com
+#cf_dns_zone: "vpn-for-friends.com"
+#cf_dns_target_ip: "203.0.113.55"   # публичный IP сервера subscription

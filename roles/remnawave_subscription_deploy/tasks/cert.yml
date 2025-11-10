@@ -1,0 +1,10 @@
+- name: ACME | Issue certificate for subscription domain (auto mode)
+  ansible.builtin.include_role:
+    name: nginx
+    apply:
+      tags: [tls]
+  vars:
+    nginx_manage_vhost: false
+    nginx_tls_mode: "{{ remnawave_sub_tls_mode }}"
+    nginx_server_name: "{{ remnawave_sub_public_domain }}"
+  tags: [cert, tls]
