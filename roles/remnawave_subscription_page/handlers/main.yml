@@ -1,0 +1,13 @@
+---
+- name: Reload Nginx (systemd)
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
+
+- name: Restart Panel Stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ remnawave_panel_root_dir }}"
+    state: present
+    pull: missing
+    recreate: always
+    remove_orphans: true

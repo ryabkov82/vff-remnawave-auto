@@ -1,0 +1,44 @@
+---
+- name: Apply pending nginx handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Inspect nginx listeners for HTTPS port
+  ansible.builtin.command: "ss -lntp"
+  register: _ss_out
+  changed_when: false
+
+- name: Decide if wide-bind detected on HTTPS port
+  ansible.builtin.set_fact:
+    _nginx_wide_bind: >-
+      {{
+        (nginx_bind_address | default('127.0.0.1')) == '127.0.0.1' and (
+          (_ss_out.stdout | default('')) is search('LISTEN\\s+\\d+\\s+\\d+\\s+0\\.0\\.0\\.0:{{ nginx_external_https_port }}')
+          or
+          (_ss_out.stdout | default('')) is search('LISTEN\\s+\\d+\\s+\\d+\\s+\\[::\\]:{{ nginx_external_https_port }}')
+        )
+      }}
+
+- name: Force restart if nginx still bound wide on HTTPS port
+  ansible.builtin.service:
+    name: nginx
+    state: restarted
+  when: _nginx_wide_bind | bool
+
+- name: Wait for nginx HTTPS on loopback
+  ansible.builtin.wait_for:
+    host: "{{ nginx_bind_address | default('127.0.0.1') }}"
+    port: "{{ nginx_external_https_port | int }}"
+    state: started
+    timeout: 20
+
+- name: HTTPS sanity via loopback
+  ansible.builtin.uri:
+    url: "https://{{ nginx_bind_address | default('127.0.0.1') }}:{{ nginx_external_https_port }}/"
+    status_code: [200, 301, 302]
+    validate_certs: false
+    return_content: false
+    timeout: 10
+  register: _https_local
+  retries: 3
+  delay: 3
+  until: _https_local.status in [200, 301, 302]

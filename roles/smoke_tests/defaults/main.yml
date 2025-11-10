@@ -1,0 +1,8 @@
+# --- Subscription page smoke defaults ---
+smoke_subscription_enabled: true
+smoke_subscription_domain: "{{ remnawave_sub_public_domain }}"
+smoke_subscription_path: "/healthz"        # можно подменить на /<shortUuid>
+smoke_subscription_expect_status: [200]
+smoke_subscription_timeout: 10
+smoke_subscription_retries: 5
+smoke_subscription_delay: 3

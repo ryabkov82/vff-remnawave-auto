@@ -15,7 +15,7 @@ remnawave_panel_pg_port: 6767
 
 # Domains (MUST be set by inventory/group vars)
 remnawave_panel_frontend_domain: ""
-remnawave_panel_sub_public_domain: ""
+remnawave_sub_public_domain: ""
 
 
 # Secrets (auto-generated if empty)

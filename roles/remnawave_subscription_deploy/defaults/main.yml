@@ -1,0 +1,51 @@
+# Defaults for remnawave_subscription_deploy
+# Deployment mode: "bundled" (same server as panel) or "separate" (dedicated server)
+remnawave_sub_deploy_mode: "bundled"
+
+# Required domains
+# - Domain of subscription page
+remnawave_sub_public_domain: "sub.example.com"
+# - Panel public domain (used by subscription page in separate mode)
+haproxy_panel_domain: "{{ remnawave_panel_frontend_domain | default('') }}"
+
+# DNS (Cloudflare) target IPs
+# For 'bundled' -> IP of panel/HAProxy
+# For 'separate' -> IP of subscription server
+cf_dns_target_ip: ""
+# Optional IPv6
+# cf_dns_target_ipv6: ""
+
+# Cloudflare zone (e.g., example.com) and API token (use Vault)
+cf_dns_zone: ""
+cloudflare_api_token: ""
+
+# Какой способ выпускать сертификат: letsencrypt (HTTP-01) или letsencrypt_dns01 (Cloudflare)
+remnawave_sub_tls_mode: "letsencrypt"
+
+# Email для ACME (оба режима)
+nginx_letsencrypt_email: "admin@example.com"
+
+# Пути LE (systemd nginx)
+remnawave_nginx_ssl_fullchain: "/etc/letsencrypt/live/{{ remnawave_sub_public_domain }}/fullchain.pem"
+remnawave_nginx_ssl_privkey: "/etc/letsencrypt/live/{{ remnawave_sub_public_domain }}/privkey.pem"
+
+# Директории nginx (нужны для HTTP-01 временного сайта)
+nginx_sites_dir: "/etc/nginx/sites-available"
+nginx_sites_enabled_dir: "/etc/nginx/sites-enabled"
+nginx_webroot: "/var/www/letsencrypt"
+
+# Для DNS-01: токен Cloudflare (по умолчанию маппим на уже используемый в cf_dns)
+nginx_cf_api_token: "{{ cf_dns_api_token | default(vault_cf_dns_api_token | default('')) }}"
+
+# Subscription page role knobs
+remnawave_sub_app_port: 3010
+remnawave_sub_appconfig_enabled: true
+remnawave_sub_update_panel_env: true
+remnawave_sub_manage_nginx: true
+
+# In bundled mode we also add sub-domain to HAProxy's Nginx SNI list
+haproxy_nginx_sni_domains: []
+
+# Group names used in 'separate' mode (must exist in your inventory)
+remnawave_group_panel: "panel"
+remnawave_group_subscription: "subscription"

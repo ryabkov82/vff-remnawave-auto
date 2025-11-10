@@ -33,3 +33,6 @@
     enabled: true
     state: started
   tags: [haproxy]
+
+- name: Flush handlers (apply HAProxy changes)
+  ansible.builtin.meta: flush_handlers

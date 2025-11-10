@@ -15,3 +15,8 @@
   ansible.builtin.import_tasks: docker.yml
   when: (smoke_enable_docker | default(true)) | bool
   tags: ["smoke_docker"]
+
+- name: Include Subscription Smoke Tests
+  ansible.builtin.import_tasks: subscription.yml
+  when: (smoke_enable_subscription | default(true)) | bool
+  tags: ["smoke_subscription"]
