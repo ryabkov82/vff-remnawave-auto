@@ -1,0 +1,13 @@
+services:
+  {{ remnawave_sub_container_name }}:
+    image: "{{ remnawave_sub_image }}"
+    container_name: "{{ remnawave_sub_container_name }}"
+    hostname: "{{ remnawave_sub_container_name }}"
+    restart: always
+    env_file: [.env]
+{% if remnawave_sub_appconfig_enabled %}
+    volumes:
+      - ./app-config.json:/opt/app/frontend/assets/app-config.json
+{% endif %}
+    ports:
+      - "127.0.0.1:{{ remnawave_sub_app_port }}:{{ remnawave_sub_app_port }}"

@@ -1,0 +1,71 @@
+---
+# Separate: subscription page on a dedicated server
+# This role expects two inventory groups:
+#   - remnawave_group_panel (default: "panel")
+#   - remnawave_group_subscription (default: "subscription")
+# Run this role on both groups (e.g., hosts: panel,subscription).
+
+- name: Preflight | Ensure inventory groups exist
+  ansible.builtin.assert:
+    that:
+      - remnawave_group_panel in groups
+      - remnawave_group_subscription in groups
+    fail_msg: "Inventory groups '{{ remnawave_group_panel }}' and '{{ remnawave_group_subscription }}' must exist."
+  run_once: true
+
+- name: DNS | Create/Update A record for subscription domain (delegated to localhost)
+  ansible.builtin.include_role:
+    name: cf_dns
+  vars:
+    cf_dns_records:
+      - type: "A"
+        name: "{{ remnawave_sub_public_domain | regex_replace('\\.' ~ cf_dns_zone ~ '$', '') }}"
+        proxied: false
+        ttl: 300
+  delegate_to: localhost
+  run_once: true
+  tags: [dns, cf_dns]
+
+- name: HAProxy | Panel SNI domains only (exclude subscription)
+  ansible.builtin.include_role:
+    name: haproxy_tls_sni
+  vars:
+    haproxy_nginx_sni_domains: "{{ [haproxy_panel_domain] }}"
+  when: inventory_hostname in groups[remnawave_group_panel]
+  tags: [haproxy]
+
+# Выпуск сертификата для домена подписки (поддержка HTTP-01 и DNS-01)
+# Тянем только tls-задачи из роли nginx, чтобы не лезть в её vhost-логику
+- name: CERT | Issue certificate for subscription domain (separate)
+  ansible.builtin.include_tasks: cert.yml
+  when:
+    - remnawave_sub_public_domain is defined
+    - remnawave_sub_public_domain | length > 0
+    - inventory_hostname in groups.get(remnawave_group_subscription | default('subscription'), [])
+  tags: [cert, tls]
+
+- name: SUBPAGE | Deploy subscription page on dedicated server
+  ansible.builtin.include_role:
+    name: remnawave_subscription_page
+  vars:
+    remnawave_sub_deploy_mode: "separate"
+  when: inventory_hostname in groups[remnawave_group_subscription]
+  tags: [subpage]
+
+- name: PANEL | Set SUB_PUBLIC_DOMAIN in panel .env
+  ansible.builtin.lineinfile:
+    path: "{{ remnawave_panel_root_dir | default('/opt/remnawave') }}/.env"
+    regexp: '^SUB_PUBLIC_DOMAIN='
+    line: "SUB_PUBLIC_DOMAIN={{ remnawave_sub_public_domain }}"
+    create: yes
+  when: inventory_hostname in groups[remnawave_group_panel]
+  tags: [panel_env]
+
+- name: PANEL | Restart panel service to apply SUB_PUBLIC_DOMAIN
+  ansible.builtin.shell: |
+    set -e
+    cd "{{ remnawave_panel_root_dir | default('/opt/remnawave') }}"
+    docker compose up -d
+  args: { executable: /bin/bash }
+  when: inventory_hostname in groups[remnawave_group_panel]
+  tags: [panel_env]

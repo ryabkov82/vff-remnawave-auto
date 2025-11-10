@@ -13,9 +13,6 @@ remnawave_host_remark: "🇩🇪 1 vpn-for-friends"
 remnawave_host_sni: ""
 remnawave_inbound_tag: "VLESS TCP REALITY"
 
-# Зона, в которой создаём запись
-cf_dns_zone: "digitalstreamers.xyz"
-
 # Набор записей для этой ноды
 cf_dns_records:
   - name: "edge-fra-01"        # => edge-fra-01.digitalstreamers.xyz

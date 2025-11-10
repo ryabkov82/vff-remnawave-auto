@@ -2,297 +2,51 @@
 - name: Check required vars
   ansible.builtin.assert:
     that:
-      - nginx_server_name | length > 0
-      - nginx_upstream_app_port | int > 0
-    fail_msg: "nginx_server_name / nginx_upstream_app_port must be set."
+      - (nginx_server_name | length) > 0
+      - >
+        (not (nginx_manage_vhost | bool)) or
+        ((nginx_upstream_app_port | int) > 0)
+    fail_msg: >-
+      nginx_server_name must be set; nginx_upstream_app_port is required when nginx_manage_vhost=true
   tags: [nginx]
 
 - name: Install nginx and helpers
   ansible.builtin.apt:
-    name:
-      - nginx
-      - python3-passlib
-      - openssl
+    name: [nginx, python3-passlib, openssl]
     state: present
     update_cache: true
   tags: [nginx, install]
 
-# ===================== LE: наличие сертификата (для ветвления) =====================
-
-- name: Check if LE certificate already present
-  ansible.builtin.stat:
-    path: "/etc/letsencrypt/live/{{ nginx_server_name }}/fullchain.pem"
-  register: _le_cert
+# Общие факты для TLS (проверка наличия LE, вычисления и т.п.)
+- name: TLS | Detect existing LE certificate and set facts
+  ansible.builtin.include_tasks: tls_detect.yml
   when: nginx_tls_mode in ['letsencrypt', 'letsencrypt_dns01']
   tags: [nginx, tls]
 
-- name: Set fact whether cert is present
-  ansible.builtin.set_fact:
-    _cert_present: "{{ (_le_cert.stat.exists | default(false)) }}"
-  when: nginx_tls_mode in ['letsencrypt', 'letsencrypt_dns01']
-  tags: [nginx, tls]
-
-# ===================== SELF-SIGNED =====================
-
-- name: Ensure selfsigned dir exists (if selfsigned)
-  ansible.builtin.file:
-    path: "{{ nginx_selfsigned_dir }}"
-    state: directory
-    mode: "0750"
-  when: nginx_tls_mode == 'selfsigned'
-  tags: [nginx, tls]
-
-- name: Generate self-signed private key (if selfsigned)
-  community.crypto.openssl_privatekey:
-    path: "{{ nginx_selfsigned_dir }}/{{ nginx_server_name }}.key"
-    size: 2048
-    type: RSA
-  when: nginx_tls_mode == 'selfsigned'
-  tags: [nginx, tls]
-
-- name: Generate self-signed certificate (if selfsigned)
-  community.crypto.x509_certificate:
-    path: "{{ nginx_selfsigned_dir }}/{{ nginx_server_name }}.crt"
-    privatekey_path: "{{ nginx_selfsigned_dir }}/{{ nginx_server_name }}.key"
-    provider: selfsigned
-    subject:
-      common_name: "{{ nginx_server_name }}"
-    valid_days: "{{ nginx_selfsigned_valid_days }}"
-  when: nginx_tls_mode == 'selfsigned'
-  tags: [nginx, tls]
-
-# ===================== LETSENCRYPT (HTTP-01, webroot) =====================
-
-- name: Ensure webroot dir exists (for http-01)
-  ansible.builtin.file:
-    path: "{{ nginx_webroot }}"
-    state: directory
-    owner: www-data
-    group: www-data
-    mode: "0755"
-  when: nginx_tls_mode == 'letsencrypt' and (not _cert_present or nginx_force_issue | default(false) | bool)
-  tags: [nginx, tls]
-
-- name: Install certbot (http-01)
-  ansible.builtin.apt:
-    name: "{{ nginx_certbot_package }}"
-    state: present
-  when: nginx_tls_mode == 'letsencrypt' and (not _cert_present or nginx_force_issue | default(false) | bool)
-  tags: [nginx, tls]
-
-- name: Render temporary HTTP site for ACME challenge (http-01)
-  ansible.builtin.template:
-    src: site-http-challenge.conf.j2
-    dest: "{{ nginx_sites_dir }}/{{ nginx_server_name }}.challenge.conf"
-    mode: "0644"
-  when: nginx_tls_mode == 'letsencrypt' and (not _cert_present or nginx_force_issue | default(false) | bool)
-  notify: nginx reload
-  tags: [nginx, tls]
-
-- name: Enable temporary challenge site (http-01)
-  ansible.builtin.file:
-    src: "{{ nginx_sites_dir }}/{{ nginx_server_name }}.challenge.conf"
-    dest: "{{ nginx_sites_enabled_dir }}/{{ nginx_server_name }}.challenge.conf"
-    state: link
-  when: nginx_tls_mode == 'letsencrypt' and (not _cert_present or nginx_force_issue | default(false) | bool)
-  notify: nginx reload
-  tags: [nginx, tls]
-
-- name: Disable default site if present (port 80)
-  ansible.builtin.file:
-    path: /etc/nginx/sites-enabled/default
-    state: absent
-  when: nginx_tls_mode == 'letsencrypt' and (not _cert_present or nginx_force_issue | default(false) | bool)
-  notify: nginx reload
-  tags: [nginx, config]
-
-- name: Apply nginx changes now (before certbot)
-  ansible.builtin.meta: flush_handlers
-  when: nginx_tls_mode == 'letsencrypt' and (not _cert_present or nginx_force_issue | default(false) | bool)
-  tags: [nginx, tls]
-
-- name: Ensure ACME challenge subdir exists
-  ansible.builtin.file:
-    path: "{{ nginx_webroot }}/.well-known/acme-challenge"
-    state: directory
-    owner: www-data
-    group: www-data
-    mode: "0755"
-  when: nginx_tls_mode == 'letsencrypt' and (not _cert_present or nginx_force_issue | default(false) | bool)
-  tags: [nginx, tls]
-
-- name: Obtain certificate via certbot (webroot http-01)
-  ansible.builtin.command:
-    cmd: >
-      certbot certonly --agree-tos --non-interactive
-      --email {{ nginx_letsencrypt_email }}
-      --webroot -w {{ nginx_webroot }}
-      -d {{ nginx_server_name }}
-  args:
-    creates: "/etc/letsencrypt/live/{{ nginx_server_name }}/fullchain.pem"
-  when: nginx_tls_mode == 'letsencrypt' and (not _cert_present or nginx_force_issue | default(false) | bool)
-  register: _certbot_http
-  changed_when: "_certbot_http.rc == 0"
-  tags: [nginx, tls]
-
-# ===================== LETSENCRYPT (DNS-01, Cloudflare) =====================
-
-- name: Install certbot + dns-cloudflare plugin (dns-01)
-  ansible.builtin.apt:
-    name:
-      - certbot
-      - python3-certbot-dns-cloudflare
-    state: present
-    update_cache: true
-  when: nginx_tls_mode == 'letsencrypt_dns01' and (not _cert_present or nginx_force_issue | default(false) | bool)
-  tags: [nginx, tls]
-
-- name: Write Cloudflare credentials for certbot (dns-01)
-  ansible.builtin.copy:
-    dest: /root/.cloudflare.ini
-    mode: "0600"
-    content: |
-      dns_cloudflare_api_token = {{ nginx_cf_api_token }}
-  when: nginx_tls_mode == 'letsencrypt_dns01' and (not _cert_present or nginx_force_issue | default(false) | bool)
-  tags: [nginx, tls]
-
-- name: Obtain certificate via DNS-01 (Cloudflare)
-  ansible.builtin.command:
-    cmd: >
-      certbot certonly --non-interactive --agree-tos
-      --dns-cloudflare --dns-cloudflare-credentials /root/.cloudflare.ini
-      -d {{ nginx_server_name }}
-      -m {{ nginx_letsencrypt_email }}
-  args:
-    creates: "/etc/letsencrypt/live/{{ nginx_server_name }}/fullchain.pem"
-  when: nginx_tls_mode == 'letsencrypt_dns01' and (not _cert_present or nginx_force_issue | default(false) | bool)
-  register: _certbot_dns
-  changed_when: "_certbot_dns.rc == 0"
-  tags: [nginx, tls]
-
-# ===================== Автопродление LE (любой метод) =====================
-
-- name: Ensure certbot systemd timer is enabled
-  ansible.builtin.systemd:
-    name: certbot.timer
-    enabled: true
-    state: started
-  when: nginx_tls_mode in ['letsencrypt', 'letsencrypt_dns01']
-  tags: [nginx, tls, renew]
-
-- name: Install deploy hook to reload nginx after renewal
-  ansible.builtin.copy:
-    dest: /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
-    owner: root
-    group: root
-    mode: "0755"
-    content: |
-      #!/usr/bin/env bash
-      set -euo pipefail
-      systemctl reload nginx || systemctl restart nginx
-  when: nginx_tls_mode in ['letsencrypt', 'letsencrypt_dns01']
-  tags: [nginx, tls, renew]
-
-# ===================== Основной HTTPS vhost (например, 4443) =====================
-
-- name: Render main HTTPS site
-  ansible.builtin.template:
-    src: site-https.conf.j2
-    dest: "{{ nginx_sites_dir }}/{{ nginx_server_name }}.conf"
-    mode: "0644"
-  notify: nginx restart
-  tags: [nginx, config]
-
-- name: Enable main site
-  ansible.builtin.file:
-    src: "{{ nginx_sites_dir }}/{{ nginx_server_name }}.conf"
-    dest: "{{ nginx_sites_enabled_dir }}/{{ nginx_server_name }}.conf"
-    state: link
-  notify: nginx reload
-  tags: [nginx, config]
-
-- name: Remove temporary challenge site (http-01 only)
-  ansible.builtin.file:
-    path: "{{ nginx_sites_enabled_dir }}/{{ nginx_server_name }}.challenge.conf"
-    state: absent
+# Ветки выпуска сертификата
+- name: TLS | Issue certificate via HTTP-01 (webroot)
+  ansible.builtin.include_tasks: tls_http01.yml
   when: nginx_tls_mode == 'letsencrypt'
-  notify: nginx reload
   tags: [nginx, tls]
 
-- name: Ensure nginx is running
-  ansible.builtin.service:
-    name: nginx
-    state: started
-    enabled: true
-  tags: [nginx]
+- name: TLS | Issue certificate via DNS-01 (Cloudflare)
+  ansible.builtin.include_tasks: tls_dns01.yml
+  when: nginx_tls_mode == 'letsencrypt_dns01'
+  tags: [nginx, tls]
 
-# Применяем pending reload/restart, чтобы конфиг точно активировался
-- name: Apply pending nginx handlers
-  ansible.builtin.meta: flush_handlers
+- name: TLS | Generate self-signed certificate
+  ansible.builtin.include_tasks: tls_selfsigned.yml
+  when: nginx_tls_mode == 'selfsigned'
+  tags: [nginx, tls]
+
+# Рендер vhost (если включён)
+- name: Nginx | Render and enable HTTPS vhost
+  ansible.builtin.include_tasks: vhost.yml
+  when: nginx_manage_vhost | bool
   tags: [nginx, config]
 
-# Диагностика фактического bind на HTTPS-порту
-- name: Inspect nginx listeners for HTTPS port
-  ansible.builtin.command: "ss -lntp"
-  register: _ss_out
-  changed_when: false
+# Проверки (если включён vhost)
+- name: Nginx | Post-deploy checks and sanity tests
+  ansible.builtin.include_tasks: checks.yml
+  when: nginx_manage_vhost | bool
   tags: [nginx, check]
-
-- name: Decide if wide-bind detected on HTTPS port
-  ansible.builtin.set_fact:
-    _nginx_wide_bind: >-
-      {{
-        (nginx_bind_address | default('127.0.0.1')) == '127.0.0.1' and (
-          (_ss_out.stdout | default('')) is search('LISTEN\\s+\\d+\\s+\\d+\\s+0\\.0\\.0\\.0:{{ nginx_external_https_port }}')
-          or
-          (_ss_out.stdout | default('')) is search('LISTEN\\s+\\d+\\s+\\d+\\s+\\[::\\]:{{ nginx_external_https_port }}')
-        )
-      }}
-  tags: [nginx, check]
-
-- name: Force restart if nginx still bound wide on HTTPS port
-  ansible.builtin.service:
-    name: nginx
-    state: restarted
-  when: _nginx_wide_bind | bool
-  tags: [nginx, fix]
-
-- name: Wait for nginx HTTPS on loopback
-  ansible.builtin.wait_for:
-    host: "{{ nginx_bind_address | default('127.0.0.1') }}"
-    port: "{{ nginx_external_https_port | int }}"
-    state: started
-    timeout: 20
-  tags: [nginx, check]
-
-# (опц.) sanity-проверка HTTP 200/301/302 локально через loopback
-- name: HTTPS sanity via loopback
-  ansible.builtin.uri:
-    url: "https://{{ nginx_bind_address | default('127.0.0.1') }}:{{ nginx_external_https_port }}/"
-    status_code: [200, 301, 302]
-    validate_certs: false
-    return_content: false
-    timeout: 10
-  register: _https_local
-  retries: 3
-  delay: 3
-  until: _https_local.status in [200, 301, 302]
-  tags: [nginx, check]
-
-# ===================== Dry-run renew (после конфигурации, опционально) =====================
-
-- name: Flush handlers before renew dry-run
-  ansible.builtin.meta: flush_handlers
-  when:
-    - nginx_tls_mode in ['letsencrypt', 'letsencrypt_dns01']
-    - nginx_renew_dry_run | default(false) | bool
-  tags: [nginx, tls, renew, check]
-
-- name: Certbot renew dry-run (only if cert exists and enabled)
-  ansible.builtin.command: certbot renew --dry-run --non-interactive
-  changed_when: false
-  when:
-    - nginx_tls_mode in ['letsencrypt', 'letsencrypt_dns01']
-    - nginx_renew_dry_run | default(false) | bool
-    - _cert_present | default(false)
-  tags: [nginx, tls, renew, check]

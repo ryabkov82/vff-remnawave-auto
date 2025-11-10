@@ -1,0 +1,30 @@
+---
+- name: Install certbot + dns-cloudflare plugin (dns-01)
+  ansible.builtin.apt:
+    name:
+      - certbot
+      - python3-certbot-dns-cloudflare
+    state: present
+    update_cache: true
+  when: not _cert_present or (nginx_force_issue | bool)
+
+- name: Write Cloudflare credentials for certbot (dns-01)
+  ansible.builtin.copy:
+    dest: /root/.cloudflare.ini
+    mode: "0600"
+    content: |
+      dns_cloudflare_api_token = {{ nginx_cf_api_token }}
+  when: not _cert_present or (nginx_force_issue | bool)
+
+- name: Obtain certificate via DNS-01 (Cloudflare)
+  ansible.builtin.command:
+    cmd: >
+      certbot certonly --non-interactive --agree-tos
+      --dns-cloudflare --dns-cloudflare-credentials /root/.cloudflare.ini
+      -d {{ nginx_server_name }}
+      -m {{ nginx_letsencrypt_email }}
+  args:
+    creates: "/etc/letsencrypt/live/{{ nginx_server_name }}/fullchain.pem"
+  when: not _cert_present or (nginx_force_issue | bool)
+  register: _certbot_dns
+  changed_when: "_certbot_dns.rc == 0"

@@ -1,0 +1,14 @@
+---
+- name: Render main HTTPS site
+  ansible.builtin.template:
+    src: site-https.conf.j2
+    dest: "{{ nginx_sites_dir }}/{{ nginx_server_name }}.conf"
+    mode: "0644"
+  notify: nginx restart
+
+- name: Enable main site
+  ansible.builtin.file:
+    src: "{{ nginx_sites_dir }}/{{ nginx_server_name }}.conf"
+    dest: "{{ nginx_sites_enabled_dir }}/{{ nginx_server_name }}.conf"
+    state: link
+  notify: nginx reload

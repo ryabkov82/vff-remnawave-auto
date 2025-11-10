@@ -1,0 +1,21 @@
+---
+- name: Ensure selfsigned dir exists
+  ansible.builtin.file:
+    path: "{{ nginx_selfsigned_dir }}"
+    state: directory
+    mode: "0750"
+
+- name: Generate self-signed private key
+  community.crypto.openssl_privatekey:
+    path: "{{ nginx_selfsigned_dir }}/{{ nginx_server_name }}.key"
+    size: 2048
+    type: RSA
+
+- name: Generate self-signed certificate
+  community.crypto.x509_certificate:
+    path: "{{ nginx_selfsigned_dir }}/{{ nginx_server_name }}.crt"
+    privatekey_path: "{{ nginx_selfsigned_dir }}/{{ nginx_server_name }}.key"
+    provider: selfsigned
+    subject:
+      common_name: "{{ nginx_server_name }}"
+    valid_days: "{{ nginx_selfsigned_valid_days }}"

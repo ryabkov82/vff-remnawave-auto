@@ -1,0 +1,8 @@
+---
+# Автодеплой страницы подписки (bundled/separate автодетектом внутри роли)
+- name: Deploy Subscription Page
+  hosts: panel:subscription
+  become: true
+  roles:
+    - role: remnawave_subscription_deploy
+      tags: [subpage]

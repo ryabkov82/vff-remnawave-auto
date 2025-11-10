@@ -1,0 +1,11 @@
+---
+- name: Check if LE certificate already present
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ nginx_server_name }}/fullchain.pem"
+  register: _le_cert
+  when: nginx_tls_mode in ['letsencrypt', 'letsencrypt_dns01']
+
+- name: Set fact whether cert is present
+  ansible.builtin.set_fact:
+    _cert_present: "{{ (_le_cert.stat.exists | default(false)) }}"
+  when: nginx_tls_mode in ['letsencrypt', 'letsencrypt_dns01']

@@ -1,8 +1,9 @@
 # 🚀 VFF Remnawave Auto Deployment
 
-Полностью автоматизированное развертывание **Remnawave Panel** и **Remnawave Nodes** с поддержкой:
-- SNI-маршрутизации на одном IP (панель + Reality node)
+Полностью автоматизированное развертывание **Remnawave Panel**, **Remnawave Nodes** и **Subscription Page** с поддержкой:
+- SNI-маршрутизации на одном IP (панель + Reality-нода)
 - Автоматического деплоя и обновления нод
+- Автоматического развёртывания страницы подписки (bundled / separate)
 - Автоматической регистрации нод и хостов в панели
 - Smoke-тестов и health-check таймеров
 
@@ -60,6 +61,30 @@ Inbound будет создан или обновлён идемпотентно
 
 ---
 
+### Развернуть страницу подписки
+Разворачивает отдельный контейнер **Remnawave Subscription Page**, проксируемый через Nginx (порт 443 или 4443).
+
+```bash
+make sub
+```
+
+Примеры:
+```bash
+# если страница подписки на том же хосте, что и панель
+make sub LIMIT=panel
+
+# если на отдельном сервере
+make sub LIMIT=sub-host
+```
+
+После развёртывания:
+- Сертификат для `sub.vpn-for-friends.com` будет автоматически получен (DNS‑01 или HTTP‑01);
+- Контейнер `remnawave-subscription-page` будет запущен и доступен по HTTPS;
+- Для режима «bundled» (на том же хосте) страница подписки обращается к панели через локальный alias `remnawave`;
+- Для режима «separate» — через публичный API `https://remna.vpn-for-friends.com/api`.
+
+> Подробности см. в [docs/remnawave_subscription_deploy.md](docs/remnawave_subscription_deploy.md)
+
 ### Развернуть ноду
 Перед развёртыванием ноды необходимо:
 
@@ -105,10 +130,7 @@ make nodes LIMIT=node-name TAGS=smoke_node
    ```bash
    make disable-node EXTRA='-e remnawave_node_name=de-fra-1 -e remnawave_enable_state=false -e remnawave_disable_hosts_of_node=true'
    ```
-   Роль: [roles/remnawave_disable_node/README.md](roles_remnawave_disable_node_README.md)
-
-   Это временно выключит ноду (и при опции — все связанные хосты),  
-   чтобы пользователи перестали подключаться.
+   Роль: [docs/remnawave_disable_node.md](docs/remnawave_disable_node.md)
 
 2. **Дождаться завершения активных сессий**
    - Убедитесь через панель или Grafana, что активных соединений нет.
@@ -121,10 +143,7 @@ make nodes LIMIT=node-name TAGS=smoke_node
    ```bash
    make delete-node EXTRA='-e remnawave_node_name=de-fra-1 -e remnawave_delete_hosts=true'
    ```
-   Роль: [roles/remnawave_delete_node/README.md](roles_remnawave_delete_node_README.md)
-
-   Команда удалит хосты **bulk-запросом**, затем ноду,  
-   и дождётся подтверждения удаления (HTTP 404).
+   Роль: [docs/remnawave_delete_node.md](docs/remnawave_delete_node.md)
 
 > 🔒 Обе операции безопасны и идемпотентны — повторный запуск не приведёт к ошибкам.
 
@@ -140,26 +159,87 @@ make nodes LIMIT=node-name TAGS=smoke_node
 | Ноды | [docs/remnawave_node.md](docs/remnawave_node.md) | Запуск контейнера с SECRET_KEY |
 | Регистрация ноды | [docs/remnawave_register_node.md](docs/remnawave_register_node.md) | API-регистрация ноды |
 | Регистрация Host | [docs/remnawave_add_host.md](docs/remnawave_add_host.md) | Добавление Host через API |
+| Subscription Deploy | [docs/remnawave_subscription_deploy.md](docs/remnawave_subscription_deploy.md) | Развёртывание страницы подписки |
+| Subscription Page | [docs/remnawave_subscription_page.md](docs/remnawave_subscription_page.md) | Конфигурация Nginx и Docker контейнера |
 | Проверки | [docs/smoke_tests.md](docs/smoke_tests.md) | Smoke-тесты панели и нод |
-| Отключение ноды | [roles/remnawave_disable_node/README.md](roles_remnawave_disable_node_README.md) | Временное отключение ноды и хостов |
-| Удаление ноды | [roles/remnawave_delete_node/README.md](roles_remnawave_delete_node_README.md) | Полное удаление ноды и связанных хостов |
+| Отключение ноды | [docs/remnawave_disable_node.md](docs/remnawave_disable_node.md) | Временное отключение ноды и хостов |
+| Удаление ноды | [docs/remnawave_delete_node.md](docs/remnawave_delete_node.md) | Полное удаление ноды и связанных хостов |
 
 ---
 
 ## 🧱 Архитектура развертывания
 
+### Вариант 1 — Панель и страница подписки на одном хосте
+
+```mermaid
+flowchart TB
+  User[Пользователь] -->|запрос к remna.vpn-for-friends.com или sub.vpn-for-friends.com| CloudflareDNS[Cloudflare DNS]
+  CloudflareDNS --> PublicIP_One[Публичный IP Host1]
+
+  PublicIP_One --> HAProxy443
+
+  subgraph Host1 [Host1: panel + subpage + node]
+    HAProxy443[HAProxy 443 TCP SNI]
+    Nginx4443[Nginx 4443 loopback]
+    Xray8444[Xray 8444 loopback]
+    Panel3000[Panel app port 3000]
+    Sub3100[Subscription page port 3100 docker]
+    Certbot[Certbot ACME]
+
+    HAProxy443 -->|SNI remna.* , sub.*| Nginx4443
+    HAProxy443 -->|non-TLS/иное SNI| Xray8444
+
+    Sub3100 -->|HTTP /api| Nginx4443
+    Nginx4443 -->|proxy /api| Panel3000
+
+    Nginx4443 -->|proxy| Panel3000
+    Nginx4443 -->|proxy| Sub3100
+
+    Nginx4443 -. validation .-> Certbot
+  end
+
+  Certbot -. DNS-01 или HTTP-01 .-> CloudflareDNS
 ```
-Client
-   │ HTTPS :443
-   ▼
-┌───────────────┐     ┌───────────────┐
-│   HAProxy     │────▶│               │──▶ Remnawave Panel
-│  (TCP SNI)    │     │   4443 TLS    │
-└───────────────┘     └───────────────┘
-        │
-        │ SNI=www.cloudflare.com
-        ▼
-      Xray Reality 8444 (remnanode)
+
+---
+
+### Вариант 2 — Панель и страница подписки на разных хостах
+
+```mermaid
+flowchart TB
+  User[Пользователь] -->|remna-domain| CloudflareDNS[Cloudflare DNS]
+  User -->|sub-domain| CloudflareDNS
+  CloudflareDNS -->|A remna-domain| PublicIP_Panel[Публичный IP Host1]
+  CloudflareDNS -->|A sub-domain| PublicIP_Sub[Публичный IP Host2]
+
+  PublicIP_Panel --> HAProxy1
+
+  subgraph Host1 [Host1: panel + node]
+    HAProxy1[HAProxy 443 TCP SNI]
+    Nginx1[Nginx 4443 loopback]
+    Xray1[Xray 8444 loopback]
+    Panel3000[Panel app port 3000]
+    Certbot1[Certbot ACME]
+
+    HAProxy1 -->|SNI remna-domain| Nginx1
+    HAProxy1 -->|non-TLS/иное SNI| Xray1
+    Nginx1 -->|proxy /api| Panel3000
+    Nginx1 -. validation .-> Certbot1
+  end
+
+  PublicIP_Sub --> Nginx2
+
+  subgraph Host2 [Host2: subpage only]
+    Nginx2[Nginx 443]
+    Sub3100[Subscription page port 3100 docker]
+    Certbot2[Certbot ACME]
+    Nginx2 -->|proxy| Sub3100
+  end
+
+  Sub3100 -->|HTTPS remna-domain /api| PublicIP_Panel
+
+  Certbot1 -. DNS-01 или HTTP-01 .-> CloudflareDNS
+  Certbot2 -. DNS-01 или HTTP-01 .-> CloudflareDNS
 ```
 
 ---
@@ -167,6 +247,7 @@ Client
 ## 🔒 Vault и секреты
 
 ```
+inventory/group_vars/all/vault.yml
 inventory/group_vars/panel/vault.yml
 inventory/host_vars/<node>/vault.yml
 ```
