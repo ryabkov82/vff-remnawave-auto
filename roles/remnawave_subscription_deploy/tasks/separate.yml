@@ -57,15 +57,18 @@
     path: "{{ remnawave_panel_root_dir | default('/opt/remnawave') }}/.env"
     regexp: '^SUB_PUBLIC_DOMAIN='
     line: "SUB_PUBLIC_DOMAIN={{ remnawave_sub_public_domain }}"
-    create: yes
+    create: true
+    owner: root
+    group: root
+    mode: "0640"
   when: inventory_hostname in groups[remnawave_group_panel]
   tags: [panel_env]
 
 - name: PANEL | Restart panel service to apply SUB_PUBLIC_DOMAIN
-  ansible.builtin.shell: |
-    set -e
-    cd "{{ remnawave_panel_root_dir | default('/opt/remnawave') }}"
-    docker compose up -d
-  args: { executable: /bin/bash }
+  community.docker.docker_compose_v2:
+    project_src: "{{ remnawave_panel_root_dir | default('/opt/remnawave') }}"
+    state: present
+    pull: false
+    recreate: smart
   when: inventory_hostname in groups[remnawave_group_panel]
   tags: [panel_env]
