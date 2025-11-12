@@ -1,0 +1,24 @@
+---
+# config.yml — только обновление app-config.json + рестарт сервиса
+
+- name: Install app-config.json from string (if provided)
+  when: remnawave_sub_appconfig_enabled | bool and (remnawave_sub_appconfig_content | length > 0)
+  ansible.builtin.copy:
+    content: "{{ remnawave_sub_appconfig_content }}"
+    dest: "{{ remnawave_sub_dir }}/app-config.json"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Subscription Page
+  tags: [sub_config]
+
+- name: Copy app-config.json from source file
+  when: remnawave_sub_appconfig_enabled | bool and (remnawave_sub_appconfig_content | length == 0)
+  ansible.builtin.copy:
+    src: "{{ remnawave_sub_appconfig_src }}"
+    dest: "{{ remnawave_sub_dir }}/app-config.json"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Subscription Page
+  tags: [sub_config]

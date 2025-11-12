@@ -11,3 +11,12 @@
     pull: missing
     recreate: always
     remove_orphans: true
+
+- name: Restart Subscription Page
+  community.docker.docker_compose_v2:
+    project_src: "{{ remnawave_sub_dir }}"
+    services:
+      - "{{ remnawave_sub_container_name | default('remnawave-subscription-page') }}"
+    state: present
+    pull: missing
+    recreate: always

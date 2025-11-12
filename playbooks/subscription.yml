@@ -4,5 +4,14 @@
   hosts: panel:subscription
   become: true
   roles:
+    # Полный сценарий (DNS/HAProxy/cert + страница) — по умолчанию:
     - role: remnawave_subscription_deploy
       tags: [subpage]
+
+   # Точечный апдейт только app-config.json + рестарт контейнера:
+  tasks:
+    - name: Apply subscription app-config (config-only include)
+      ansible.builtin.include_role:
+        name: remnawave_subscription_page
+        tasks_from: config.yml
+      tags: [never, sub_config]
