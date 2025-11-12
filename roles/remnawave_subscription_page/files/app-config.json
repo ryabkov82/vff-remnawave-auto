@@ -12,9 +12,42 @@
   "platforms": {
     "android": [
       {
+        "id": "new-app-android-1762969287859",
+        "name": "v2RayTun",
+        "isFeatured": true,
+        "urlScheme": "v2raytun://import/",
+        "installationStep": {
+          "buttons": [
+            {
+              "buttonLink": "https://play.google.com/store/apps/details?id=com.v2raytun.android",
+              "buttonText": {
+                "en": "Open in Google Play",
+                "ru": "Открыть в Google Play"
+              }
+            }
+          ],
+          "description": {
+            "en": "Open the page in Google Play and install the app. Or install the app directly from the APK file if Google Play is not working.",
+            "ru": "Откройте страницу в Google Play и установите приложение. Или установите приложение из APK файла напрямую, если Google Play не работает."
+          }
+        },
+        "addSubscriptionStep": {
+          "description": {
+            "en": "Click the button below to add subscription",
+            "ru": "Нажмите кнопку ниже, чтобы добавить подписку"
+          }
+        },
+        "connectAndUseStep": {
+          "description": {
+            "en": "Open the app and connect to the server",
+            "ru": "Откройте приложение и подключитесь к серверу"
+          }
+        }
+      },
+      {
         "id": "happ",
         "name": "Happ",
-        "isFeatured": true,
+        "isFeatured": false,
         "urlScheme": "happ://add/",
         "installationStep": {
           "buttons": [

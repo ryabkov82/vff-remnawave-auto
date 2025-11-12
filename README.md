@@ -57,7 +57,7 @@ make inbounds EXTRA='-e remnawave_profile_uuid=7988e3a1-5a32-461a-9136-c9475e92f
 
 Inbound будет создан или обновлён идемпотентно (по `tag`), а затем автоматически зарегистрирован во **внутреннем скваде** `Default-Squad`.
 
-> Подробности см. в [roles/remnawave_inbounds/README.md](roles-remnawave_inbounds-README.md)
+> Подробности см. в [docs/remnawave_inbounds.md](docs/remnawave_inbounds.md)
 
 ---
 
