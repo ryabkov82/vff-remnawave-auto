@@ -12,42 +12,9 @@
   "platforms": {
     "android": [
       {
-        "id": "new-app-android-1762969287859",
-        "name": "v2RayTun",
-        "isFeatured": true,
-        "urlScheme": "v2raytun://import/",
-        "installationStep": {
-          "buttons": [
-            {
-              "buttonLink": "https://play.google.com/store/apps/details?id=com.v2raytun.android",
-              "buttonText": {
-                "en": "Open in Google Play",
-                "ru": "Открыть в Google Play"
-              }
-            }
-          ],
-          "description": {
-            "en": "Open the page in Google Play and install the app. Or install the app directly from the APK file if Google Play is not working.",
-            "ru": "Откройте страницу в Google Play и установите приложение. Или установите приложение из APK файла напрямую, если Google Play не работает."
-          }
-        },
-        "addSubscriptionStep": {
-          "description": {
-            "en": "Click the button below to add subscription",
-            "ru": "Нажмите кнопку ниже, чтобы добавить подписку"
-          }
-        },
-        "connectAndUseStep": {
-          "description": {
-            "en": "Open the app and connect to the server",
-            "ru": "Откройте приложение и подключитесь к серверу"
-          }
-        }
-      },
-      {
         "id": "happ",
         "name": "Happ",
-        "isFeatured": false,
+        "isFeatured": true,
         "urlScheme": "happ://add/",
         "installationStep": {
           "buttons": [
@@ -81,6 +48,98 @@
           "description": {
             "en": "Open the app and connect to the server",
             "ru": "Откройте приложение и подключитесь к серверу"
+          }
+        },
+        "additionalAfterAddSubscriptionStep": {
+          "title": {
+            "en": "Add routing rules",
+            "ru": "Добавить правила маршрутизации"
+          },
+          "description": {
+            "en": "Resource list Re:filter (for Russia)",
+            "ru": "Список ресурсов Re:filter"
+          },
+          "buttons": [
+            {
+              "buttonLink": "happ://routing/onadd/ewogICAgIk5hbWUiOiAiUmU6ZmlsdGVyIiwKICAgICJHbG9iYWxQcm94eSI6ICJmYWxzZSIsCiAgICAiUmVtb3RlRG5zIjogIjEuMS4xLjEiLAogICAgIkRvbWVzdGljRG5zIjogIjc3Ljg4LjguOCIsCiAgICAiR2VvaXB1cmwiOiAiaHR0cHM6Ly9naXRodWIuY29tLzFhbmRyZXZpY2gvUmUtZmlsdGVyLWxpc3RzL3JlbGVhc2VzL2xhdGVzdC9kb3dubG9hZC9nZW9pcC5kYXQiLAogICAgIkdlb3NpdGV1cmwiOiAiaHR0cHM6Ly9naXRodWIuY29tLzFhbmRyZXZpY2gvUmUtZmlsdGVyLWxpc3RzL3JlbGVhc2VzL2xhdGVzdC9kb3dubG9hZC9nZW9zaXRlLmRhdCIsCiAgICAiRG5zSG9zdHMiOiB7fSwKICAgICJEaXJlY3RTaXRlcyI6IFtdLAogICAgIkRpcmVjdElwIjogWwogICAgICAgICIxMC4wLjAuMC84IiwKICAgICAgICAiMTcyLjE2LjAuMC8xMiIsCiAgICAgICAgIjE5Mi4xNjguMC4wLzE2IiwKICAgICAgICAiMTY5LjI1NC4wLjAvMTYiLAogICAgICAgICIyMjQuMC4wLjAvNCIsCiAgICAgICAgIjI1NS4yNTUuMjU1LjI1NSIKICAgIF0sCiAgICAiUHJveHlTaXRlcyI6IFsKICAgICAgICAiZ2Vvc2l0ZTpyZWZpbHRlciIKICAgIF0sCiAgICAiUHJveHlJcCI6IFsKICAgICAgICAiZ2VvaXA6cmVmaWx0ZXIiCiAgICBdLAogICAgIkJsb2NrU2l0ZXMiOiBbXSwKICAgICJCbG9ja0lwIjogW10sCiAgICAiRG9tYWluU3RyYXRlZ3kiOiAiSVBPbkRlbWFuZCIKfQ==",
+              "buttonText": {
+                "en": "Add configuration",
+                "ru": "Добавить конфигурацию"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "new-app-android-1762969287859",
+        "name": "v2RayTun",
+        "isFeatured": true,
+        "urlScheme": "v2raytun://import/",
+        "installationStep": {
+          "buttons": [
+            {
+              "buttonLink": "https://play.google.com/store/apps/details?id=com.v2raytun.android",
+              "buttonText": {
+                "en": "Open in Google Play",
+                "ru": "Открыть в Google Play"
+              }
+            }
+          ],
+          "description": {
+            "en": "Open the page in Google Play and install the app. Or install the app directly from the APK file if Google Play is not working.",
+            "ru": "Откройте страницу в Google Play и установите приложение. Или установите приложение из APK файла напрямую, если Google Play не работает."
+          }
+        },
+        "addSubscriptionStep": {
+          "description": {
+            "en": "Click the button below to add subscription",
+            "ru": "Нажмите кнопку ниже, чтобы добавить подписку"
+          }
+        },
+        "connectAndUseStep": {
+          "description": {
+            "en": "Open the app and connect to the server",
+            "ru": "Откройте приложение и подключитесь к серверу"
+          }
+        }
+      },
+      {
+        "id": "new-app-android-1762979676869",
+        "name": "Hiddify",
+        "isFeatured": false,
+        "urlScheme": "hiddify://import/",
+        "installationStep": {
+          "buttons": [
+            {
+              "buttonLink": "https://play.google.com/store/apps/details?id=app.hiddify.com",
+              "buttonText": {
+                "en": "Open in Google Play",
+                "ru": "Открыть в Google Play"
+              }
+            },
+            {
+              "buttonLink": "https://github.com/hiddify/hiddify-next/releases/download/v2.5.7/Hiddify-Android-universal.apk",
+              "buttonText": {
+                "en": "Download APK",
+                "ru": "Скачать APK"
+              }
+            }
+          ],
+          "description": {
+            "en": "Open the page in Google Play and install the app. Or install the app directly from the APK file if Google Play is not working.",
+            "ru": "Откройте страницу в Google Play и установите приложение. Или установите приложение из APK файла напрямую, если Google Play не работает."
+          }
+        },
+        "addSubscriptionStep": {
+          "description": {
+            "en": "Click the button below to add subscription",
+            "ru": "Нажмите кнопку ниже, чтобы добавить подписку"
+          }
+        },
+        "connectAndUseStep": {
+          "description": {
+            "en": "Select your country in the settings. Connections to addresses/sites in this country will be routed directly. If you want all connections to go through the proxy, select \"Other\" as the country.\n\nCountry settings section in the app: Top right corner, settings icon -> All settings -> Region\n\nPress the large round button to start",
+            "ru": "Выберите свою страну в настройках. Подключение к адресам/сайтам этой страны будет идти напрямую. Если вы хотите, чтобы подключение до всех адресов шло через прокси — выберите в качестве страны \"Другой\"\n\nРаздел настроек страны в приложении: Правый верхний угол, иконка настроек -> Все параметры -> Регион\n\nНажмите большую круглую кнопку для запуска"
           }
         }
       },
@@ -145,6 +204,58 @@
               "buttonText": {
                 "en": "Open in App Store [RU]",
                 "ru": "Открыть в App Store [RU]"
+              }
+            }
+          ],
+          "description": {
+            "en": "Open the page in App Store and install the app. Launch it, in the VPN configuration permission window click Allow and enter your passcode.",
+            "ru": "Откройте страницу в App Store и установите приложение. Запустите его, в окне разрешения VPN-конфигурации нажмите Allow и введите свой пароль."
+          }
+        },
+        "addSubscriptionStep": {
+          "description": {
+            "en": "Click the button below — the app will open and the subscription will be added automatically",
+            "ru": "Нажмите кнопку ниже — приложение откроется, и подписка добавится автоматически."
+          }
+        },
+        "connectAndUseStep": {
+          "description": {
+            "en": "In the main section, click the large power button in the center to connect to VPN. Don't forget to select a server from the server list. If needed, choose another server from the server list.",
+            "ru": "В главном разделе нажмите большую кнопку включения в центре для подключения к VPN. Не забудьте выбрать сервер в списке серверов. При необходимости выберите другой сервер из списка серверов."
+          }
+        },
+        "additionalAfterAddSubscriptionStep": {
+          "title": {
+            "en": "Add routing rules",
+            "ru": "Добавить правила маршрутизации"
+          },
+          "description": {
+            "en": "Resource list Re:filter (for Russia)",
+            "ru": "Список ресурсов Re:filter"
+          },
+          "buttons": [
+            {
+              "buttonLink": "happ://routing/onadd/ewogICAgIk5hbWUiOiAiUmU6ZmlsdGVyIiwKICAgICJHbG9iYWxQcm94eSI6ICJmYWxzZSIsCiAgICAiUmVtb3RlRG5zIjogIjEuMS4xLjEiLAogICAgIkRvbWVzdGljRG5zIjogIjc3Ljg4LjguOCIsCiAgICAiR2VvaXB1cmwiOiAiaHR0cHM6Ly9naXRodWIuY29tLzFhbmRyZXZpY2gvUmUtZmlsdGVyLWxpc3RzL3JlbGVhc2VzL2xhdGVzdC9kb3dubG9hZC9nZW9pcC5kYXQiLAogICAgIkdlb3NpdGV1cmwiOiAiaHR0cHM6Ly9naXRodWIuY29tLzFhbmRyZXZpY2gvUmUtZmlsdGVyLWxpc3RzL3JlbGVhc2VzL2xhdGVzdC9kb3dubG9hZC9nZW9zaXRlLmRhdCIsCiAgICAiRG5zSG9zdHMiOiB7fSwKICAgICJEaXJlY3RTaXRlcyI6IFtdLAogICAgIkRpcmVjdElwIjogWwogICAgICAgICIxMC4wLjAuMC84IiwKICAgICAgICAiMTcyLjE2LjAuMC8xMiIsCiAgICAgICAgIjE5Mi4xNjguMC4wLzE2IiwKICAgICAgICAiMTY5LjI1NC4wLjAvMTYiLAogICAgICAgICIyMjQuMC4wLjAvNCIsCiAgICAgICAgIjI1NS4yNTUuMjU1LjI1NSIKICAgIF0sCiAgICAiUHJveHlTaXRlcyI6IFsKICAgICAgICAiZ2Vvc2l0ZTpyZWZpbHRlciIKICAgIF0sCiAgICAiUHJveHlJcCI6IFsKICAgICAgICAiZ2VvaXA6cmVmaWx0ZXIiCiAgICBdLAogICAgIkJsb2NrU2l0ZXMiOiBbXSwKICAgICJCbG9ja0lwIjogW10sCiAgICAiRG9tYWluU3RyYXRlZ3kiOiAiSVBPbkRlbWFuZCIKfQ==",
+              "buttonText": {
+                "en": "Add configuration",
+                "ru": "Добавить конфигурацию"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "new-app-ios-1762983991048",
+        "name": "v2RayTun",
+        "isFeatured": true,
+        "urlScheme": "v2raytun://import/",
+        "installationStep": {
+          "buttons": [
+            {
+              "buttonLink": "https://apps.apple.com/ru/app/v2raytun/id6476628951",
+              "buttonText": {
+                "en": "Open in App Store",
+                "ru": "Открыть в App Store"
               }
             }
           ],
@@ -362,9 +473,97 @@
     ],
     "windows": [
       {
+        "id": "new-app-windows-1762985351984",
+        "name": "v2RayTun",
+        "isFeatured": true,
+        "urlScheme": "v2raytun://import/",
+        "installationStep": {
+          "buttons": [
+            {
+              "buttonLink": "https://storage.v2raytun.com/v2RayTun_Setup.exe",
+              "buttonText": {
+                "en": "Download",
+                "ru": "Скачать"
+              }
+            }
+          ],
+          "description": {
+            "en": "Click the link below to download the app",
+            "ru": "Нажмите на ссылку ниже, чтобы загрузить программу"
+          }
+        },
+        "addSubscriptionStep": {
+          "description": {
+            "en": "Click the button below to add subscription.",
+            "ru": "Нажмите кнопку ниже, чтобы добавить подписку."
+          }
+        },
+        "connectAndUseStep": {
+          "description": {
+            "en": "Open the app and connect to the server.\n\nEnable TUN/VPN mode in settings so that all traffic goes through the app.\n\nIf some apps bypass the tunnel, check per-app routing and Windows Firewall rules.\n\nIf the internet does not work after starting the program, go to the Windows system settings, open the \"Network & Internet\" section, then \"Proxy Server,\" activate the \"Use a proxy server\" toggle, and save.\n\nAlso, if the internet does not work after turning off the program, you need to disable the \"Use a proxy server\" option.",
+            "ru": "Откройте приложение и подключитесь к серверу.\n\nВключите режим TUN/VPN в настройках, чтобы весь трафик шёл через приложение.\n\nЕсли какие-то приложения обходят туннель, проверьте маршрутизацию по приложениям и правила брандмауэра Windows.\n\nЕсли после включения программы интернет не работает, то перейдите в системные настройки Windows, откройте раздел «Сеть и Интернет», затем «Прокси-сервер» и активируйте переключатель «Использовать прокси-сервер» и сохраните.\n\nТакже если после отключения программы у вас не работает интернет, то необходимо отключить параметр «Использовать прокси-сервер»."
+          }
+        },
+        "additionalAfterAddSubscriptionStep": {
+          "title": {
+            "en": "If the subscription is not added",
+            "ru": "Если подписка не добавилась"
+          },
+          "description": {
+            "en": "If nothing happens after clicking the button, add the subscription manually. Click the Get Link button in the top right corner of this page, copy the link. In v2raytun, add the subscription using the plus icon in the top right corner → Import from Clipboard.\n",
+            "ru": "Если после нажатия на кнопку ничего не произошло, добавьте подписку вручную. Нажмите на этой странице кнопку Получить ссылку в правом верхнем углу, скопируйте ссылку. В v2raytun добавьте подписку через значок плюсика в правом верхнем углу → Импорт из буфера обмена."
+          },
+          "buttons": []
+        }
+      },
+      {
+        "id": "hiddify",
+        "name": "Hiddify",
+        "isFeatured": false,
+        "urlScheme": "hiddify://import/",
+        "installationStep": {
+          "buttons": [
+            {
+              "buttonLink": "https://github.com/hiddify/hiddify-app/releases/download/v2.5.7/Hiddify-Windows-Setup-x64.exe",
+              "buttonText": {
+                "en": "Windows",
+                "ru": "Windows"
+              }
+            }
+          ],
+          "description": {
+            "en": "In the main section, click the large power button in the center to connect to VPN. If needed, select a different server in the Proxy section",
+            "ru": "В главном разделе нажмите большую кнопку включения в центре для подключения к VPN. При необходимости выберите другой сервер в разделе Прокси."
+          }
+        },
+        "addSubscriptionStep": {
+          "description": {
+            "en": "Click the button below to add subscription",
+            "ru": "Нажмите кнопку ниже, чтобы добавить подписку"
+          }
+        },
+        "connectAndUseStep": {
+          "description": {
+            "en": "Select your country in the settings. Connections to addresses/sites in this country will be routed directly. If you want all connections to go through the proxy, select \"Other\" as the country.\n\nCountry settings section in the app: Top right corner, settings icon -> All settings -> Region\n\nPress the large round button to start\n\nIf the internet does not work after starting the program, go to the Windows system settings, open the \"Network & Internet\" section, then \"Proxy Server,\" activate the \"Use a proxy server\" toggle, and save.\n\nAlso, if the internet does not work after turning off the program, you need to disable the \"Use a proxy server\" option.\n\nVPN-mode:\n\nEnable \"VPN Mode\" in the settings to make programs that do not use the OS system proxy work through the proxy (e.g., Steam or Discord), if necessary:\n\nTo do this, go to (on the left) Configuration Settings -> Operating Mode -> Select \"VPN (experimental)\" -> Restart the program as an administrator",
+            "ru": "Выберите свою страну в настройках. Подключение к адресам/сайтам этой страны будет идти напрямую. Если вы хотите, чтобы подключение до всех адресов шло через прокси — выберите в качестве страны \"Другой\".\n\nРаздел настроек страны в приложении: Правый верхний угол, иконка настроек -> Все параметры -> Регион\n\nНажмите большую круглую кнопку для запуска\n\nЕсли после включения программы интернет не работает, то перейдите в системные настройки Windows, откройте раздел «Сеть и Интернет», затем «Прокси-сервер» и активируйте переключатель «Использовать прокси-сервер» и сохраните\n\nТакже если после отключения программы у вас не работает интернет, то необходимо отключить параметр «Использовать прокси-сервер»\n\nVPN-mode:\n\nВключите \"Режим VPN\" в настройках, чтобы программы, не использующие системный прокси ОС, работали через прокси (например Steam или Discord), если необходимо:\n\nДля этого зайдите (слева) в Параметры конфигурации -> Режим работы -> Выберите \"VPN (экспериментальный)\" -> Перезапустите программу от имени администратора"
+          }
+        },
+        "additionalAfterAddSubscriptionStep": {
+          "title": {
+            "en": "If the subscription is not added",
+            "ru": "Если подписка не добавилась"
+          },
+          "description": {
+            "en": "If nothing happens after clicking the button, add the subscription manually. Click the Get Link button in the top right corner on this page, and copy the link. In Hiddify, add the subscription using the plus icon in the top right corner (New Profile) → Add from Clipboard.",
+            "ru": "Если после нажатия на кнопку ничего не произошло, добавьте подписку вручную. Нажмите на этой странице кнопку Получить ссылку в правом верхнем углу, скопируйте ссылку. В Hiddify добавьте подписку через значок плюсика в правом верхнем углу (Новый профиль) → Добавить из буфера обмена."
+          },
+          "buttons": []
+        }
+      },
+      {
         "id": "clash-verge",
         "name": "Clash Verge",
-        "isFeatured": true,
+        "isFeatured": false,
         "urlScheme": "clash://install-config?url=",
         "installationStep": {
           "buttons": [
@@ -373,27 +572,6 @@
               "buttonText": {
                 "en": "Windows",
                 "ru": "Windows"
-              }
-            },
-            {
-              "buttonLink": "https://github.com/clash-verge-rev/clash-verge-rev/releases/download/v2.2.2/Clash.Verge_2.2.2_x64.dmg",
-              "buttonText": {
-                "en": "macOS (Intel)",
-                "ru": "macOS (Intel)"
-              }
-            },
-            {
-              "buttonLink": "https://github.com/clash-verge-rev/clash-verge-rev/releases/download/v2.2.2/Clash.Verge_2.2.2_aarch64.dmg",
-              "buttonText": {
-                "en": "macOS (Apple Silicon)",
-                "ru": "macOS (Apple Silicon)"
-              }
-            },
-            {
-              "buttonLink": "https://github.com/clash-verge-rev/clash-verge-rev/releases",
-              "buttonText": {
-                "en": "Linux",
-                "ru": "Linux"
               }
             }
           ],
@@ -427,60 +605,13 @@
           },
           "description": {
             "en": "If nothing happens after clicking the button, add the subscription manually. Click the Get Link button in the top right corner of this page, copy the link. In Clash Verge, go to the Profiles section and paste the link in the text field, then click the Import button.",
-            "ru": "Если после нажатия на кнопку ничего не произошло, добавьте подписку вручную. Нажмите на этой страницу кнопку Получить ссылку в правом верхнем углу, скопируйте ссылку. В Clash Verge перейдите в раздел Профили и вставьте ссылку в текстовое поле, затем нажмите на кнопку Импорт."
+            "ru": "Если после нажатия на кнопку ничего не произошло, добавьте подписку вручную. Нажмите на этой странице кнопку Получить ссылку в правом верхнем углу, скопируйте ссылку. В Clash Verge перейдите в раздел Профили и вставьте ссылку в текстовое поле, затем нажмите на кнопку Импорт."
           }
         },
         "connectAndUseStep": {
           "description": {
             "en": "You can select a server in the Proxy section, and enable VPN in the Settings section. Set the TUN Mode switch to ON.",
             "ru": "Выبрать сервер можно в разделе Прокси, включить VPN можно в разделе Настройки. Установите переключатель TUN Mode в положение ВКЛ."
-          }
-        }
-      },
-      {
-        "id": "hiddify",
-        "name": "Hiddify",
-        "isFeatured": false,
-        "urlScheme": "hiddify://import/",
-        "installationStep": {
-          "buttons": [
-            {
-              "buttonLink": "https://github.com/hiddify/hiddify-app/releases/download/v2.5.7/Hiddify-Windows-Setup-x64.exe",
-              "buttonText": {
-                "en": "Windows",
-                "ru": "Windows"
-              }
-            },
-            {
-              "buttonLink": "https://github.com/hiddify/hiddify-app/releases/download/v2.5.7/Hiddify-MacOS.dmg",
-              "buttonText": {
-                "en": "macOS",
-                "ru": "macOS"
-              }
-            },
-            {
-              "buttonLink": "https://github.com/hiddify/hiddify-app/releases/download/v2.5.7/Hiddify-Linux-x64.AppImage",
-              "buttonText": {
-                "en": "Linux",
-                "ru": "Linux"
-              }
-            }
-          ],
-          "description": {
-            "en": "In the main section, click the large power button in the center to connect to VPN. If needed, select a different server in the Proxy section",
-            "ru": "В главном разделе нажмите большую кнопку включения в центре для подключения к VPN. При необходимости выберите другой сервер в разделе Прокси."
-          }
-        },
-        "addSubscriptionStep": {
-          "description": {
-            "en": "Click the button below to add subscription",
-            "ru": "Нажмите кнопку ниже, чтобы добавить подписку"
-          }
-        },
-        "connectAndUseStep": {
-          "description": {
-            "en": "In the main section, click the large power button in the center to connect to VPN. Don't forget to select a server from the server list. If needed, select a different server from the server list.",
-            "ru": "В главном разделе нажмите большую кнопку включения в центре для подключения к VPN. Не забудьте выбрать сервер в списке серверов. При необходимости выберите другой сервер из списка серверов."
           }
         }
       }
