@@ -146,6 +146,18 @@ sub: ## Deploy subscription page (auto detect bundled/separate)
 	@# make sub TAGS=nginx
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
 
+subpage-config: ## Update subscription app-config.json and restart container
+	@# Примеры:
+	@## Только на хосте панели (по умолчанию сабстраница bundled)
+	@# make subpage-config LIMIT=panel
+	@## Или, если у тебя отдельная группа/хосты для сабстраницы:
+	@# make subpage-config LIMIT=subscription	
+	@echo ">>> Update subscription app-config.json and restart container"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) \
+		$(LIMIT_FLAG) \
+		--tags sub_config \
+		$(ANSIBLE_FLAGS) $(EXTRA)
+
 haproxy: ## Настройка HAProxy TCP SNI-перекидки
 	@# Примеры:
 	@#   make haproxy
@@ -174,23 +186,6 @@ smoke-sub: ## Запуск только Subscription smoke-тестов
 	@#   make smoke-sub
 	@#   make smoke-sub LIMIT=de-fra-1
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SMOKE) $(LIMIT_FLAG) --tags smoke_subscription $(ANSIBLE_FLAGS) $(EXTRA)
-
-site: ## Полный сценарий (site.yml)
-	@# Примеры:
-	@#   make site
-	@#   make site LIMIT=all
-	@#   make site TAGS=upgrade
-	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SITE) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
-
-up: ## Быстрый деплой: bootstrap → panel → nodes → smoke
-	@# Примеры:
-	@#   make up
-	@#   make up LIMIT=all
-	@#   make up LIMIT=panel
-	$(MAKE) bootstrap LIMIT="$(LIMIT)" TAGS="$(TAGS)" ANSIBLE_FLAGS="$(ANSIBLE_FLAGS)" EXTRA="$(EXTRA)"
-	$(MAKE) panel     LIMIT="$(LIMIT)" TAGS="$(TAGS)" ANSIBLE_FLAGS="$(ANSIBLE_FLAGS)" EXTRA="$(EXTRA)"
-	$(MAKE) nodes     LIMIT="$(LIMIT)" TAGS="$(TAGS)" ANSIBLE_FLAGS="$(ANSIBLE_FLAGS)" EXTRA="$(EXTRA)"
-	$(MAKE) smoke     LIMIT="$(LIMIT)" TAGS="$(TAGS)" ANSIBLE_FLAGS="$(ANSIBLE_FLAGS)" EXTRA="$(EXTRA)"
 
 # --- Диагностика ---
 
