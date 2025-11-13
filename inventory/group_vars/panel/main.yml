@@ -56,7 +56,7 @@ remnawave_inbounds:
   - tag: "{{ remnawave_inbound_tag }}"
     listen: "127.0.0.1"
     port: 8444
-    type: "vless"
+    protocol: "vless"
     sniffing:
       enabled: true
       destOverride: ["http", "tls", "quic", "fakedns"]
