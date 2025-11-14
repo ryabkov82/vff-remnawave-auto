@@ -29,6 +29,10 @@ PLAY_DELETE_NODE  ?= playbooks/delete_node.yml
 # === Subscription Page ===
 PLAY_SUB ?= playbooks/subscription.yml
 
+# === Плейбуки миграции Marzban -> Remnawave
+PLAY_MIGRATE_INBOUND ?= playbooks/migrate_inbound.yml
+PLAY_MIGRATE_HOSTS ?= playbooks/migrate_hosts.yml
+
 # Доп. флаги для ansible/ansible-playbook (например: --ask-vault-pass, -e var=val)
 ANSIBLE_FLAGS ?=
 # Ограничение по хосту/группе (например: LIMIT=panel или LIMIT=node-nl-1)
@@ -233,3 +237,13 @@ venv: ## Создать локальное venv с ansible-core 2.17
 collections: ## Установить Ansible collections из requirements.yml
 	$(ANSIBLE) --version >/dev/null
 	$(ANSIBLE_GALAXY) collection install -r collections/requirements.yml --force
+
+migrate-inbound: ## Миграция inbound VLESS TCP REALITY из Marzban в Remnawave
+	@# Примеры:
+	@#   make migrate-inbound EXTRA='-e remnawave_migrate_inbound_dry_run=true'
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_MIGRATE_INBOUND) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
+
+migrate-hosts: ## Миграция hosts из Marzban в Remnawave
+	@# Примеры:
+	@#   make migrate-hosts EXTRA='-e remnawave_migrate_hosts_dry_run=true'
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_MIGRATE_HOSTS) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)

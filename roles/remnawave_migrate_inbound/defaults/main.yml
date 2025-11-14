@@ -1,0 +1,16 @@
+---
+# Какой inbound мигрируем
+marzban_inbound_tag: "VLESS TCP REALITY"
+
+# Marzban API
+marzban_api_base_url: "https://marzban-s2.vpn-for-friends.com:4443"
+marzban_admin_username: "admin"
+marzban_admin_password: ""
+marzban_api_token: ""  # если указан, логиниться по логину/паролю не будем
+
+# Remnawave API
+remnawave_api_base_url: "https://{{ remnawave_panel_frontend_domain }}/api"
+remnawave_panel_api_token: ""  # Bearer-токен панели
+
+# DRY-RUN: только показать, что будет заменено, ничего не патчить
+remnawave_migrate_inbound_dry_run: false

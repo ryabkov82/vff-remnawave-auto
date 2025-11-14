@@ -1,0 +1,6 @@
+---
+- name: Migrate Marzban hosts to Remnawave
+  hosts: panel
+  gather_facts: false
+  roles:
+    - role: remnawave_migrate_hosts
