@@ -1,0 +1,29 @@
+---
+# Base URLs
+remnawave_api_base_url: ""
+remnawave_panel_frontend_domain: "remna.vpn-for-friends.com"
+
+# Remnawave API
+remnawave_panel_api_token: ""
+
+# Marzban API
+remnawave_migrate_users_marzban_base_url: "https://marzban-s2.vpn-for-friends.com:4443"
+remnawave_migrate_users_marzban_token: " {{ marzban_api_token }}"
+remnawave_migrate_users_marzban_username: "{{ marzban_admin_username }}"
+remnawave_migrate_users_marzban_password: "{{ marzban_admin_password }}"
+
+# Привязка пользователей к внутреннему скваду
+# Используем те же переменные, что и в remnawave_inbounds:
+remnawave_internal_squad_name: "Default-Squad"
+remnawave_internal_squad_uuid: ""
+remnawave_migrate_users_assign_squad: true
+
+# Опциональный фильтр по списку username (если пустой — мигрируем всех)
+remnawave_migrate_users_usernames: []
+
+# Dry-run: только показываем, что бы сделали, но не создаём / не обновляем пользователей
+remnawave_migrate_users_dry_run: false
+
+# Что делать с пользователями без expire (NULL в Marzban)?
+# По умолчанию — очень дальняя дата, можно переопределить в group_vars.
+remnawave_migrate_users_default_expire_at: "2099-12-31T23:59:59Z"

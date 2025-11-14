@@ -32,6 +32,7 @@ PLAY_SUB ?= playbooks/subscription.yml
 # === Плейбуки миграции Marzban -> Remnawave
 PLAY_MIGRATE_INBOUND ?= playbooks/migrate_inbound.yml
 PLAY_MIGRATE_HOSTS ?= playbooks/migrate_hosts.yml
+PLAY_MIGRATE_USERS ?= playbooks/migrate_users.yml
 
 # Доп. флаги для ansible/ansible-playbook (например: --ask-vault-pass, -e var=val)
 ANSIBLE_FLAGS ?=
@@ -247,3 +248,10 @@ migrate-hosts: ## Миграция hosts из Marzban в Remnawave
 	@# Примеры:
 	@#   make migrate-hosts EXTRA='-e remnawave_migrate_hosts_dry_run=true'
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_MIGRATE_HOSTS) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
+
+migrate-users: ## Миграция пользователей из Marzban в Remnawave
+	@# Примеры:
+	@#   make migrate-users LIMIT=panel EXTRA='-e remnawave_migrate_users_dry_run=true'
+	@#   make migrate-users LIMIT=panel EXTRA='-e remnawave_migrate_users_dry_run=true -e remnawave_migrate_users_usernames=["us_67"]'
+	@#   make migrate-users LIMIT=panel EXTRA='-e remnawave_migrate_users_dry_run=false -e remnawave_migrate_users_usernames=["us_67"]'
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_MIGRATE_USERS) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
