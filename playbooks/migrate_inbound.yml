@@ -1,0 +1,6 @@
+---
+- name: Migrate Marzban inbound to Remnawave config profile
+  hosts: panel
+  gather_facts: false
+  roles:
+    - role: remnawave_migrate_inbound

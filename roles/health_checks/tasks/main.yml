@@ -18,7 +18,7 @@
   loop:
     - { src: "check_panel.sh", dest: "check_panel.sh" }
     - { src: "check_node_api.sh", dest: "check_node_api.sh" }
-  notify: systemd daemon-reload
+  notify: Systemd daemon-reload
   tags: [health]
 
 - name: Install systemd units (services)
@@ -31,7 +31,7 @@
   loop:
     - { name: "check_panel", cmd: "/usr/local/bin/check_panel.sh", service: "check-panel.service" }
     - { name: "check_node_api", cmd: "/usr/local/bin/check_node_api.sh", service: "check-node-api.service" }
-  notify: systemd daemon-reload
+  notify: Systemd daemon-reload
   tags: [health]
 
 - name: Install systemd units (timers)
@@ -44,7 +44,7 @@
   loop:
     - { name: "check_panel", timer: "check-panel.timer" }
     - { name: "check_node_api", timer: "check-node-api.timer" }
-  notify: systemd daemon-reload
+  notify: Systemd daemon-reload
   tags: [health]
 
 - name: Enable and start timers

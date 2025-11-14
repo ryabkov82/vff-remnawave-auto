@@ -1,0 +1,127 @@
+---
+# -------- MARZBAN: токен + core config --------
+
+- name: MARZBAN | Get admin token (if not provided)
+  ansible.builtin.uri:
+    url: "{{ marzban_api_base_url }}/api/admin/token"
+    method: POST
+    body_format: form-urlencoded
+    body:
+      username: "{{ marzban_admin_username }}"
+      password: "{{ marzban_admin_password }}"
+    status_code: 200
+    return_content: true
+  register: marzban_token_resp
+  when: marzban_api_token | length == 0
+  changed_when: false
+
+- name: MARZBAN | Set effective token
+  ansible.builtin.set_fact:
+    marzban_api_token_effective: >-
+      {{
+        marzban_api_token
+        if marzban_api_token | length > 0
+        else marzban_token_resp.json.access_token
+      }}
+
+- name: MARZBAN | Get Xray core config
+  ansible.builtin.uri:
+    url: "{{ marzban_api_base_url }}/api/core/config"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ marzban_api_token_effective }}"
+    status_code: 200
+    return_content: true
+  register: marzban_core_resp
+  changed_when: false
+
+- name: MARZBAN | Save core config as fact
+  ansible.builtin.set_fact:
+    marzban_core_config: "{{ marzban_core_resp.json }}"
+  changed_when: false
+
+- name: MARZBAN | Find inbound by tag {{ marzban_inbound_tag }}
+  ansible.builtin.set_fact:
+    marzban_inbound_reality: >-
+      {{
+        marzban_core_config.inbounds
+        | selectattr('tag', 'equalto', marzban_inbound_tag)
+        | list
+        | first
+      }}
+  when: marzban_core_config.inbounds is defined
+  changed_when: false
+
+- name: MARZBAN | Fail if inbound not found
+  ansible.builtin.fail:
+    msg: "Inbound with tag='{{ marzban_inbound_tag }}' not found in Marzban core config"
+  when: marzban_inbound_reality is not defined
+
+
+# -------- REMNAWAVE: config profiles + inbound с тем же тегом --------
+
+- name: REMNAWAVE | Get config profiles
+  ansible.builtin.uri:
+    url: "{{ remnawave_api_base_url }}/config-profiles"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ remnawave_panel_api_token }}"
+    status_code: 200
+    return_content: true
+  register: rw_profiles_resp
+  changed_when: false
+
+- name: REMNAWAVE | Extract profiles list
+  ansible.builtin.set_fact:
+    rw_config_profiles: "{{ rw_profiles_resp.json.response.configProfiles | default([]) }}"
+  changed_when: false
+
+# Найдём все пары [profile, inbound] c нужным тегом
+- name: REMNAWAVE | Collect profile+inbound matches by tag {{ marzban_inbound_tag }}
+  ansible.builtin.set_fact:
+    rw_profile_inbound_matches: >-
+      {{
+        rw_config_profiles
+        | subelements('inbounds')
+        | selectattr('1.tag', 'defined')
+        | selectattr('1.tag', 'equalto', marzban_inbound_tag)
+        | list
+      }}
+  changed_when: false
+
+- name: REMNAWAVE | Fail if no profile has inbound with this tag
+  ansible.builtin.fail:
+    msg: "No Remnawave config profile has inbound with tag='{{ marzban_inbound_tag }}'"
+  when: rw_profile_inbound_matches | length == 0
+
+# Берём первую пару [profile, inbound]
+- name: REMNAWAVE | Save profile and inbound objects as facts
+  ansible.builtin.set_fact:
+    rw_profile_with_inbound: "{{ rw_profile_inbound_matches[0][0] }}"
+    rw_inbound_existing: "{{ rw_profile_inbound_matches[0][1] }}"
+  changed_when: false
+
+- name: REMNAWAVE | Save profile metadata and core config as facts
+  ansible.builtin.set_fact:
+    rw_profile_uuid: "{{ rw_profile_with_inbound.uuid }}"
+    rw_profile_name: "{{ rw_profile_with_inbound.name }}"
+    rw_core_config: "{{ rw_profile_with_inbound.config }}"
+  changed_when: false
+
+- name: REMNAWAVE | Show which profile will be patched (optional)
+  ansible.builtin.debug:
+    msg:
+      - "Config profile to patch: {{ rw_profile_name }} ({{ rw_profile_uuid }})"
+      - "Inbound tag: {{ marzban_inbound_tag }}"
+  when: remnawave_migrate_inbound_dry_run | bool
+
+- name: REMNAWAVE | Show which profile will be patched (optional)
+  ansible.builtin.debug:
+    msg:
+      - "Config profile to patch: {{ rw_profile_name }} ({{ rw_profile_uuid }})"
+      - "Inbound tag: {{ marzban_inbound_tag }}"
+  when: remnawave_migrate_inbound_dry_run | bool
+
+# Основная логика миграции вынесена в отдельный файл
+- name: REMNAWAVE | Migrate inbound reality settings
+  ansible.builtin.include_tasks: migrate_inbound.yml

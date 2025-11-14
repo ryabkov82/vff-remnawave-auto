@@ -1,0 +1,134 @@
+---
+# Здесь считаем, что main.yml уже сделал:
+# - marzban_inbound_reality           (inbound из Marzban с нужным tag)
+# - marzban_inbound_tag               (обычно "VLESS TCP REALITY")
+# - rw_profile_uuid, rw_profile_name  (профиль Remnawave)
+# - remnawave_api_base_url
+# - remnawave_panel_api_token
+
+# 1) Берём полный профиль с config через /config-profiles/{uuid}
+- name: REMNAWAVE | Get full profile by uuid (with config)
+  ansible.builtin.uri:
+    url: "{{ remnawave_api_base_url }}/config-profiles/{{ rw_profile_uuid }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ remnawave_panel_api_token }}"
+    return_content: true
+    status_code: 200
+  register: _profile_full
+  changed_when: false
+
+- name: REMNAWAVE | Extract current config and inbounds
+  ansible.builtin.set_fact:
+    _rw_current_cfg: "{{ _profile_full.json.response.config | default({}) }}"
+    _rw_current_inbounds: "{{ _profile_full.json.response.config.inbounds | default([]) }}"
+  changed_when: false
+
+# 2) Находим индекс inbound'а с нужным тегом
+- name: REMNAWAVE | Find inbound index by tag {{ marzban_inbound_tag }}
+  ansible.builtin.set_fact:
+    _rw_inbound_index: "{{ idx }}"
+  loop: "{{ _rw_current_inbounds }}"
+  loop_control:
+    index_var: idx
+  when:
+    - item.tag is defined
+    - item.tag == marzban_inbound_tag
+
+- name: REMNAWAVE | Fail if no inbound with this tag in config.inbounds
+  ansible.builtin.fail:
+    msg: "Profile {{ rw_profile_name }} ({{ rw_profile_uuid }}) has no inbound with tag='{{ marzban_inbound_tag }}' in config.inbounds"
+  when: _rw_inbound_index is not defined
+
+# 3) Строим новый inbound: оставляем всё как есть, меняем только realitySettings
+- name: REMNAWAVE | Build old inbound and new realitySettings
+  ansible.builtin.set_fact:
+    _rw_old_inbound: "{{ _rw_current_inbounds[_rw_inbound_index] }}"
+    _rw_new_reality: "{{ marzban_inbound_reality.streamSettings.realitySettings }}"
+  changed_when: false
+
+- name: REMNAWAVE | Build merged inbound (replace streamSettings.realitySettings)
+  ansible.builtin.set_fact:
+    _rw_new_inbound: >-
+      {{
+        _rw_old_inbound
+        | combine(
+            {
+              'streamSettings':
+                (_rw_old_inbound.streamSettings | default({}))
+                | combine({'realitySettings': _rw_new_reality}, recursive=True)
+            },
+            recursive=True
+          )
+      }}
+  changed_when: false
+
+# 4) Собираем новый список inbounds: только один элемент заменяем
+- name: REMNAWAVE | Build updated inbounds list
+  ansible.builtin.set_fact:
+    _rw_updated_inbounds: >-
+      {%- set arr = [] -%}
+      {%- for ib in _rw_current_inbounds -%}
+        {%- if loop.index0 == _rw_inbound_index -%}
+          {%- set _ = arr.append(_rw_new_inbound) -%}
+        {%- else -%}
+          {%- set _ = arr.append(ib) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{- arr -}}
+  changed_when: false
+
+- name: REMNAWAVE | Decide if update is needed
+  ansible.builtin.set_fact:
+    _rw_needs_update: "{{ (_rw_updated_inbounds | to_nice_json) != (_rw_current_inbounds | to_nice_json) }}"
+    _rw_merged_config: "{{ _rw_current_cfg | combine({'inbounds': _rw_updated_inbounds}, recursive=True) }}"
+  changed_when: false
+
+# 5) DRY-RUN вывод для проверки
+- name: "REMNAWAVE | DRY-RUN: show old/new realitySettings"
+  ansible.builtin.debug:
+    msg:
+      - "Old Remnawave realitySettings:"
+      - "{{ _rw_old_inbound.streamSettings.realitySettings | default({}) }}"
+      - "New (from Marzban) realitySettings:"
+      - "{{ _rw_new_reality | default({}) }}"
+  when: remnawave_migrate_inbound_dry_run | bool
+
+- name: "REMNAWAVE | DRY-RUN: skipping PATCH"
+  ansible.builtin.debug:
+    msg: >-
+      Skipping PATCH: dry_run={{ remnawave_migrate_inbound_dry_run }}, needs_update={{ _rw_needs_update }}
+  when: remnawave_migrate_inbound_dry_run | bool or not _rw_needs_update
+
+# 6) Реальный PATCH, только если есть изменения и не dry-run
+- name: REMNAWAVE | PATCH config profile with updated inbound realitySettings
+  ansible.builtin.uri:
+    url: "{{ remnawave_api_base_url }}/config-profiles"
+    method: PATCH
+    headers:
+      Authorization: "Bearer {{ remnawave_panel_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      uuid: "{{ rw_profile_uuid }}"
+      config: "{{ _rw_merged_config }}"
+    status_code: 200
+    return_content: true
+  register: _rw_patch
+  when:
+    - not remnawave_migrate_inbound_dry_run | bool
+    - _rw_needs_update | bool
+  changed_when: true
+
+- name: REMNAWAVE | Summary
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        'Updated realitySettings for inbound tag=' ~ marzban_inbound_tag ~
+        ' in profile ' ~ rw_profile_name ~
+        ' (uuid=' ~ rw_profile_uuid ~ ').'
+        if _rw_needs_update
+        else
+        'No inbound changes required.'
+      }}
+  changed_when: _rw_needs_update | bool

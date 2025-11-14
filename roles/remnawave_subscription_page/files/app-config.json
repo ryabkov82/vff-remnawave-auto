@@ -193,17 +193,17 @@
         "installationStep": {
           "buttons": [
             {
-              "buttonLink": "https://apps.apple.com/us/app/happ-proxy-utility/id6504287215",
-              "buttonText": {
-                "en": "Open in App Store [EU]",
-                "ru": "Открыть в App Store [EU]"
-              }
-            },
-            {
               "buttonLink": "https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973",
               "buttonText": {
                 "en": "Open in App Store [RU]",
                 "ru": "Открыть в App Store [RU]"
+              }
+            },
+            {
+              "buttonLink": "https://apps.apple.com/us/app/happ-proxy-utility/id6504287215",
+              "buttonText": {
+                "en": "Open in App Store [EU]",
+                "ru": "Открыть в App Store [EU]"
               }
             }
           ],
@@ -345,7 +345,96 @@
         }
       }
     ],
-    "linux": [],
+    "linux": [
+      {
+        "id": "new-app-linux-1763032030308",
+        "name": "Clash Verge",
+        "isFeatured": true,
+        "urlScheme": "clash://install-config?url=",
+        "installationStep": {
+          "buttons": [
+            {
+              "buttonLink": "https://github.com/clash-verge-rev/clash-verge-rev/releases",
+              "buttonText": {
+                "en": "Linux",
+                "ru": "Linux"
+              }
+            }
+          ],
+          "description": {
+            "en": "Choose the version for your device, click the button below and install the app.",
+            "ru": "Выберите подходящую версию для вашего устройства, нажмите на кнопку ниже и установите приложение."
+          }
+        },
+        "addSubscriptionStep": {
+          "description": {
+            "en": "Click the button below to add subscription",
+            "ru": "Нажмите кнопку ниже, чтобы добавить подписку"
+          }
+        },
+        "connectAndUseStep": {
+          "description": {
+            "en": "You can select a server in the Proxy section, and enable VPN in the Settings section. Set the TUN Mode switch to ON.",
+            "ru": "Выбрать сервер можно в разделе Прокси, включить VPN можно в разделе Настройки. Установите переключатель TUN Mode в положение ВКЛ."
+          }
+        },
+        "additionalBeforeAddSubscriptionStep": {
+          "title": {
+            "en": "Change language",
+            "ru": "Смена языка"
+          },
+          "description": {
+            "en": "After launching the app, you can change the language in settings. In the left panel, find the gear icon, then navigate to Verge 设置 and select 语言设置.",
+            "ru": "После запуска приложения вы можете сменить язык в настройках. В левой панели найдите иконку шестеренки, далее ориентируйтесь на Verge 设置 и выберите пункт 语言设置."
+          },
+          "buttons": []
+        },
+        "additionalAfterAddSubscriptionStep": {
+          "title": {
+            "en": "If the subscription is not added",
+            "ru": "Если подписка не добавилась"
+          },
+          "description": {
+            "en": "If nothing happens after clicking the button, add the subscription manually. Click the Get Link button in the top right corner of this page, copy the link. In Clash Verge, go to the Profiles section and paste the link in the text field, then click the Import button.",
+            "ru": "Если после нажатия на кнопку ничего не произошло, добавьте подписку вручную. Нажмите на этой страницу кнопку Получить ссылку в правом верхнем углу, скопируйте ссылку. В Clash Verge перейдите в раздел Профили и вставьте ссылку в текстовое поле, затем нажмите на кнопку Импорт."
+          },
+          "buttons": []
+        }
+      },
+      {
+        "id": "new-app-linux-1763032544482",
+        "name": "Hiddify",
+        "isFeatured": false,
+        "urlScheme": "hiddify://import/",
+        "installationStep": {
+          "buttons": [
+            {
+              "buttonLink": "https://github.com/hiddify/hiddify-app/releases/download/v2.5.7/Hiddify-Linux-x64.AppImage",
+              "buttonText": {
+                "en": "Linux",
+                "ru": "Linux"
+              }
+            }
+          ],
+          "description": {
+            "en": "Click the link below to download the app",
+            "ru": "Нажмите на ссылку ниже, чтобы загрузить программу"
+          }
+        },
+        "addSubscriptionStep": {
+          "description": {
+            "en": "Click the button below to add subscription",
+            "ru": "Нажмите кнопку ниже, чтобы добавить подписку"
+          }
+        },
+        "connectAndUseStep": {
+          "description": {
+            "en": "In the main section, click the large power button in the center to connect to VPN. Don't forget to select a server from the server list. If needed, select a different server from the server list.",
+            "ru": "В главном разделе нажмите большую кнопку включения в центре для подключения к VPN. Не забудьте выбрать сервер в списке серверов. При необходимости выберите другой сервер из списка серверов."
+          }
+        }
+      }
+    ],
     "macos": [
       {
         "id": "clash-verge",
@@ -354,13 +443,6 @@
         "urlScheme": "clash://install-config?url=",
         "installationStep": {
           "buttons": [
-            {
-              "buttonLink": "https://github.com/clash-verge-rev/clash-verge-rev/releases/download/v2.2.2/Clash.Verge_2.2.2_x64-setup.exe",
-              "buttonText": {
-                "en": "Windows",
-                "ru": "Windows"
-              }
-            },
             {
               "buttonLink": "https://github.com/clash-verge-rev/clash-verge-rev/releases/download/v2.2.2/Clash.Verge_2.2.2_x64.dmg",
               "buttonText": {
@@ -373,13 +455,6 @@
               "buttonText": {
                 "en": "macOS (Apple Silicon)",
                 "ru": "macOS (Apple Silicon)"
-              }
-            },
-            {
-              "buttonLink": "https://github.com/clash-verge-rev/clash-verge-rev/releases",
-              "buttonText": {
-                "en": "Linux",
-                "ru": "Linux"
               }
             }
           ],
@@ -431,30 +506,16 @@
         "installationStep": {
           "buttons": [
             {
-              "buttonLink": "https://github.com/hiddify/hiddify-app/releases/download/v2.5.7/Hiddify-Windows-Setup-x64.exe",
-              "buttonText": {
-                "en": "Windows",
-                "ru": "Windows"
-              }
-            },
-            {
               "buttonLink": "https://github.com/hiddify/hiddify-app/releases/download/v2.5.7/Hiddify-MacOS.dmg",
               "buttonText": {
                 "en": "macOS",
                 "ru": "macOS"
               }
-            },
-            {
-              "buttonLink": "https://github.com/hiddify/hiddify-app/releases/download/v2.5.7/Hiddify-Linux-x64.AppImage",
-              "buttonText": {
-                "en": "Linux",
-                "ru": "Linux"
-              }
             }
           ],
           "description": {
-            "en": "In the main section, click the large power button in the center to connect to VPN. If needed, select a different server in the Proxy section",
-            "ru": "В главном разделе нажмите большую кнопку включения в центре для подключения к VPN. При необходимости выберите другой сервер в разделе Прокси."
+            "en": "Click the link below to download the app",
+            "ru": "Нажмите на ссылку ниже, чтобы загрузить программу"
           }
         },
         "addSubscriptionStep": {

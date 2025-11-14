@@ -1,0 +1,122 @@
+---
+# mh_host: один элемент из _mh_marzban_hosts_flat
+# поля типа:
+#   _inbound_tag, remark, address, port, sni, host, path,
+#   alpn, fingerprint, is_disabled, security, allowinsecure, ...
+
+- name: MH | Resolve inbound mapping for tag {{ mh_host._inbound_tag }}
+  ansible.builtin.set_fact:
+    _mh_inbound: "{{ _mh_inbound_map[mh_host._inbound_tag] | default({}) }}"
+
+- name: MH | Fail if inbound tag is not present in Remnawave
+  ansible.builtin.fail:
+    msg: >-
+      No inbound in Remnawave with tag='{{ mh_host._inbound_tag }}'.
+      Check that Remnawave Config Profile has inbound with this tag.
+  when: _mh_inbound | length == 0
+
+# Ограничим remark 40 символами (ограничение API Remnawave)
+- name: MH | Normalize remark
+  ansible.builtin.set_fact:
+    _mh_remark: >-
+      {{
+        (mh_host.remark | default(mh_host.address))
+        | string
+        | regex_replace('(.{40}).*', '\1')
+      }}
+
+# Security mapping: Marzban -> Remnawave enum
+- name: MH | Map security layer
+  ansible.builtin.set_fact:
+    _mh_security_layer: "{{ {'tls': 'TLS', 'none': 'NONE'}.get(mh_host.security, 'DEFAULT') }}"
+
+# Ключ идемпотентности: address|port
+- name: MH | Build host key
+  ansible.builtin.set_fact:
+    _mh_host_key: "{{ mh_host.address }}|{{ (mh_host.port | default(443)) }}"
+  changed_when: false
+
+- name: MH | Skip if host already exists (idempotent)
+  ansible.builtin.debug:
+    msg: "Skip existing host: {{ _mh_host_key }}"
+  when:
+    - _mh.idempotent
+    - _mh_host_key in _mh_existing_host_keys
+
+- name: MH | Return early when host exists
+  ansible.builtin.meta: end_host
+  when:
+    - _mh.idempotent
+    - _mh_host_key in _mh_existing_host_keys
+
+# Собираем тело запроса CreateHostRequestDto
+- name: MH | Build CreateHostRequestDto body
+  ansible.builtin.set_fact:
+    _mh_host_body:
+      inbound:
+        configProfileUuid: "{{ _mh_inbound.config_profile_uuid }}"
+        configProfileInboundUuid: "{{ _mh_inbound.inbound_uuid }}"
+      remark: "{{ _mh_remark }}"
+      address: "{{ mh_host.address }}"
+      path: >-
+        {{
+          (mh_host.path | default('/', true))
+          | string
+        }}
+      port: "{{ mh_host.port | default(443) }}"
+      sni: "{{ mh_host.sni | default(mh_host.address) }}"
+      host: "{{ mh_host.host | default(mh_host.sni | default(mh_host.address)) }}"
+      alpn: >-
+        {{
+          (mh_host.alpn | default('', true) | trim)
+          if (mh_host.alpn | default('', true) | trim) | length > 0
+          else omit
+        }}
+      fingerprint: >-
+        {{
+          (mh_host.fingerprint | default('chrome', true) | trim)
+          if (mh_host.fingerprint | default('chrome', true) | trim) | length > 0
+          else omit
+        }}
+      isDisabled: "{{ mh_host.is_disabled | default(false) }}"
+      securityLayer: "{{ _mh_security_layer }}"
+      serverDescription: "{{ mh_host.server_description | default(omit) }}"
+      tag: "{{ mh_host.tag | default(omit) }}"
+      isHidden: false
+      overrideSniFromAddress: false
+      allowInsecure: "{{ (mh_host.allowinsecure | default(false, true)) | bool }}"
+      vlessRouteId: null
+      shuffleHost: false
+      mihomoX25519: false
+      nodes: []
+  changed_when: false
+
+# DRY-RUN
+- name: "MH | DRY-RUN: show host body to create"
+  ansible.builtin.debug:
+    msg:
+      - "Would create host for inbound tag={{ mh_host._inbound_tag }}"
+      - "{{ _mh_host_body }}"
+  when: _mh.dry_run | bool
+
+# Реальный POST
+- name: MH | REMNAWAVE | Create host
+  ansible.builtin.uri:
+    url: "{{ _mh.api_base_url }}/hosts"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ _mh.api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body: "{{ _mh_host_body }}"
+    status_code: 201
+    return_content: true
+  register: _mh_rw_host_create
+  when: not _mh.dry_run | bool
+  changed_when: true
+
+- name: MH | Add new host key to existing set (for idempotency in одном запуске)
+  ansible.builtin.set_fact:
+    _mh_existing_host_keys: "{{ _mh_existing_host_keys + [_mh_host_key] }}"
+  when: not _mh.dry_run | bool
+  changed_when: false

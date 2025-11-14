@@ -1,0 +1,216 @@
+---
+# Внутренний словарик, как в remnawave_inbounds
+- name: MH | Build internal var map
+  ansible.builtin.set_fact:
+    _mh:
+      api_base_url: >-
+        {{ remnawave_api_base_url
+           | default('https://' ~ remnawave_panel_frontend_domain ~ '/api') }}
+      api_token: "{{ remnawave_panel_api_token | default('') }}"
+      marzban_base_url: "{{ marzban_api_base_url }}"
+      marzban_admin_username: "{{ marzban_admin_username | default('') }}"
+      marzban_admin_password: "{{ marzban_admin_password | default('') }}"
+      marzban_api_token: "{{ marzban_api_token | default('') }}"
+      include_disabled: "{{ (remnawave_migrate_hosts_include_disabled | default(true)) | bool }}"
+      dry_run: "{{ (remnawave_migrate_hosts_dry_run | default(true)) | bool }}"
+      idempotent: "{{ (remnawave_migrate_hosts_idempotent | default(true)) | bool }}"
+      inbound_tag_default: "{{ remnawave_migrate_hosts_inbound_tag_default | default('VLESS TCP REALITY') }}"
+
+- name: MH | Assert required inputs
+  ansible.builtin.assert:
+    that:
+      - _mh.api_base_url | length > 0
+      - _mh.api_token | length > 0
+      - _mh.marzban_base_url | length > 0
+    fail_msg: "Missing required inputs for remnawave_migrate_hosts (API URLs / tokens)."
+
+# === 1) Marzban: получаем токен (если нужно) и hosts ===
+
+- name: MH | MARZBAN | Get admin token (if not provided)
+  ansible.builtin.uri:
+    url: "{{ _mh.marzban_base_url }}/api/admin/token"
+    method: POST
+    body_format: form-urlencoded
+    body:
+      username: "{{ _mh.marzban_admin_username }}"
+      password: "{{ _mh.marzban_admin_password }}"
+    status_code: 200
+    return_content: true
+  register: _mh_marzban_token_resp
+  when: _mh.marzban_api_token | length == 0
+  changed_when: false
+
+- name: MH | MARZBAN | Set effective token
+  ansible.builtin.set_fact:
+    _mh_marzban_token_effective: >-
+      {{
+        _mh.marzban_api_token
+        if _mh.marzban_api_token | length > 0
+        else _mh_marzban_token_resp.json.access_token
+      }}
+  changed_when: false
+
+- name: MH | MARZBAN | Get hosts
+  ansible.builtin.uri:
+    url: "{{ _mh.marzban_base_url }}/api/hosts"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ _mh_marzban_token_effective }}"
+    status_code: 200
+    return_content: true
+  register: _mh_marzban_hosts_resp
+  changed_when: false
+
+# Ожидаем структуру:
+# {
+#   "VLESS TCP REALITY": [ { host1 }, { host2 }, ... ],
+#   "SOMETHING ELSE":    [ ... ]
+# }
+
+- name: MH | MARZBAN | Init flat host list
+  ansible.builtin.set_fact:
+    _mh_marzban_hosts_flat: []
+  changed_when: false
+
+- name: MH | MARZBAN | Build flat host list (add _inbound_tag)
+  ansible.builtin.set_fact:
+    _mh_marzban_hosts_flat: "{{ _mh_marzban_hosts_flat + _chunk }}"
+  vars:
+    inbound_tag: "{{ item.key }}"
+    _chunk: "{{ item.value | map('combine', {'_inbound_tag': inbound_tag}) | list }}"
+  loop: "{{ _mh_marzban_hosts_resp.json | dict2items }}"
+  changed_when: false
+
+- name: MH | MARZBAN | Filter disabled hosts if needed
+  ansible.builtin.set_fact:
+    _mh_marzban_hosts_flat: >-
+      {{
+        _mh_marzban_hosts_flat
+        | rejectattr('is_disabled', 'equalto', true)
+        | list
+        if not _mh.include_disabled
+        else _mh_marzban_hosts_flat
+      }}
+  changed_when: false
+
+# === 2) Remnawave: строим карту inbound_tag -> (profile_uuid, inbound_uuid) ===
+
+- name: MH | REMNAWAVE | Get config profiles
+  ansible.builtin.uri:
+    url: "{{ _mh.api_base_url }}/config-profiles"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ _mh.api_token }}"
+    return_content: true
+    status_code: 200
+  register: _mh_profiles
+  changed_when: false
+
+- name: MH | REMNAWAVE | Extract config profile list
+  ansible.builtin.set_fact:
+    _mh_cp_list: >-
+      {{
+        _mh_profiles.json.response.configProfiles
+        | default(_mh_profiles.json.configProfiles)
+        | default(_mh_profiles.json.response.items)
+        | default(_mh_profiles.json.items)
+        | default([])
+      }}
+  changed_when: false
+
+- name: MH | REMNAWAVE | Assert profiles list not empty
+  ansible.builtin.assert:
+    that:
+      - _mh_cp_list | length > 0
+    fail_msg: >-
+      Remnawave returned no config profiles. Check API token/URL and that at least
+      one config profile exists in the panel.
+
+- name: MH | REMNAWAVE | Init inbound map (tag -> uuids)
+  ansible.builtin.set_fact:
+    _mh_inbound_map: {}
+  changed_when: false
+
+- name: MH | REMNAWAVE | Build inbound map by tag
+  ansible.builtin.set_fact:
+    _mh_inbound_map: >-
+      {{
+        _mh_inbound_map
+        | combine(
+            {
+              (inbound.tag | default('')):
+                {
+                  'config_profile_uuid': profile.uuid,
+                  'inbound_uuid': inbound.uuid
+                }
+            }
+          )
+      }}
+  vars:
+    profile: "{{ item.0 }}"
+    inbound: "{{ item.1 }}"
+  loop: "{{ _mh_cp_list | subelements('inbounds') }}"
+  when:
+    - inbound.tag is defined
+    - (inbound.tag | length) > 0
+  changed_when: false
+
+- name: MH | REMNAWAVE | Debug inbound map (optional)
+  ansible.builtin.debug:
+    var: _mh_inbound_map
+  when: _mh.dry_run | bool
+
+# === 3) Remnawave: получаем текущие hosts для идемпотентности ===
+
+- name: MH | REMNAWAVE | Get existing hosts (for idempotency)
+  ansible.builtin.uri:
+    url: "{{ _mh.api_base_url }}/hosts"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ _mh.api_token }}"
+    return_content: true
+    status_code: 200
+  register: _mh_rw_hosts_raw
+  when: _mh.idempotent
+  changed_when: false
+
+- name: MH | REMNAWAVE | Extract hosts list from response
+  when: _mh.idempotent
+  ansible.builtin.set_fact:
+    _mh_rw_hosts_list: "{{ _mh_rw_hosts_raw.json.response | default([]) }}"
+  changed_when: false
+
+- name: MH | REMNAWAVE | Init existing host key set
+  when: _mh.idempotent
+  ansible.builtin.set_fact:
+    _mh_existing_host_keys: []
+  changed_when: false
+
+- name: MH | REMNAWAVE | Fill existing host key set (address|port)
+  when: _mh.idempotent
+  ansible.builtin.set_fact:
+    _mh_existing_host_keys: >-
+      {{
+        _mh_existing_host_keys
+        + [
+            (item.address | default(''))
+            ~ '|'
+            ~ ((item.port | default(443)) | string)
+          ]
+      }}
+  loop: "{{ _mh_rw_hosts_list }}"
+  changed_when: false
+
+- name: MH | REMNAWAVE | Init empty host keys when idempotent disabled
+  when: not _mh.idempotent
+  ansible.builtin.set_fact:
+    _mh_existing_host_keys: []
+  changed_when: false
+
+# === 4) Обрабатываем каждый host из Marzban ===
+
+- name: MH | REMNAWAVE | Migrate each host
+  ansible.builtin.include_tasks: migrate_one_host.yml
+  loop: "{{ _mh_marzban_hosts_flat }}"
+  loop_control:
+    loop_var: mh_host
