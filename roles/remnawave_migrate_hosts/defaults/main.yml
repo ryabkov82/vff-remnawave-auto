@@ -1,0 +1,22 @@
+---
+# Marzban API
+marzban_api_base_url: "https://marzban-s2.vpn-for-friends.com:4443"
+marzban_admin_username: "admin"
+marzban_admin_password: ""
+marzban_api_token: ""  # если задан, логиниться по username/password не будем
+
+# Remnawave API
+remnawave_api_base_url: "https://{{ remnawave_panel_frontend_domain }}/api"
+remnawave_panel_api_token: ""  # Bearer-токен панели
+
+# Какой inbound-тег мигрируем (ключ в /api/hosts Marzban)
+remnawave_migrate_hosts_inbound_tag_default: "VLESS TCP REALITY"
+
+# Включать ли disabled-хосты из Marzban
+remnawave_migrate_hosts_include_disabled: true
+
+# DRY-RUN: только печатаем, какие хосты бы создали, без POST /hosts
+remnawave_migrate_hosts_dry_run: false
+
+# Idempotency: проверять существующие хосты в Remnawave и не дублировать
+remnawave_migrate_hosts_idempotent: true

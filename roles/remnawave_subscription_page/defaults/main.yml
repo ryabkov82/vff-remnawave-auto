@@ -1,6 +1,6 @@
 # remnawave_subscription_page — systemd Nginx only
 remnawave_sub_deploy_mode: "bundled"
-remnawave_sub_dir: /opt/remnawave/subscription
+remnawave_sub_dir: /opt/remnasub
 remnawave_sub_container_name: remnawave-subscription-page
 remnawave_sub_image: remnawave/subscription-page:latest
 remnawave_sub_app_port: 3010
