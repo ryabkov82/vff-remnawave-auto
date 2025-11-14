@@ -1,0 +1,161 @@
+---
+- name: MU | Build internal var map
+  ansible.builtin.set_fact:
+    _mu:
+      api_base_url: >-
+        {{
+          remnawave_api_base_url
+          | default('https://' ~ remnawave_panel_frontend_domain ~ '/api')
+        }}
+      api_token: "{{ remnawave_panel_api_token | default('') }}"
+      marzban_base_url: "{{ remnawave_migrate_users_marzban_base_url | default('') }}"
+      marzban_token: "{{ remnawave_migrate_users_marzban_token | default('') }}"
+      marzban_username: "{{ remnawave_migrate_users_marzban_username | default('') }}"
+      marzban_password: "{{ remnawave_migrate_users_marzban_password | default('') }}"
+      assign_squad: "{{ (remnawave_migrate_users_assign_squad | default(true)) | bool }}"
+      squad_name: "{{ remnawave_internal_squad_name | default('Default-Squad') }}"
+      squad_uuid: "{{ remnawave_internal_squad_uuid | default('') }}"
+      dry_run: "{{ (remnawave_migrate_users_dry_run | default(true)) | bool }}"
+      default_expire_at: >-
+        {{
+          remnawave_migrate_users_default_expire_at
+          | default('2099-12-31T23:59:59Z')
+        }}
+      usernames_filter: "{{ remnawave_migrate_users_usernames | default([]) }}"
+
+- name: MU | Assert required inputs
+  ansible.builtin.assert:
+    that:
+      - _mu.api_base_url | length > 0
+      - _mu.api_token | length > 0
+      - _mu.marzban_base_url | length > 0
+      - (_mu.marzban_token | length > 0)
+        or (_mu.marzban_username | length > 0 and _mu.marzban_password | length > 0)
+    fail_msg: >-
+      remnawave_migrate_users: missing required inputs.
+      Need remnawave_api_base_url + remnawave_panel_api_token
+      and Marzban base URL + token or admin credentials.
+
+# === 0) Найти internal squad (по uuid или по имени), если нужно привязывать пользователей
+- name: MU | REMNAWAVE | Get internal squads
+  when: _mu.assign_squad
+  ansible.builtin.uri:
+    url: "{{ _mu.api_base_url }}/internal-squads"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ _mu.api_token }}"
+    return_content: true
+    status_code: 200
+  register: _mu_squads
+
+- name: MU | REMNAWAVE | Extract internal squads list
+  when: _mu.assign_squad
+  ansible.builtin.set_fact:
+    _mu_squads_list: >-
+      {{
+        _mu_squads.json.response.internalSquads
+        | default(_mu_squads.json.internalSquads)
+        | default([])
+      }}
+
+- name: MU | REMNAWAVE | Pick internal squad by uuid or name
+  when: _mu.assign_squad
+  ansible.builtin.set_fact:
+    _mu_target_squad: >-
+      {{
+        (_mu_squads_list | selectattr('uuid', 'equalto', _mu.squad_uuid) | list | first)
+        if (_mu.squad_uuid | length > 0)
+        else
+        (_mu_squads_list | selectattr('name', 'equalto', _mu.squad_name) | list | first)
+      }}
+  failed_when: _mu_target_squad is not defined or _mu_target_squad is none
+
+- name: MU | REMNAWAVE | Save internal squad uuid for users
+  when: _mu.assign_squad
+  ansible.builtin.set_fact:
+    _mu_internal_squad_uuid: "{{ _mu_target_squad.uuid | string }}"
+
+# === 1) Получаем token от Marzban (если не задан явно)
+
+- name: MU | MARZBAN | Get admin token (if needed)
+  when:
+    - _mu.marzban_token | length == 0
+  ansible.builtin.uri:
+    url: "{{ _mu.marzban_base_url }}/api/admin/token"
+    method: POST
+    body_format: form-urlencoded
+    body:
+      username: "{{ _mu.marzban_username }}"
+      password: "{{ _mu.marzban_password }}"
+    status_code: 200
+    return_content: true
+  register: _mu_marzban_token_resp
+
+- name: MU | MARZBAN | Save effective token
+  ansible.builtin.set_fact:
+    _mu: >-
+      {{
+        _mu
+        | combine(
+            {
+              'marzban_token':
+                (
+                  _mu.marzban_token
+                  if _mu.marzban_token | length > 0
+                  else _mu_marzban_token_resp.json.access_token
+                )
+            },
+            recursive=true
+          )
+      }}
+
+# === 2) Получаем список пользователей Marzban
+
+- name: MU | MARZBAN | Get users
+  ansible.builtin.uri:
+    url: "{{ _mu.marzban_base_url }}/api/users"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ _mu.marzban_token }}"
+    status_code: 200
+    return_content: true
+  register: _mu_marz_users_raw
+  changed_when: false
+
+- name: MU | MARZBAN | Extract users list
+  ansible.builtin.set_fact:
+    _mu_marz_users_list: "{{ _mu_marz_users_raw.json.users | default([]) }}"
+  changed_when: false
+
+- name: MU | MARZBAN | Filter by usernames (if provided)
+  when: _mu.usernames_filter | length > 0
+  ansible.builtin.set_fact:
+    _mu_marz_users_list: >-
+      {{
+        _mu_marz_users_list
+        | selectattr('username', 'in', _mu.usernames_filter)
+        | list
+      }}
+  changed_when: false
+
+- name: MU | Summary (how many users will be processed)
+  ansible.builtin.debug:
+    msg: >-
+      remnawave_migrate_users: will process {{ _mu_marz_users_list | length }}
+      Marzban users (dry_run={{ _mu.dry_run }}).
+  changed_when: false
+
+- name: MU | Fail if no users found
+  ansible.builtin.assert:
+    that:
+      - _mu_marz_users_list | length > 0
+    fail_msg: >-
+      No Marzban users found for migration (after optional filtering).
+
+# === 3) Мигрируем пользователей по одному
+
+- name: MU | Migrate users one by one
+  ansible.builtin.include_tasks: migrate_one_user.yml
+  loop: "{{ _mu_marz_users_list }}"
+  loop_control:
+    loop_var: mu_user
