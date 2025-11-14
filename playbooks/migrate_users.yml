@@ -1,0 +1,7 @@
+---
+- name: Migrate Marzban users to Remnawave
+  hosts: panel
+  gather_facts: false
+  roles:
+    - role: remnawave_migrate_users
+      tags: [remnawave_migrate_users, migrate_users]
