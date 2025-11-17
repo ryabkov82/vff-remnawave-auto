@@ -49,3 +49,15 @@ haproxy_nginx_sni_domains: []
 # Group names used in 'separate' mode (must exist in your inventory)
 remnawave_group_panel: "panel"
 remnawave_group_subscription: "subscription"
+
+# ---- Legacy Marzban support ----
+
+# Включить поддержку legacy Marzban ссылок
+remnawave_legacy_marzban_enabled: "{{ remnawave_sub_marzban_legacy_enabled }}"
+
+# Публичный legacy-домен (тот, где раньше жил Marzban)
+# Пример: "marzban-s2.vpn-for-friends.com"
+remnawave_sub_marzban_legacy_domain: ""
+
+# TLS-режим для legacy-домена (по умолчанию такой же, как у sub-домена)
+remnawave_legacy_marzban_tls_mode: "{{ remnawave_sub_tls_mode }}"

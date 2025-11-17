@@ -37,5 +37,31 @@ remnawave_nginx_subscription_site: subscription.conf
 remnawave_nginx_ssl_fullchain: "/etc/letsencrypt/live/{{ remnawave_sub_public_domain }}/fullchain.pem"
 remnawave_nginx_ssl_privkey: "/etc/letsencrypt/live/{{ remnawave_sub_public_domain }}/privkey.pem"
 
-remnawave_nginx_bind_address: "{{ nginx_bind_address | default('127.0.0.1') }}"
-remnawave_nginx_external_https_port: "{{ nginx_external_https_port | default(4443) }}"
+remnawave_nginx_bind_address: ""
+remnawave_nginx_external_https_port: ""
+
+# Включить поддержку старых marzban-ссылок
+remnawave_sub_marzban_legacy_enabled: false
+
+# secret_key из таблицы jwt БД Marzban (лучше держать в vault)
+remnawave_sub_marzban_secret_key: ""
+
+# Префикс пути в старых ссылках — обычно "sub"
+remnawave_sub_marzban_custom_sub_prefix: ""
+
+# API-токен Remnawave (Settings → API Tokens), тоже в vault
+remnawave_sub_remnawave_api_token: "{{ remnawave_panel_api_token }}"
+
+# Домен старой Marzban-сабстраницы (типа marzban-s2.vpn-for-friends.com)
+remnawave_sub_marzban_legacy_domain: ""
+
+# Имя nginx-конфига для legacy-домена
+remnawave_nginx_legacy_site: "subscription-legacy-marzban.conf"
+
+# Пути к сертификату для legacy-домена (по умолчанию — стандартный путь LE)
+remnawave_nginx_legacy_ssl_fullchain: "/etc/letsencrypt/live/{{ remnawave_sub_marzban_legacy_domain }}/fullchain.pem"
+remnawave_nginx_legacy_ssl_privkey: "/etc/letsencrypt/live/{{ remnawave_sub_marzban_legacy_domain }}/privkey.pem"
+
+# Внутренний словарь с legacy-переменными и «эффективный» env
+remnawave_sub_marzban_legacy_env: {}
+remnawave_sub_env_effective: "{{ remnawave_sub_env }}"

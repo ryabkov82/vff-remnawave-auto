@@ -1,3 +1,4 @@
+---
 - name: ACME | Issue certificate for subscription domain (auto mode)
   ansible.builtin.include_role:
     name: nginx

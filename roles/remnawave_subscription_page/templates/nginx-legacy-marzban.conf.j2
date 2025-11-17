@@ -1,0 +1,102 @@
+# nginx-legacy-marzban.conf.j2
+#
+# Legacy-домен для старых Marzban-ссылок вида
+#   https://{{ remnawave_sub_marzban_legacy_domain }}/sub/<encodedToken>
+#
+# Nginx делает rewrite /sub/<token> -> /<token> и проксирует
+# в тот же backend, что и обычная страница подписки (APP_PORT).
+
+server {
+    server_name {{ remnawave_sub_marzban_legacy_domain }};
+
+    # слушаем ЛОКАЛЬНО, тот же порт, что и для основного sub-домена (например 127.0.0.1:4443)
+    listen {{ remnawave_nginx_bind_address | default('127.0.0.1') }}:{{ remnawave_nginx_external_https_port }} ssl http2;
+    {% if nginx_bind_ipv6 | default(false) %}
+    listen [::1]:{{ remnawave_nginx_external_https_port }} ssl http2;
+    {% endif %}
+
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_session_timeout 1d;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_tickets off;
+    ssl_certificate     "{{ remnawave_nginx_legacy_ssl_fullchain }}";
+    ssl_certificate_key "{{ remnawave_nginx_legacy_ssl_privkey }}";
+    ssl_stapling        on;
+    ssl_stapling_verify on;
+
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_buffers 16 8k;
+    gzip_http_version 1.1;
+    gzip_min_length 256;
+    gzip_types
+      application/atom+xml
+      application/geo+json
+      application/javascript
+      application/x-javascript
+      application/json
+      application/ld+json
+      application/manifest+json
+      application/rdf+xml
+      application/rss+xml
+      application/xhtml+xml
+      application/xml
+      font/eot font/otf font/ttf
+      image/svg+xml
+      text/css text/javascript text/plain text/xml;
+
+    # Lightweight health endpoint для smoke-тестов
+    location = /healthz {
+        access_log off;
+        add_header Content-Type text/plain;
+        return 200 "ok\n";
+    }
+
+    {# --- Логика переписывания префикса для старых ссылок --- #}
+    {% set legacy_prefix  = remnawave_sub_marzban_custom_sub_prefix | default('sub') %}
+    {% set runtime_prefix = remnawave_sub_env_effective.CUSTOM_SUB_PREFIX | default('') %}
+
+    {% if legacy_prefix %}
+    # Старые Marzban-ссылки: /<legacy_prefix>/<token>
+    # Пример: /sub/dXNf...
+    location ~ ^/{{ legacy_prefix }}/(.*)$ {
+        {% if runtime_prefix and runtime_prefix != legacy_prefix %}
+        # Если в subscription-page задан свой CUSTOM_SUB_PREFIX,
+        # то пробрасываем внутрь как /<CUSTOM_SUB_PREFIX>/<token>
+        # Пример: /sub/<token> → /mysub/<token>
+        rewrite ^/{{ legacy_prefix }}/(.*)$ /{{ runtime_prefix }}/$1 break;
+        {% else %}
+        # Если CUSTOM_SUB_PREFIX пустой или совпадает с legacy_prefix —
+        # просто вырезаем префикс: /sub/<token> → /<token>
+        rewrite ^/{{ legacy_prefix }}/(.*)$ /$1 break;
+        {% endif %}
+
+        proxy_http_version 1.1;
+        proxy_pass http://remnawave-subscription-page;
+        proxy_set_header Host               $host;
+        proxy_set_header X-Real-IP          $remote_addr;
+        proxy_set_header X-Forwarded-For    $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto  https;
+        proxy_set_header X-Forwarded-Host   $host;
+        proxy_set_header X-Forwarded-Port   $server_port;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+    {% endif %}
+
+    # Всё остальное — в upstream remnawave-subscription-page
+    location / {
+        proxy_http_version 1.1;
+        proxy_pass http://remnawave-subscription-page;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+}

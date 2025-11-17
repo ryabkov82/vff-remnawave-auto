@@ -1,12 +1,13 @@
 ---
-nginx_bind_address: "127.0.0.1"
+# nginx_bind_address: "127.0.0.1"
+nginx_bind_address: "{{ remnawave_nginx_bind_address }}"
 nginx_bind_ipv6: false
 
 # Режим сертификата: letsencrypt | letse ncrypt_dns01 | selfsigned
 nginx_tls_mode: "letsencrypt"
 
 # Порт, на котором слушает фронт Nginx (TLS), т.к. :443 занят HAProxy (SNI passthrough)
-nginx_external_https_port: 4443
+nginx_external_https_port: "{{ remnawave_nginx_external_https_port }}"
 
 # Основной домен панели
 nginx_server_name: "{{ remnawave_panel_frontend_domain | default('panel.example.com') }}"

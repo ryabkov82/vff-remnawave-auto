@@ -1,11 +1,25 @@
 # 🚀 VFF Remnawave Auto Deployment
 
-Полностью автоматизированное развертывание **Remnawave Panel**, **Remnawave Nodes** и **Subscription Page** с поддержкой:
-- SNI-маршрутизации на одном IP (панель + Reality-нода)
-- Автоматического деплоя и обновления нод
-- Автоматического развёртывания страницы подписки (bundled / separate)
-- Автоматической регистрации нод и хостов в панели
-- Smoke-тестов и health-check таймеров
+Полностью автоматизированное развертывание **Remnawave Panel**, **Remnawave Nodes**, **Subscription Page**  
+и полная миграция данных **Marzban → Remnawave** (inbounds, hosts, users).
+
+---
+
+## ⚙️ Основные возможности
+
+- Автодеплой **панели Remnawave**
+- Автодеплой **нод** + автоматическая регистрация в панели
+- Автодеплой **страницы подписки** (bundled / separate)
+- Управление сертификатами (HTTP‑01 / DNS‑01)
+- Интеграция с HAProxy (TLS passthrough, SNI‑routing)
+- Полная **миграция данных Marzban → Remnawave**
+  - inbound VLESS Reality
+  - hosts (node-host configs)
+  - users (включая uuid, трафик, статус, срок действия)
+- Legacy Router: поддержка старых ссылок формата  
+  `https://<domain>/sub/<marzban_token>`
+- Smoke‑тесты панели, нод и страницы подписки
+- Полный decommission нод
 
 ---
 
@@ -149,6 +163,114 @@ make nodes LIMIT=node-name TAGS=smoke_node
 
 ---
 
+## 🔄 Миграция данных Marzban → Remnawave
+
+В репозитории присутствуют три специализированные роли, позволяющие **полностью перенести конфигурацию** из существующего Marzban-кластера в Remnawave:
+
+- **Inbound VLESS TCP Reality**  
+  `roles/remnawave_migrate_inbound`
+
+- **Hosts (пулы адресов / Domain Bindings)**  
+  `roles/remnawave_migrate_hosts`
+
+- **Users (статусы, лимиты, UUID, squads, expireAt)**  
+  `roles/remnawave_migrate_users`
+
+Все роли поддерживают **DRY-RUN**, работают идемпотентно и допускают повторный запуск без побочных эффектов.
+
+---
+
+### ▶️ Миграция inbound (VLESS TCP REALITY)
+
+Переносит профиль Reality из Marzban в Remnawave, маппируя:
+
+- публичный ключ сервера,
+- shortId,
+- serverName,
+- поток реальности,
+- параметры VLESS,
+- теги,
+- слушающие адреса.
+
+```bash
+make migrate-inbound
+```
+
+Примеры:
+
+```bash
+# Только посмотреть, что будет создано/обновлено
+make migrate-inbound EXTRA='-e remnawave_migrate_inbound_dry_run=true'
+```
+
+Подробности:  
+👉 `docs/remnawave_migrate_inbound.md`
+
+---
+
+### ▶️ Миграция Hosts
+
+Переносит host-binding’и (доменные имена, режимы, привязку к inbound'ам).
+
+```bash
+make migrate-hosts
+```
+
+Примеры:
+
+```bash
+# DRY-RUN без внесения изменений
+make migrate-hosts EXTRA='-e remnawave_migrate_hosts_dry_run=true'
+```
+
+Документация:  
+👉 `docs/remnawave_migrate_hosts.md`
+
+---
+
+### ▶️ Миграция пользователей
+
+Самая сложная часть миграции — перенести всех пользователей Marzban:
+
+- username / note  
+- статус (active / disabled / limited / expired)  
+- trafficLimit + стратегия  
+- expireAt → перевод unix-timestamp → ISO8601  
+- VLESS UUID — перенос 1:1  
+- squads (опционально)  
+- описание  
+- фильтрация по `usernames=[...]`  
+
+Команда:
+
+```bash
+make migrate-users LIMIT=panel
+```
+
+Примеры:
+
+```bash
+# Полный DRY-RUN всех пользователей
+make migrate-users LIMIT=panel EXTRA='-e remnawave_migrate_users_dry_run=true'
+
+# DRY-RUN только одного пользователя
+make migrate-users LIMIT=panel EXTRA='-e remnawave_migrate_users_dry_run=true -e remnawave_migrate_users_usernames=["us_67"]'
+
+# Применить реальные изменения для конкретного пользователя
+make migrate-users LIMIT=panel EXTRA='-e remnawave_migrate_users_dry_run=false -e remnawave_migrate_users_usernames=["us_67"]'
+```
+
+Роль гарантирует:
+
+- идемпотентность: существующий пользователь → PATCH, нового → POST  
+- никакого «добавления _ в конце» (строгая нормализация)  
+- уведомления в выходном логе о `create` или `update`  
+
+Документация:  
+👉 `docs/remnawave_migrate_users.md`
+
+---
+
 ## 📚 Документация
 
 | Раздел | Файл | Описание |
@@ -164,6 +286,9 @@ make nodes LIMIT=node-name TAGS=smoke_node
 | Проверки | [docs/smoke_tests.md](docs/smoke_tests.md) | Smoke-тесты панели и нод |
 | Отключение ноды | [docs/remnawave_disable_node.md](docs/remnawave_disable_node.md) | Временное отключение ноды и хостов |
 | Удаление ноды | [docs/remnawave_delete_node.md](docs/remnawave_delete_node.md) | Полное удаление ноды и связанных хостов |
+| **Миграция Inbound** | **[docs/remnawave_migrate_inbound.md](docs/remnawave_migrate_inbound.md)** | Перенос Reality-inbound |
+| **Миграция Hosts** | **[docs/remnawave_migrate_hosts.md](docs/remnawave_migrate_hosts.md)** | Перенос Host-binding’ов |
+| **Миграция Users** | **[docs/remnawave_migrate_users.md](docs/remnawave_migrate_users.md)** | Полная миграция пользователей |
 
 ---
 
@@ -265,3 +390,13 @@ docker logs remnanode --tail=50
 echo | openssl s_client -connect IP:443 -servername panel.example.com
 echo | openssl s_client -connect IP:443 -servername www.cloudflare.com
 ```
+
+---
+
+## Поддержка и вклад
+
+PR приветствуются: дополнения к ролям, новые дашборды и правила, улучшения документации. Старайтесь сопровождать изменения коротким описанием и примерами проверки.
+
+---
+
+© [VPN for Friends](https://t.me/vpn_for_myfriends_bot) · Monitoring Stack

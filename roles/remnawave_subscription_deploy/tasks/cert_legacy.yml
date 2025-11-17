@@ -1,0 +1,11 @@
+---
+- name: ACME | Issue certificate for legacy Marzban domain (auto mode)
+  ansible.builtin.include_role:
+    name: nginx
+    apply:
+      tags: [tls]
+  vars:
+    nginx_manage_vhost: false
+    nginx_tls_mode: "{{ remnawave_legacy_marzban_tls_mode }}"
+    nginx_server_name: "{{ remnawave_sub_marzban_legacy_domain }}"
+  tags: [cert, tls, legacy, marzban]

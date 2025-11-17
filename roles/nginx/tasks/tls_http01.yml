@@ -53,12 +53,12 @@
 - name: Obtain certificate via certbot (webroot http-01)
   ansible.builtin.command:
     cmd: >
-      certbot certonly --agree-tos --non-interactive
+      certbot certonly --agree-tos --non-interactive --expand
       --email {{ nginx_letsencrypt_email }}
       --webroot -w {{ nginx_webroot }}
       -d {{ nginx_server_name }}
-  args:
-    creates: "/etc/letsencrypt/live/{{ nginx_server_name }}/fullchain.pem"
+  # args:
+  #  creates: "/etc/letsencrypt/live/{{ nginx_server_name }}/fullchain.pem"
   when: not _cert_present or (nginx_force_issue | bool)
   register: _certbot_http
   changed_when: "_certbot_http.rc == 0"

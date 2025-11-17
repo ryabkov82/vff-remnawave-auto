@@ -33,6 +33,34 @@
           )
       }}
 
+- name: SUBPAGE | Validate Marzban legacy settings
+  ansible.builtin.assert:
+    that:
+      - remnawave_sub_marzban_secret_key | length > 0
+      - remnawave_sub_remnawave_api_token | length > 0
+      - remnawave_sub_marzban_legacy_domain | length > 0
+    fail_msg: >-
+      remnawave_sub_marzban_legacy_enabled=true,
+      но remnawave_sub_marzban_secret_key, remnawave_sub_remnawave_api_token
+      или remnawave_sub_marzban_legacy_domain не заданы.
+  when: remnawave_sub_marzban_legacy_enabled | bool
+  tags: [subpage, marzban_legacy]
+
+- name: SUBPAGE | Build Marzban legacy env chunk
+  ansible.builtin.set_fact:
+    remnawave_sub_marzban_legacy_env:
+      MARZBAN_LEGACY_LINK_ENABLED: "true"
+      MARZBAN_LEGACY_SECRET_KEY: "{{ remnawave_sub_marzban_secret_key }}"
+      REMNAWAVE_API_TOKEN: "{{ remnawave_sub_remnawave_api_token }}"
+  when: remnawave_sub_marzban_legacy_enabled | bool
+  tags: [subpage, marzban_legacy]
+
+- name: SUBPAGE | Build effective env dict
+  ansible.builtin.set_fact:
+    remnawave_sub_env_effective: >-
+      {{ remnawave_sub_env | combine(remnawave_sub_marzban_legacy_env, recursive=True) }}
+  tags: [subpage]
+
 - name: Ensure subscription dir exists
   ansible.builtin.file:
     path: "{{ remnawave_sub_dir }}"
