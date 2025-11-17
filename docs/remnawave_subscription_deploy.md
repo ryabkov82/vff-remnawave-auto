@@ -1,62 +1,90 @@
-# ✅ Role: `remnawave_subscription_deploy`
+# 🚀 Role: `remnawave_subscription_deploy`
 
-Автодеплой страницы подписки Remnawave: выпуск сертификата (HTTP‑01/DNS‑01), конфиг Nginx, DNS-записи (Cloudflare), запуск приложения и интеграция с HAProxy (если нужно).
+Полностью автоматизированное развертывание **Remnawave Subscription Page**, включая:
 
----
-
-## Режимы развертывания
-
-- **Bundled** — страница подписки на том же сервере, что и панель.
-- **Separate** — страница подписки на отдельном сервере.
-
-Выбор — через переменную `remnawave_sub_deploy_mode: bundled|separate`.
+- выпуск сертификатов (HTTP-01 или DNS-01)
+- конфигурацию Nginx (основной домен + Marzban-legacy домен)
+- развертывание контейнера subscription-page
+- DNS-записи в Cloudflare
+- интеграцию с HAProxy (TLS passthrough + SNI routing)
+- автоматическое включение/отключение режима Marzban-legacy
 
 ---
 
-## Инвентори (исправлено)
+# 🔧 Режимы развертывания
 
-Выберите один режим.
+Роль поддерживает два варианта:
 
-**A. Bundled (подписка и панель на одном сервере)** — **группу `[subscription]` НЕ создаём**.
-```ini
-[panel]
-de-fra-1 ansible_user=root ...
+### **1) `bundled`** — subscription-page и панель на одном сервере  
+→ сервер работает как HAProxy TLS-SNI router → локальный Nginx → контейнер.
+
+### **2) `separate`** — subscription-page на отдельной машине  
+→ HAProxy только на панели  
+→ отдельный Nginx + контейнер на subscription-сервере.
+
+Выбор режима:
+
+```yaml
+remnawave_sub_deploy_mode: bundled     # или: separate
 ```
-Переменные подписки кладём в `inventory/group_vars/panel/` (например, `subscription.yml`).
 
-**B. Separate (подписка на отдельном сервере)** — создаём `[subscription]`.
-```ini
+---
+
+# 📁 Инвентори
+
+## ✔ Режим A: Bundled  
+**Группу `[subscription]` создавать НЕ нужно.**
+
+```
 [panel]
-de-fra-1 ansible_user=root ...
+de-fra-1 ansible_host=77.239.xxx.xxx ansible_user=root
+```
+
+Variables → `inventory/group_vars/panel/subscription.yml`
+
+---
+
+## ✔ Режим B: Separate  
+Создаём две группы:
+
+```
+[panel]
+de-fra-1 ansible_user=root
 
 [subscription]
-de-fra-2 ansible_user=root ...
+de-fra-2 ansible_user=root
 ```
-Переменные подписки кладём в `inventory/group_vars/subscription/`.
+
+Variables → `inventory/group_vars/subscription/subpage.yml`
 
 ---
 
-## Минимальные переменные
-
-Общие (папка зависит от режима, см. выше):
+# ⚙ Минимальные переменные
 
 ```yaml
 remnawave_sub_public_domain: sub.vpn-for-friends.com
-remnawave_sub_app_port: 3005
-remnawave_sub_deploy_mode: bundled   # или separate
-
-# Выпуск сертификата (выберите один режим)
-nginx_tls_mode: "letsencrypt"        # http-01
-nginx_letsencrypt_email: admin@vpn-for-friends.com
-
-# или DNS‑01 (Cloudflare)
-# nginx_tls_mode: "letsencrypt_dns01"
-# cf_dns_api_token: "{{ vault_cf_dns_api_token }}"
-# cf_dns_zone: "vpn-for-friends.com"
-# cf_dns_target_ip: "77.239.127.199"
+remnawave_sub_app_port: 3010
+remnawave_sub_deploy_mode: bundled   # или: separate
 ```
 
-Если используете HAProxy (TLS passthrough на 443 → локальный Nginx:4443):
+### Сертификат HTTP-01
+
+```yaml
+nginx_tls_mode: "letsencrypt"
+nginx_letsencrypt_email: admin@example.com
+```
+
+### или DNS-01 (Cloudflare)
+
+```yaml
+nginx_tls_mode: "letsencrypt_dns01"
+cf_dns_zone: "vpn-for-friends.com"
+cf_dns_api_token: "{{ vault_cf_dns_api_token }}"
+cf_dns_target_ip: "77.239.xxx.xxx"
+```
+
+### Если используется HAProxy → Nginx (4443)
+
 ```yaml
 nginx_bind_address: "127.0.0.1"
 nginx_external_https_port: 4443
@@ -64,56 +92,168 @@ nginx_external_https_port: 4443
 
 ---
 
-## Плейбук и Makefile
+# 🟦 Marzban Legacy Mode
 
-**Bundled:**
-```bash
-make sub            # или: ansible-playbook -i inventory/hosts.ini playbooks/subscription.yml --limit panel
+Позволяет обслуживать **старые ссылки вида**
+
+```
+https://marzban-s2.example.com:4443/sub/<token>
 ```
 
-**Separate:**
-```bash
-make sub-separate   # или: ansible-playbook -i inventory/hosts.ini playbooks/subscription.yml --limit subscription
+через новую subscription-page.
+
+Включение:
+
+```yaml
+remnawave_sub_marzban_legacy_enabled: true
+remnawave_sub_marzban_secret_key: "{{ vault_marzban_jwt_secret }}"
+remnawave_sub_marzban_custom_sub_prefix: "sub"     # старый префикс
+remnawave_sub_legacy_domain: "marzban-s2.example.com"
 ```
 
-Теги:
-- `--tags dns` — только DNS
-- `--tags cert` — только выпуск сертификата
-- `--tags nginx` — только конфиг Nginx
-- `--tags subpage` — только приложение
-- `--tags haproxy` — только HAProxy часть
+После включения роль автоматически:
+
+✔ создаёт отдельный **Nginx-vhost legacy-домена**  
+✔ выпускает для него сертификат  
+✔ проксирует `/sub/<token>` внутрь subscription-page  
+✔ корректно переписывает пути `/sub/...` → `/<CUSTOM_SUB_PREFIX>/...`  
+✔ **удаляет legacy-конфиг**, если флаг выключить
 
 ---
 
-## Что делает роль
+# 🧱 Что делает роль
 
-1. **DNS** (опц.) — создаёт/обновляет A/CNAME в Cloudflare.
-2. **Cert** — выпускает сертификат через `roles/nginx`:
-   - `letsencrypt` (HTTP‑01): временный `*.challenge.conf` → после выдачи удаляется автоматически.
-   - `letsencrypt_dns01` (Cloudflare API token).
-3. **Nginx** — рендерит сайт подписки, слушает `127.0.0.1:4443` (если используется HAProxy).
-4. **App** — поднимает контейнер подписки.
-5. **HAProxy** (опц.) — добавляет SNI домен подписки в ACL и прокидывает на Nginx:4443.
+При выполнении:
+
+### **1. DNS**
+Создаёт/обновляет A-записи:
+
+- домен subscription-page
+- домен Marzban-legacy (если включён режим)
+
+### **2. Сертификаты**
+Через роль `roles/nginx`, полностью автоматизировано:
+
+- HTTP-01 → создаёт временный `.challenge.conf`, затем удаляет
+- DNS-01 → создаёт TXT через Cloudflare API
+
+Выпускаются сертификаты:
+
+- `sub.example.com`
+- `marzban-s2.example.com` (если включён legacy)
+
+### **3. HAProxy (в bundled)**
+Добавляет SNI-домены в TLS-маршрутизацию:
+
+- панель
+- subscription-page
+- legacy-домен (если включён)
+
+### **4. Deployment**
+Разворачивает:
+
+- `docker-compose.yml`
+- `.env`
+- app-config.json
+- контейнер `remnawave-subscription-page`
+
+### **5. Nginx**
+Рендерит:
+
+- subscription-vhost  
+- legacy-vhost (если включён)
+
+Отключает/удаляет legacy-vhost если флаг выключен.
 
 ---
 
-## Полезные проверки
+# 🏗 Плейбук и Makefile
 
-```bash
-# Сертификат на Nginx (локально)
-echo | openssl s_client -connect 127.0.0.1:4443 -servername sub.vpn-for-friends.com -brief
+### Bundled:
 
-# Сквозной путь через HAProxy (снаружи)
-echo | openssl s_client -connect <PUBLIC_IP>:443 -servername sub.vpn-for-friends.com -brief
+```
+make sub
+```
 
-# HAProxy статистика по backend’ам
-echo "show stat" | socat stdio /run/haproxy/admin.sock | grep -E 'be_panel|be_xray'
+или:
+
+```
+ansible-playbook -i inventory/hosts.ini playbooks/subscription.yml --limit panel
+```
+
+### Separate:
+
+```
+make sub-separate
+```
+
+или:
+
+```
+ansible-playbook -i inventory/hosts.ini playbooks/subscription.yml --limit panel,subscription
 ```
 
 ---
 
-## Частые проблемы
+# 🏷 Полезные теги
 
-- **502 Bad Gateway**: приложение не запущено/порт не совпадает/не тот `REMNAWAVE_PANEL_URL`.
-- **Cloudflare “Edge IP Restricted”**: выключите оранжевое облако для A‑записи (используйте «серое»).
-- **HTTP‑01 challenge остался включён**: в новой версии временный `*.challenge.conf` удаляется автоматически.
+| Тег        | Что делает |
+|-----------|------------|
+| `dns`     | только DNS-записи |
+| `cert`    | только выпуск сертификата |
+| `nginx`   | конфиг Nginx |
+| `legacy`  | только legacy-режим |
+| `haproxy` | конфиг SNI в HAProxy |
+| `subpage` | обновление контейнера |
+| `sub_config` | обновление app-config |
+
+---
+
+# 🧪 Проверки
+
+```
+# Проверить локальный сертификат
+echo | openssl s_client -connect 127.0.0.1:4443 -servername sub.example.com -brief
+
+# Проверить путь через HAProxy
+echo | openssl s_client -connect <PUBLIC_IP>:443 -servername sub.example.com -brief
+
+# Проверить legacy
+curl -vk https://marzban-s2.example.com:4443/sub/<token>
+```
+
+---
+
+# ❗ Частые проблемы
+
+### 1. **Ответ 502**
+- контейнер не поднят
+- неверный `REMNAWAVE_PANEL_URL`
+- Nginx слушает не тот порт (`nginx_external_https_port`)
+
+### 2. **Legacy не работает**
+- не указан `remnawave_sub_legacy_domain`
+- забыл обновить DNS
+- забыта установка сертификата для legacy-домена
+
+### 3. **Cloudflare ошибка Edge IP Restricted**
+— A-запись должна быть **серой**, не «проксированной».
+
+---
+
+# 🟩 Итого
+
+Эта роль является “верхнеуровневой” orchestration-надстройкой над:
+
+- `roles/nginx`
+- `roles/haproxy_tls_sni`
+- `roles/cf_dns`
+- `roles/remnawave_subscription_page`
+
+и обеспечивает полный lifecycle:
+
+```
+DNS → TLS → Nginx → App → HAProxy → Marzban Legacy Support
+```
+
+Всё в одном месте, полностью автоматизировано.

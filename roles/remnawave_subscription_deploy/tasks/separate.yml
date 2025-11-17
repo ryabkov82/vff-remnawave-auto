@@ -26,6 +26,23 @@
   run_once: true
   tags: [dns, cf_dns]
 
+- name: DNS | Create/Update A record for legacy Marzban domain (delegated to localhost)
+  ansible.builtin.include_role:
+    name: cf_dns
+  vars:
+    cf_dns_records:
+      - type: "A"
+        name: "{{ remnawave_sub_marzban_legacy_domain | regex_replace('\\.' ~ cf_dns_zone ~ '$', '') }}"
+        proxied: false
+        ttl: 300
+  when:
+    - remnawave_legacy_marzban_enabled | bool
+    - remnawave_sub_marzban_legacy_domain is defined
+    - remnawave_sub_marzban_legacy_domain | length > 0
+  delegate_to: localhost
+  run_once: true
+  tags: [dns, cf_dns, legacy, marzban]
+
 - name: HAProxy | Panel SNI domains only (exclude subscription)
   ansible.builtin.include_role:
     name: haproxy_tls_sni
@@ -34,8 +51,7 @@
   when: inventory_hostname in groups[remnawave_group_panel]
   tags: [haproxy]
 
-# Выпуск сертификата для домена подписки (поддержка HTTP-01 и DNS-01)
-# Тянем только tls-задачи из роли nginx, чтобы не лезть в её vhost-логику
+# Выпуск сертификата для домена подписки (subscription-сервер)
 - name: CERT | Issue certificate for subscription domain (separate)
   ansible.builtin.include_tasks: cert.yml
   when:
@@ -43,6 +59,16 @@
     - remnawave_sub_public_domain | length > 0
     - inventory_hostname in groups.get(remnawave_group_subscription | default('subscription'), [])
   tags: [cert, tls]
+
+# Выпуск сертификата для legacy-домена на subscription-сервере
+- name: CERT | Issue certificate for legacy Marzban domain (separate)
+  ansible.builtin.include_tasks: cert_legacy.yml
+  when:
+    - remnawave_legacy_marzban_enabled | bool
+    - remnawave_sub_marzban_legacy_domain is defined
+    - remnawave_sub_marzban_legacy_domain | length > 0
+    - inventory_hostname in groups.get(remnawave_group_subscription | default('subscription'), [])
+  tags: [cert, tls, legacy, marzban]
 
 - name: SUBPAGE | Deploy subscription page on dedicated server
   ansible.builtin.include_role:

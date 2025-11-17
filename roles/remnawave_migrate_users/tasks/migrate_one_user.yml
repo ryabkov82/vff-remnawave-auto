@@ -22,9 +22,34 @@
   ansible.builtin.set_fact:
     _mu_expire_at_value: "{{ _mu_expire_cmd.stdout }}"
 
+# --------------------------------------------------------------------
+# Username: повторяем sanitizeUsername из subscription-page
+#   1) оставляем только [A-Za-z0-9_-], остальное → '_'
+#   2) если длина < 6, добиваем '_' до 6 символов
+# --------------------------------------------------------------------
+
+- name: MU | Capture raw Marzban username
+  ansible.builtin.set_fact:
+    _mu_username_raw: "{{ mu_user.username | string }}"
+  changed_when: false
+
+- name: MU | Prepare base sanitized username
+  ansible.builtin.set_fact:
+    _mu_username_base: "{{ _mu_username_raw | regex_replace('[^A-Za-z0-9_-]', '_') }}"
+  changed_when: false
+
+- name: MU | Ensure minimum username length (>= 6 chars)
+  ansible.builtin.set_fact:
+    _mu_username: >-
+      {{
+        _mu_username_base
+        if (_mu_username_base | length) >= 6
+        else _mu_username_base ~ ('_' * (6 - (_mu_username_base | length)))
+      }}
+  changed_when: false
+
 - name: MU | Build mapped user fields
   ansible.builtin.set_fact:
-    _mu_username: "{{ mu_user.username | string }}"
     _mu_status: "{{ status_map.get(mu_user.status, 'ACTIVE') }}"
     _mu_vless_uuid: "{{ mu_user.proxies.vless.id | default('') }}"
     _mu_expire_at: "{{ _mu_expire_at_value }}"
@@ -59,7 +84,7 @@
       month: "MONTH"
       year: "MONTH"
 
-- name: MU | REMNAWAVE | Lookup existing user by username
+- name: MU | REMNAWAVE | Lookup existing user by username (SANITIZED)
   ansible.builtin.uri:
     url: "{{ _mu.api_base_url }}/users/by-username/{{ _mu_username }}"
     method: GET
@@ -109,7 +134,7 @@
   when: _mu.dry_run
   ansible.builtin.debug:
     msg: >-
-      MU DRY-RUN for user={{ _mu_username }}:
+      MU DRY-RUN for user={{ _mu_username_raw }} -> remna={{ _mu_username }}:
       existing={{ _mu_existing_exists }},
       create_body={{ _mu_create_body if not _mu_existing_exists else omit }},
       update_body={{ _mu_update_body if _mu_existing_exists else omit }}
@@ -148,7 +173,9 @@
 - name: MU | Summary for user
   ansible.builtin.debug:
     msg: >-
-      remnawave_migrate_users: user={{ _mu_username }}
-      action={{ 'create' if (not _mu_existing_exists) else 'update' }}
+      remnawave_migrate_users:
+      marzban_username={{ _mu_username_raw }},
+      remna_username={{ _mu_username }},
+      action={{ 'create' if (not _mu_existing_exists) else 'update' }},
       dry_run={{ _mu.dry_run }}
   changed_when: not _mu.dry_run

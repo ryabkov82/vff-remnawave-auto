@@ -1,5 +1,5 @@
 ---
-# Render and enable dedicated vhost for subscription domain (systemd Nginx)
+# Render and enable vhosts for subscription page (systemd Nginx)
 
 - name: Ensure Nginx sites dirs exist
   ansible.builtin.file:
@@ -13,6 +13,8 @@
     - "{{ remnawave_nginx_sites_enabled_dir }}"
   loop_control:
     label: "{{ item }}"
+
+# --- Основной vhost для домена субстраницы ---
 
 - name: Render Subscription Nginx vhost
   ansible.builtin.template:
@@ -31,6 +33,40 @@
     owner: root
     group: root
   notify: Reload Nginx (systemd)
+
+# --- Legacy Marzban vhost: create OR remove в зависимости от флага ---
+
+- name: Render Legacy Marzban Nginx vhost
+  ansible.builtin.template:
+    src: nginx-legacy-marzban.conf.j2
+    dest: "{{ remnawave_nginx_sites_dir }}/{{ remnawave_nginx_legacy_site }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: remnawave_sub_marzban_legacy_enabled | bool
+  notify: Reload Nginx (systemd)
+
+- name: Enable Legacy Marzban Nginx vhost (symlink)
+  ansible.builtin.file:
+    src: "{{ remnawave_nginx_sites_dir }}/{{ remnawave_nginx_legacy_site }}"
+    dest: "{{ remnawave_nginx_sites_enabled_dir }}/{{ remnawave_nginx_legacy_site }}"
+    state: link
+    owner: root
+    group: root
+  when: remnawave_sub_marzban_legacy_enabled | bool
+  notify: Reload Nginx (systemd)
+
+- name: Disable Legacy Marzban Nginx vhost when legacy is disabled
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ remnawave_nginx_sites_enabled_dir }}/{{ remnawave_nginx_legacy_site }}"
+    - "{{ remnawave_nginx_sites_dir }}/{{ remnawave_nginx_legacy_site }}"
+  when: not remnawave_sub_marzban_legacy_enabled | bool
+  notify: Reload Nginx (systemd)
+
+# --- Проверка конфига nginx ---
 
 - name: Validate Nginx config
   ansible.builtin.command: nginx -t

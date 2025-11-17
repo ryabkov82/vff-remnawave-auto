@@ -2,4 +2,4 @@
 # Role entrypoint: dispatch to selected deploy mode
 - name: Select subscription deploy mode
   ansible.builtin.include_tasks: "{{ remnawave_sub_deploy_mode }}.yml"
-  tags: [subpage, dns, cert, haproxy]
+  tags: [subpage, dns, cert, haproxy, legacy, marzban]
