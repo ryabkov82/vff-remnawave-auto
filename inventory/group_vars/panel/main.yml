@@ -52,6 +52,9 @@ remnawave_validate_config: true
 remnawave_reality_private_key: "{{ vault_reality_private_key }}"
 remnawave_reality_short_id: "{{ vault_reality_short_id }}"
 
+remnawave_nginx_bind_address: "0.0.0.0"
+remnawave_nginx_external_https_port: "4443"
+
 remnawave_inbounds:
   - tag: "{{ remnawave_inbound_tag }}"
     listen: "127.0.0.1"
@@ -82,3 +85,14 @@ marzban_admin_username: "admin"
 marzban_admin_password: "{{ vault_marzban_admin_password }}"
 
 marzban_inbound_tag: "VLESS TCP REALITY"
+
+# включаем legacy-режим в subscription-page
+remnawave_sub_marzban_legacy_enabled: true
+
+# из базы Marzban: SELECT secret_key FROM jwt LIMIT 1;
+remnawave_sub_marzban_secret_key: "{{ vault_marzban_secret_key }}"
+
+remnawave_sub_marzban_custom_sub_prefix: "sub"
+
+# включаем nginx vhost для marzban-ссылок
+remnawave_sub_marzban_legacy_domain: "marzban-s2.vpn-for-friends.com"
