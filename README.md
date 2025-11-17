@@ -1,28 +1,13 @@
 # 🚀 VFF Remnawave Auto Deployment
 
 <p align="center">
-  <!-- Core Remnawave Components -->
-  <a href="#"><img src="https://img.shields.io/badge/Remnawave-Panel-blue?style=for-the-badge&logo=vercel" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/Remnawave-Nodes-blueviolet?style=for-the-badge&logo=docker" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/Subscription-Page-9cf?style=for-the-badge&logo=ghost" /></a>
-
-  <!-- Migration -->
-  <a href="#"><img src="https://img.shields.io/badge/Migration-Marzban→Remnawave-orange?style=for-the-badge&logo=microsoftexchange" /></a>
-
-  <!-- VPN/Xray -->
-  <a href="#"><img src="https://img.shields.io/badge/VLESS-Reality-0A7?style=for-the-badge&logo=cloudflare" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/Xray-Core-4c8?style=for-the-badge&logo=windows-terminal" /></a>
-
-  <!-- Deployment Tech -->
-  <a href="#"><img src="https://img.shields.io/badge/Ansible-Automation-yellow?style=for-the-badge&logo=ansible" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/Nginx-Reverse_Proxy-009639?style=for-the-badge&logo=nginx" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/HAProxy-SNI_Routing-008ECF?style=for-the-badge&logo=haproxy" /></a>
-
-  <!-- Networking / Infra -->
-  <a href="#"><img src="https://img.shields.io/badge/Cloudflare-DNS_API-F38020?style=for-the-badge&logo=cloudflare" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/Let's_Encrypt-ACME-green?style=for-the-badge&logo=letsencrypt" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/Infrastructure_as_Code-IaC-lightgrey?style=for-the-badge&logo=terraform" /></a>
+  <img src="https://img.shields.io/badge/Remnawave-Panel-blue?style=flat-square" />
+  <img src="https://img.shields.io/badge/Nodes-purple?style=flat-square" />
+  <img src="https://img.shields.io/badge/Subscription_Page-gray?style=flat-square" />
+  <img src="https://img.shields.io/badge/Migration_Marzban→Remnawave-orange?style=flat-square" />
+  <img src="https://img.shields.io/badge/VLESS-Reality-0A7?style=flat-square" />
+  <img src="https://img.shields.io/badge/Ansible-Automation-yellow?style=flat-square" />
+  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square" />
 </p>
 
 Полностью автоматизированное развертывание **Remnawave Panel**, **Remnawave Nodes**, **Subscription Page**  
