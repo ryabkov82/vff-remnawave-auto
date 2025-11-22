@@ -12,3 +12,7 @@ remnawave_inbound_tag: "VLESS TCP REALITY"
 cf_dns_api_token: "{{ vault_cf_dns_api_token }}"
 
 remnawave_sub_public_domain: sub.vpn-for-friends.com
+
+remnawave_group_panel: "panel"
+remnawave_group_nodes: "nodes"
+remnawave_group_subscription: "subscription"

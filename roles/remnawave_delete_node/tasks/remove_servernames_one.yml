@@ -1,0 +1,21 @@
+# ============================================================
+# remove_servernames_one.yml — processed per host
+# ============================================================
+
+- name: "Extract SNI list from host"
+  ansible.builtin.set_fact:
+    _del_sni_list: "{{ (host.sni | string).split(',') | map('trim') | list }}"
+
+- name: "Skip if host has no SNI"
+  ansible.builtin.debug:
+    msg: "Host {{ host.uuid }} has no SNI to remove"
+  when: _del_sni_list | length == 0
+
+- name: "Remove serverNames from inbound"
+  when: _del_sni_list | length > 0
+  ansible.builtin.include_role:
+    name: remnawave_reality_servernames
+  vars:
+    remnawave_reality_profile_uuid: "{{ host.inbound.configProfileUuid }}"
+    remnawave_reality_inbound_uuid: "{{ host.inbound.configProfileInboundUuid }}"
+    remnawave_reality_remove_servernames: "{{ _del_sni_list }}"

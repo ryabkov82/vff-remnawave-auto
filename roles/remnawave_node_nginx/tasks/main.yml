@@ -1,0 +1,59 @@
+---
+- name: Nginx | Install nginx and ssl-cert
+  ansible.builtin.apt:
+    name:
+      - nginx
+      - ssl-cert
+    state: present
+    update_cache: true
+  tags: [nginx, node_nginx]
+
+# Локальные «резолвнутые» пути/имена с безопасными значениями по умолчанию
+- name: Nginx | Set local vars
+  ansible.builtin.set_fact:
+    nginx_sites_available_dir_resolved: "{{ nginx_sites_available_dir | default('/etc/nginx/sites-available') }}"
+    nginx_sites_enabled_dir_resolved: "{{ nginx_sites_enabled_dir | default('/etc/nginx/sites-enabled') }}"
+    nginx_conf_d_dir_resolved: "{{ nginx_conf_d_dir | default('/etc/nginx/conf.d') }}"
+    nginx_vhost_name_resolved: "{{ nginx_vhost_name | default('digitalstreamers.xyz') }}"
+  tags: [nginx, node_nginx]
+
+- name: Nginx | Derive vhost paths
+  ansible.builtin.set_fact:
+    nginx_vhost_conf_resolved: "{{ nginx_sites_available_dir_resolved }}/{{ nginx_vhost_name_resolved }}"
+    nginx_enabled_link_resolved: "{{ nginx_sites_enabled_dir_resolved }}/{{ nginx_vhost_name_resolved }}"
+  tags: [nginx, node_nginx]
+
+- name: Nginx | Ensure sites-available/sites-enabled exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ nginx_sites_available_dir_resolved }}"
+    - "{{ nginx_sites_enabled_dir_resolved }}"
+  tags: [nginx, node_nginx]
+
+- name: Nginx | Deploy vhost into sites-available
+  ansible.builtin.template:
+    src: node_https_4443.conf.j2
+    dest: "{{ nginx_vhost_conf_resolved }}"
+    mode: "0644"
+    backup: true
+  notify: Validate nginx config
+  tags: [nginx, node_nginx]
+
+- name: Nginx | Enable vhost via symlink in sites-enabled
+  ansible.builtin.file:
+    src: "{{ nginx_vhost_conf_resolved }}"
+    dest: "{{ nginx_enabled_link_resolved }}"
+    state: link
+    force: true
+  notify: Validate nginx config
+  tags: [nginx, node_nginx]
+
+- name: Nginx | Ensure nginx enabled and running
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true
+  tags: [nginx, node_nginx]

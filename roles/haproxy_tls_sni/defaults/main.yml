@@ -1,21 +1,26 @@
 ---
-# Где слушаем входящий TLS (HAProxy в TCP-пасстору)
+# Где слушаем входящий TLS (HAProxy в TCP-passthrough)
 haproxy_bind_addr: "0.0.0.0"
 haproxy_bind_port: 443
 
-# Домен панели, по которому маршрутизируем на Nginx
+# === Домены панели ===
 haproxy_panel_domain: "{{ remnawave_panel_frontend_domain | default('panel.example.com') }}"
-
 haproxy_nginx_sni_domains:
   - "{{ haproxy_panel_domain }}"
 
-# Бэкенды (локальные)
+# === Бэкенды (локальные) ===
 haproxy_nginx_host: "127.0.0.1"
 haproxy_nginx_port: "{{ nginx_external_https_port | default(4443) }}"
-haproxy_xray_host: "127.0.0.1"
+
+# Старый единый порт XRAY (fallback)
 haproxy_xray_port: 8444
 
-# Таймауты (под туннель)
+# === Поддержка ноды на том же хосте ===
+haproxy_node_nginx_sni_domains: []
+haproxy_node_nginx_host: "127.0.0.1"
+haproxy_node_nginx_port: 4443
+
+# === Таймауты ===
 haproxy_timeout_connect: "5s"
 haproxy_timeout_client: "2h"
 haproxy_timeout_server: "2h"
@@ -23,16 +28,23 @@ haproxy_timeout_client_fin: "30s"
 haproxy_timeout_server_fin: "30s"
 haproxy_timeout_tunnel: "2h"
 
-# Логи/опции
-haproxy_enable_tcp_keepalive: true   # включить cli/srv tcp keepalive
-haproxy_inspect_delay: "10s"         # время для разбора TLS ClientHello (SNI)
+haproxy_inspect_delay: "10s"
+haproxy_enable_tcp_keepalive: true
 
-# Статистика (локальная)
+# === Статистика HAProxy ===
 haproxy_stats_enabled: true
 haproxy_stats_bind: "127.0.0.1:1936"
 haproxy_stats_uri: "/haproxy-stats"
 haproxy_stats_user: "admin"
 haproxy_stats_pass: "StrongPa$$"
 
-# Путь до конфига
+# === API Remnawave ===
+remnawave_api_base_url: "https://{{ remnawave_panel_frontend_domain }}/api"
+remnawave_panel_api_token: ""
+
+# === Путь до конфига ===
 haproxy_cfg_path: "/etc/haproxy/haproxy.cfg"
+
+# === Если remnawave_node_uuid не задан — ищем ноду по имени inventory_hostname ===
+remnawave_node_uuid: ""
+remnawave_node_name: "{{ inventory_hostname }}"

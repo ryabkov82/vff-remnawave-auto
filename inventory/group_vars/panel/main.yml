@@ -52,8 +52,18 @@ remnawave_validate_config: true
 remnawave_reality_private_key: "{{ vault_reality_private_key }}"
 remnawave_reality_short_id: "{{ vault_reality_short_id }}"
 
+remnawave_reality_private_key_ds: "{{ vault_reality_private_key_ds }}"
+remnawave_reality_short_id_ds: "{{ vault_reality_short_id_ds }}"
+
 remnawave_nginx_bind_address: "0.0.0.0"
 remnawave_nginx_external_https_port: "4443"
+
+# Какими инбаундами мы реально управляем через Ansible
+# Если пусто/не задано — по умолчанию все, для обратной совместимости.
+# "VLESS TCP REALITY" - основной инбаунд в данном случае не трогаем (он мигрировал из Marzban)
+# "VLESS TCP REALITY (DS)" - второй инбаунд для тестирования маскировки под наш домен.
+remnawave_inbounds_managed:
+  - "VLESS TCP REALITY (DS)"
 
 remnawave_inbounds:
   - tag: "{{ remnawave_inbound_tag }}"
@@ -77,6 +87,29 @@ remnawave_inbounds:
         serverNames: ["www.cloudflare.com", "cloudflare.com"]
         privateKey: "{{ remnawave_reality_private_key }}"
         shortIds: ["{{ remnawave_reality_short_id }}"]
+        maxTimeDiff: 0
+        fingerprint: "chrome"
+  - tag: "VLESS TCP REALITY (DS)"
+    listen: "127.0.0.1"
+    port: 8445
+    protocol: "vless"
+    sniffing:
+      enabled: true
+      destOverride: ["http", "tls", "quic", "fakedns"]
+      metadataOnly: false
+    settings:
+      clients: []
+      decryption: "none"
+    streamSettings:
+      network: "tcp"
+      security: "reality"
+      realitySettings:
+        show: false
+        dest: "www.digitalstreamers.xyz:443"
+        xver: 0
+        serverNames: [digitalstreamers.xyz]
+        privateKey: "{{ remnawave_reality_private_key_ds }}"
+        shortIds: ["{{ remnawave_reality_short_id_ds }}"]
         maxTimeDiff: 0
         fingerprint: "chrome"
 

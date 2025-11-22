@@ -143,6 +143,50 @@
       - _profile_uuid | length > 0
     fail_msg: "Failed to resolve Node/Profile/Inbound UUIDs. Check names or provide explicit UUIDs."
 
+# ==================== Build SNI list (string/list → CSV) ====================
+- name: Hosts | Init SNI base list
+  ansible.builtin.set_fact:
+    _rw_sni_base: []
+
+- name: Hosts | Use SNI from string (possibly comma-separated)
+  when:
+    - rw_host_sni is defined
+    - rw_host_sni is string
+    - (rw_host_sni | trim | length) > 0
+  ansible.builtin.set_fact:
+    _rw_sni_base: "{{ rw_host_sni | trim | split(',') | map('trim') | list }}"
+
+- name: Hosts | Use SNI from list/sequence
+  when:
+    - rw_host_sni is defined
+    - rw_host_sni is sequence
+    - not (rw_host_sni is string)
+  ansible.builtin.set_fact:
+    _rw_sni_base: "{{ rw_host_sni }}"
+
+- name: Hosts | Ensure SNI has at least address fallback
+  ansible.builtin.set_fact:
+    _rw_sni_list: >-
+      {{
+        (_rw_sni_base | reject('equalto','') | list | unique)
+        if (_rw_sni_base | reject('equalto','') | list | length > 0)
+        else [rw_host_address]
+      }}
+
+- name: Hosts | Build CSV SNI
+  ansible.builtin.set_fact:
+    _rw_sni_csv: "{{ _rw_sni_list | join(',') }}"
+
+# ==================== Patch REALITY serverNames using separate role ====================
+- name: Hosts | Patch REALITY serverNames with host SNI names
+  ansible.builtin.include_role:
+    name: remnawave_reality_servernames
+  vars:
+    remnawave_reality_profile_uuid: "{{ _profile_uuid }}"
+    remnawave_reality_inbound_uuid: "{{ _inbound_uuid }}"
+    remnawave_reality_inbound_tag: "{{ rw_inbound_tag | default('') }}"
+    remnawave_reality_add_servernames: "{{ _rw_sni_list }}"
+
 # ==================== Hosts discovery / create or reconcile ====================
 - name: Get all hosts
   ansible.builtin.uri:
@@ -190,7 +234,7 @@
       address: "{{ rw_host_address }}"
       port: "{{ rw_host_port | int }}"
       path: "{{ rw_host_path }}"
-      sni: "{{ rw_host_sni }}"
+      sni: "{{ _rw_sni_csv }}"
       host: "{{ rw_host_host }}"
       alpn: "{{ rw_host_alpn }}"
       fingerprint: "{{ rw_host_fingerprint }}"

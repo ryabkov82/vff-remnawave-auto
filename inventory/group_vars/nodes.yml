@@ -15,4 +15,15 @@ remnawave_node_consumption_multiplier: 0.1
 remnawave_panel_url: "https://remna.vpn-for-friends.com"
 
 # Зона, в которой создаём записИ
-cf_dns_zone: "digitalstreamers.xyz"
+cf_dns_zone_nodes: "digitalstreamers.xyz"
+
+# Глобальные настройки cert-master
+cert_master_host: "nl-ams-1"
+cert_master_user: "root"
+cert_master_ssh_common_args: "-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
+
+cert_domain: "digitalstreamers.xyz"
+
+website_domains:
+  - site.digitalstreamers.xyz
+  - www.digitalstreamers.xyz

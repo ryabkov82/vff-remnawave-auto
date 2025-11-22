@@ -1,0 +1,176 @@
+---
+# ============================================================================
+# 0) Validate
+# ============================================================================
+- name: Assert API token & URL
+  ansible.builtin.assert:
+    that:
+      - remnawave_panel_api_token | length > 0
+      - remnawave_api_base_url | length > 0
+    fail_msg: "Missing API token or remnawave_api_base_url"
+
+# ============================================================================
+# 1) Resolve NODE UUID
+# ============================================================================
+- name: "Use provided node UUID if present"
+  ansible.builtin.set_fact:
+    _sni_node_uuid: "{{ remnawave_node_uuid }}"
+  when: remnawave_node_uuid | string | length > 0
+
+- name: Resolve node UUID by name
+  when: _sni_node_uuid is not defined
+  block:
+    - name: GET /api/nodes
+      ansible.builtin.uri:
+        url: "{{ remnawave_api_base_url }}/nodes"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ remnawave_panel_api_token }}"
+        return_content: true
+        status_code: [200]
+      register: _nodes_raw
+
+    - name: Pick node by name
+      vars:
+        _matches: >-
+          {{ (_nodes_raw.json.response | default([]))
+               | selectattr('name','equalto', remnawave_sni_node_name)
+               | list }}
+      ansible.builtin.set_fact:
+        _sni_node_uuid: "{{ (_matches | first).uuid }}"
+        _sni_node_obj: "{{ _matches | first }}"
+      failed_when: _matches | length != 1
+
+# Если ноды нет — тихо выходим, карта пустая (нормальная ситуация)
+- name: Return empty map when node missing
+  when: _sni_node_uuid | default('') | length == 0
+  ansible.builtin.set_fact:
+    _sni_port_map: {}
+  tags: ['always']
+  run_once: true
+  ignore_errors: false
+
+# ============================================================================
+# 2) Load node details (active inbound UUIDs)
+# ============================================================================
+- name: GET /api/nodes/<uuid>
+  ansible.builtin.uri:
+    url: "{{ remnawave_api_base_url }}/nodes/{{ _sni_node_uuid }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ remnawave_panel_api_token }}"
+    return_content: true
+    status_code: [200]
+  register: _node_detail
+
+- name: Extract active inbound UUID list
+  ansible.builtin.set_fact:
+    _sni_active_inbounds: >-
+      {{
+        _node_detail.json.response.configProfile.activeInbounds
+        | default([])
+        | map(attribute='uuid')
+        | list
+      }}
+
+# ============================================================================
+# 3) Load all inbound definitions
+# ============================================================================
+- name: GET /api/config-profiles/inbounds
+  ansible.builtin.uri:
+    url: "{{ remnawave_api_base_url }}/config-profiles/inbounds"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ remnawave_panel_api_token }}"
+    return_content: true
+    status_code: [200]
+  register: _inb_all
+
+- name: Build inbound map (uuid → inboundObj)
+  vars:
+    _list: "{{ _inb_all.json.response.inbounds | default([]) }}"
+  ansible.builtin.set_fact:
+    _sni_inb_list: "{{ _list }}"
+    _sni_inb_map: "{{ dict(_list | map(attribute='uuid') | zip(_list)) }}"
+
+# ============================================================================
+# 4) Load hosts
+# ============================================================================
+- name: GET /api/hosts
+  ansible.builtin.uri:
+    url: "{{ remnawave_api_base_url }}/hosts"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ remnawave_panel_api_token }}"
+    return_content: true
+    status_code: [200]
+  register: _hosts_resp
+
+- name: Extract hosts for this node
+  ansible.builtin.set_fact:
+    _sni_node_hosts: >-
+      {{ _hosts_resp.json.response | default([])
+         | selectattr('nodes','contains', _sni_node_uuid)
+         | list }}
+
+# ============================================================================
+# 5) Build inbound_uuid → port map (correct JSON → dict conversion)
+# ============================================================================
+- name: Build inbound_port_map
+  vars:
+    tmp: >-
+      {% set out = {} %}
+      {% for uuid in _sni_active_inbounds %}
+        {% set ib = _sni_inb_map[uuid] %}
+        {% set port =
+          (ib.rawInbound.listen.port
+           if ib.rawInbound.listen is defined and ib.rawInbound.listen.port is defined
+           else (ib.port | default(0)))
+        %}
+        {% set _ = out.update({uuid: port}) %}
+      {% endfor %}
+      {{ out | to_json }}
+  ansible.builtin.set_fact:
+    _sni_inbound_port_map: "{{ tmp | from_json }}"
+
+# ============================================================================
+# 6) Build SNI → PORT table
+# ============================================================================
+- name: Build final SNI→PORT map
+  vars:
+    tmp: >-
+      {% set r = {} %}
+      {% for h in _sni_node_hosts %}
+        {% set inbUuid = h.inbound.configProfileInboundUuid %}
+        {% if inbUuid in _sni_active_inbounds %}
+          {% set ib = _sni_inb_map[inbUuid] %}
+          {% set port = _sni_inbound_port_map[inbUuid] %}
+
+          {% set host_sni = (h.sni.split(',') if h.sni is string else []) %}
+
+          {% set inbound_sni =
+               ib.rawInbound.streamSettings.realitySettings.serverNames
+               if ib.rawInbound.streamSettings.realitySettings.serverNames is defined
+               else []
+          %}
+
+          {% set snis =
+               (host_sni if host_sni | length > 0 else inbound_sni)
+          %}
+
+          {% for d in snis %}
+            {% set _ = r.update({d: port}) %}
+          {% endfor %}
+        {% endif %}
+      {% endfor %}
+      {{ r | to_json }}
+  ansible.builtin.set_fact:
+    _sni_port_map: "{{ tmp | from_json }}"
+
+# ============================================================================
+# 7) Done
+# ============================================================================
+- name: Debug SNI map
+  ansible.builtin.debug:
+    msg: "SNI MAP READY: {{ _sni_port_map }}"
+  when: remnawave_sni_map_debug | default(false)

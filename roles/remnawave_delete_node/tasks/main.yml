@@ -98,6 +98,29 @@
       Node '{{ _node_obj.name }}' ({{ _node_obj.uuid }}) has {{ _host_uuids | length }} attached host(s).
       Either set remnawave_delete_hosts=true for cascade removal, or confirm with remnawave_allow_orphan_hosts=true.
 
+# ── Remove SNI serverNames before deleting hosts ──────────────────────────────
+
+- name: "Build host objects bound to node"
+  ansible.builtin.set_fact:
+    _node_host_objs: >-
+      {{
+        (_hosts_all.json.response | default([]))
+        | selectattr('uuid','in', _host_uuids)
+        | list
+      }}
+
+# =====================================================================
+# Process serverNames removal for each host
+# =====================================================================
+- name: "Process serverNames removal for host {{ host.uuid }}"
+  ansible.builtin.include_tasks: remove_servernames_one.yml
+  loop: "{{ _node_host_objs }}"
+  loop_control:
+    loop_var: host
+  when:
+    - remnawave_delete_hosts | bool
+    - not remnawave_dry_run | bool
+
 # ── Cascade: delete hosts first (bulk) ─────────────────────────────────────────
 - name: "Bulk delete hosts attached to node"
   when:

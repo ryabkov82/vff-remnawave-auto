@@ -11,71 +11,97 @@ global
     ca-base /etc/ssl/certs
     crt-base /etc/ssl/private
 
-    # Не обязательно для TCP passthrough, но безопасные дефолты не помешают
-    ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305
-    ssl-default-bind-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
     ssl-default-bind-options ssl-min-ver TLSv1.2 no-tls-tickets
 
 defaults
     mode tcp
     log  global
     option tcplog
-    option  dontlognull
-    option  srvtcpka
-    option  clitcpka
+    option dontlognull
+    option srvtcpka
+    option clitcpka
     timeout connect {{ haproxy_timeout_connect }}
     timeout client  {{ haproxy_timeout_client }}
     timeout server  {{ haproxy_timeout_server }}
     timeout client-fin {{ haproxy_timeout_client_fin }}
     timeout server-fin {{ haproxy_timeout_server_fin }}
-    timeout tunnel  {{ haproxy_timeout_tunnel }}
-
-    errorfile 400 /etc/haproxy/errors/400.http
-    errorfile 403 /etc/haproxy/errors/403.http
-    errorfile 408 /etc/haproxy/errors/408.http
-    errorfile 500 /etc/haproxy/errors/500.http
-    errorfile 502 /etc/haproxy/errors/502.http
-    errorfile 503 /etc/haproxy/errors/503.http
-    errorfile 504 /etc/haproxy/errors/504.http
+    timeout tunnel {{ haproxy_timeout_tunnel }}
 
 frontend https_in
     bind {{ haproxy_bind_addr }}:{{ haproxy_bind_port }}
     mode tcp
     option tcplog
 
-    # Ждём ClientHello, чтобы извлечь SNI
     tcp-request inspect-delay {{ haproxy_inspect_delay }}
     tcp-request content accept if { req_ssl_hello_type 1 }
-
-    # Снимем SNI в лог/для отладки (до 256 байт)
     tcp-request content capture req.ssl_sni len 256
 
-    # ACL для маршрутизации
-    acl is_tls     req.ssl_hello_type 1
-    # Все домены, которые должны идти на Nginx (панель, подписка и т.п.)
-    # Можно перечислять хоть десятки доменов в одном ACL.
-    {% set _nginx_domains = (haproxy_nginx_sni_domains | default([haproxy_panel_domain])) %}
-    
-    acl is_nginx_sni req.ssl_sni -i {{ _nginx_domains | join(' ') }}
+    # =====================
+    # PANEL / SUBSCRIPTION
+    # =====================
 
-    # Если не TLS — уводим сразу в XRAY (прямой TCP без задержки)
-    use_backend be_xray if !is_tls
+    {% set _panel_domain = remnawave_panel_frontend_domain | default(haproxy_panel_domain) %}
 
-    # Для TLS включаем клиентские keep-alive (полезно для туннеля)
-    option clitcpka
+    {% set _sub_domains = [] %}
+    {% if remnawave_sub_public_domain is defined
+          and (remnawave_group_subscription is not defined
+               or remnawave_group_subscription not in groups) %}
+        {% set _sub_domains = [remnawave_sub_public_domain] %}
+    {% endif %}
 
-    use_backend be_panel if is_nginx_sni
-    default_backend be_xray
+    {% set _extra_domains = haproxy_nginx_sni_domains | default([]) %}
+    {% set _nginx_domains = ([_panel_domain] + _sub_domains + _extra_domains) | unique %}
+
+    acl SNI_PANEL req.ssl_sni -i {{ _nginx_domains | join(' ') }}
+
+    {% set _node_domains = haproxy_node_nginx_sni_domains | default([]) %}
+    {% if _node_domains | length > 0 %}
+
+    acl SNI_NODE_NGINX req.ssl_sni -i {{ _node_domains | join(' ') }}
+
+    {% endif %}
+
+    # =====================
+    # XRAY (dynamic SNI routing)
+    # =====================
+
+    {% for sni, port in _sni_port_map.items() %}
+
+    acl SNI_XRAY_{{ loop.index }} req.ssl_sni -i {{ sni }}
+    use_backend be_xray_{{ port }} if SNI_XRAY_{{ loop.index }}
+
+    {% endfor %}
+
+    # =====================
+    # Default routing
+    # =====================
+    {% if _node_domains | length > 0 %}
+
+    use_backend be_node_nginx if SNI_NODE_NGINX
+
+    {% endif %}
+
+    use_backend be_panel if SNI_PANEL
+    default_backend be_panel
 
 backend be_panel
     mode tcp
     option srvtcpka
-    server nginx_local {{ haproxy_nginx_host }}:{{ haproxy_nginx_port }} check inter 2s rise 2 fall 3
+    server nginx_local {{ haproxy_nginx_host }}:{{ haproxy_nginx_port }} check
 
-backend be_xray
+{% if _node_domains | length > 0 %}
+backend be_node_nginx
     mode tcp
     option srvtcpka
-    server xray_local {{ haproxy_xray_host }}:{{ haproxy_xray_port }} check inter 2s rise 2 fall 3
+    server node_nginx_local {{ haproxy_node_nginx_host }}:{{ haproxy_node_nginx_port }} check
+{% endif %}
+
+{% for port in _sni_port_map.values() | unique %}
+backend be_xray_{{ port }}
+    mode tcp
+    option srvtcpka
+    server xray_local 127.0.0.1:{{ port }} check
+{% endfor %}
 
 {% if haproxy_stats_enabled %}
 listen stats

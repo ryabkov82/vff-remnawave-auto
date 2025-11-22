@@ -1,0 +1,20 @@
+# Default variables for remnawave_reality_servernames
+
+# --------------------------------------------------------------------
+# API base & token
+# --------------------------------------------------------------------
+remnawave_api_base_url: "{{ remnawave_api_base_url | default((remnawave_panel_url | default('')) ~ '/api') }}"
+remnawave_panel_api_token: ""
+
+# --------------------------------------------------------------------
+# How to find inbound
+# --------------------------------------------------------------------
+remnawave_reality_profile_uuid: ""
+remnawave_reality_inbound_uuid: ""
+remnawave_reality_inbound_tag: ""
+
+# --------------------------------------------------------------------
+# ServerNames ADD / REMOVE
+# --------------------------------------------------------------------
+remnawave_reality_add_servernames: []
+remnawave_reality_remove_servernames: []

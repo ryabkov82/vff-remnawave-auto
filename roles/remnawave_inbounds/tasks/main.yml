@@ -15,6 +15,7 @@
       reality_private_key: "{{ remnawave_reality_private_key | default('') }}"
       reality_short_id: "{{ remnawave_reality_short_id | default('') }}"
       inbounds: "{{ remnawave_inbounds | default([]) }}"
+      inbounds_managed: "{{ remnawave_inbounds_managed | default([]) }}"
       register_in_squad: "{{ (remnawave_register_inbounds_in_squad | default(true)) | bool }}"
       squad_name: "{{ remnawave_internal_squad_name | default('Default-Squad') }}"
       squad_uuid: "{{ remnawave_internal_squad_uuid | default('') }}"
@@ -27,6 +28,25 @@
       - (_ri.profile_uuid | length > 0) or (_ri.profile_name | length > 0)
       - _ri.inbounds is iterable
     fail_msg: "Missing required inputs (api_base_url/api_token/profile/inbounds)."
+
+- name: Build effective inbound list (apply managed filter if set)
+  ansible.builtin.set_fact:
+    _ri_effective_inbounds: >-
+      {%- set all = _ri.inbounds | default([]) -%}
+      {%- set managed = _ri.inbounds_managed | default([]) -%}
+
+      {%- if managed | length > 0 -%}
+        {{ all | selectattr('tag', 'in', managed) | list }}
+      {%- else -%}
+        {{ all }}
+      {%- endif -%}
+
+- name: Debug effective inbound list
+  ansible.builtin.debug:
+    msg:
+      all_inbounds: "{{ _ri.inbounds | map(attribute='tag') | list }}"
+      managed_filter: "{{ _ri.inbounds_managed | default([]) }}"
+      effective: "{{ _ri_effective_inbounds | map(attribute='tag') | list }}"
 
 # === 1) Получаем список профилей
 - name: Get config profiles
@@ -123,7 +143,7 @@
     current_cfg: "{{ _profile_full.json.response.config | default({}) }}"
     current_inbounds: "{{ current_cfg.inbounds | default([]) }}"
     current_map: "{{ dict((current_inbounds | map(attribute='tag') | list) | zip(current_inbounds)) }}"
-    desired_map: "{{ dict((_ri.inbounds | default([])) | map(attribute='tag') | zip(_ri.inbounds)) }}"
+    desired_map: "{{ dict((_ri_effective_inbounds | default([])) | map(attribute='tag') | zip(_ri_effective_inbounds)) }}"
     merged_map: >-
       {%- set m = current_map.copy() -%}
       {%- for t, ib in desired_map.items() -%}
@@ -186,7 +206,7 @@
       ansible.builtin.set_fact:
         _prefixed: >-
           {%- set arr = [] -%}
-          {%- set desired = (_ri.inbounds | map(attribute='tag') | list) -%}
+          {%- set desired = (_ri_effective_inbounds | map(attribute='tag') | list) -%}
           {%- for ib in _merged_config.inbounds -%}
             {%- set t = ib.tag -%}
             {%- if t in desired -%}
@@ -260,7 +280,7 @@
 - name: Collect desired inbound UUIDs by tags
   when: _ri.register_in_squad
   vars:
-    _desired_tags: "{{ (_ri.inbounds | map(attribute='tag')) | list }}"
+    _desired_tags: "{{ (_ri_effective_inbounds | map(attribute='tag')) | list }}"
   ansible.builtin.set_fact:
     _desired_inbound_uuids: >-
       {{
@@ -273,11 +293,11 @@
   when: _ri.register_in_squad
   ansible.builtin.assert:
     that:
-      - _desired_inbound_uuids | length == (_ri.inbounds | length)
+      - _desired_inbound_uuids | length == (_ri_effective_inbounds | length)
     fail_msg: >-
       Some desired inbound tags were not found in profile's inbounds.
       Missing tags: {{
-        (_ri.inbounds | map(attribute='tag') | list)
+        (_ri_effective_inbounds | map(attribute='tag') | list)
         | difference(_tag_to_uuid_map.keys() | list)
       }}
 

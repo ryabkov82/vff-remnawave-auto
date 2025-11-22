@@ -46,8 +46,6 @@
 - name: HAProxy | Panel SNI domains only (exclude subscription)
   ansible.builtin.include_role:
     name: haproxy_tls_sni
-  vars:
-    haproxy_nginx_sni_domains: "{{ [haproxy_panel_domain] }}"
   when: inventory_hostname in groups[remnawave_group_panel]
   tags: [haproxy]
 

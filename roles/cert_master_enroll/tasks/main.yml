@@ -1,0 +1,112 @@
+---
+- name: Cert Enroll | Check Required Inputs
+  ansible.builtin.assert:
+    that:
+      - (cert_master_enroll_host | length) > 0
+    fail_msg: "cert_master_enroll_host is required (set group var or CERT_MASTER)"
+
+############################
+# STATE: present  (добавить)
+############################
+- name: Cert Enroll | Present | Block
+  when: cert_master_enroll_state | lower == 'present'
+  block:
+
+    - name: Cert Enroll | Generate Keypair On Master If Missing
+      community.crypto.openssh_keypair:
+        path: "{{ cert_master_enroll_private_key_path }}"
+        type: ed25519
+        mode: "0600"
+        comment: "cert-sync"
+      delegate_to: "{{ cert_master_enroll_host }}"
+      remote_user: "{{ cert_master_enroll_user }}"
+      vars:
+        ansible_ssh_common_args: "{{ cert_master_enroll_ssh_common_args }}"
+      become: true
+      run_once: true
+
+    - name: Cert Enroll | Read Public Key From Master
+      ansible.builtin.slurp:
+        src: "{{ cert_master_enroll_public_key_path }}"
+      delegate_to: "{{ cert_master_enroll_host }}"
+      remote_user: "{{ cert_master_enroll_user }}"
+      vars:
+        ansible_ssh_common_args: "{{ cert_master_enroll_ssh_common_args }}"
+      register: cert_master_enroll_pubkey_slurp
+      become: true
+      run_once: true
+
+    - name: Cert Enroll | Set Pubkey Text
+      ansible.builtin.set_fact:
+        cert_master_enroll_pubkey_text: "{{ cert_master_enroll_pubkey_slurp.content | b64decode | trim }}"
+
+    - name: Cert Enroll | Authorize Master Pubkey On Node
+      ansible.posix.authorized_key:
+        user: "{{ cert_master_enroll_auth_user }}"
+        state: present
+        key: "{{ cert_master_enroll_pubkey_text }}"
+        manage_dir: true
+
+    - name: Cert Enroll | Ensure Node In Servers File On Master
+      ansible.builtin.lineinfile:
+        path: "{{ cert_master_enroll_servers_file }}"
+        create: true
+        state: present
+        line: "{{ cert_master_enroll_server_entry }}"
+        regexp: "^(?:{{ cert_master_enroll_server_entry | regex_escape }})(?:\\s.*)?$"
+        mode: "0644"
+      delegate_to: "{{ cert_master_enroll_host }}"
+      remote_user: "{{ cert_master_enroll_user }}"
+      vars:
+        ansible_ssh_common_args: "{{ cert_master_enroll_ssh_common_args }}"
+      become: true
+
+############################
+# STATE: absent  (удалить)
+############################
+- name: Cert Enroll | Absent | Block
+  when: cert_master_enroll_state | lower == 'absent'
+  block:
+
+    - name: Cert Enroll | Read Public Key From Master (For Removal)
+      ansible.builtin.slurp:
+        src: "{{ cert_master_enroll_public_key_path }}"
+      delegate_to: "{{ cert_master_enroll_host }}"
+      remote_user: "{{ cert_master_enroll_user }}"
+      vars:
+        ansible_ssh_common_args: "{{ cert_master_enroll_ssh_common_args }}"
+      register: cert_master_enroll_pubkey_rm_slurp
+      become: true
+      run_once: true
+
+    - name: Cert Enroll | Set Pubkey Text (For Removal)
+      ansible.builtin.set_fact:
+        cert_master_enroll_pubkey_text: "{{ cert_master_enroll_pubkey_rm_slurp.content | b64decode | trim }}"
+
+    - name: Cert Enroll | Remove Master Pubkey From Node
+      ansible.posix.authorized_key:
+        user: "{{ cert_master_enroll_auth_user }}"
+        state: absent
+        key: "{{ cert_master_enroll_pubkey_text }}"
+        manage_dir: true
+
+    - name: Cert Enroll | Remove Node From Servers File On Master
+      ansible.builtin.lineinfile:
+        path: "{{ cert_master_enroll_servers_file }}"
+        state: absent
+        regexp: "^(?:{{ cert_master_enroll_server_entry | regex_escape }})(?:\\s.*)?$"
+      delegate_to: "{{ cert_master_enroll_host }}"
+      remote_user: "{{ cert_master_enroll_user }}"
+      vars:
+        ansible_ssh_common_args: "{{ cert_master_enroll_ssh_common_args }}"
+      become: true
+
+    - name: Cert Enroll | Remove Known Hosts Entry On Master (Optional)
+      ansible.builtin.known_hosts:
+        name: "{{ hostvars[inventory_hostname].ansible_host | default(inventory_hostname) }}"
+        state: absent
+      delegate_to: "{{ cert_master_enroll_host }}"
+      remote_user: "{{ cert_master_enroll_user }}"
+      vars:
+        ansible_ssh_common_args: "{{ cert_master_enroll_ssh_common_args }}"
+      become: true

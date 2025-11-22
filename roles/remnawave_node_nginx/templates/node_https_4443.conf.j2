@@ -1,0 +1,13 @@
+server {
+    listen {{ nginx_https_bind }} ssl http2;
+    server_name {{ website_domains | join(' ') }};
+
+    ssl_certificate     {{ nginx_ssl_cert }};
+    ssl_certificate_key {{ nginx_ssl_key }};
+
+    # простой ответ для проверки
+    location / {
+        default_type text/plain;
+        return 200 "OK from remnawave node nginx\n";
+    }
+}

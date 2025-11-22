@@ -1,6 +1,6 @@
 # Defaults for remnawave_subscription_deploy
 # Deployment mode: "bundled" (same server as panel) or "separate" (dedicated server)
-remnawave_sub_deploy_mode: "bundled"
+remnawave_sub_deploy_mode: ""
 
 # Required domains
 # - Domain of subscription page

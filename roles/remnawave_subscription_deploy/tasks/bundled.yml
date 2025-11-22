@@ -30,11 +30,6 @@
 - name: HAProxy | Route panel+subscription SNI to Nginx
   ansible.builtin.include_role:
     name: haproxy_tls_sni
-  vars:
-    # Merge existing list with panel+sub domains (unique)
-    haproxy_nginx_sni_domains:
-      - "{{ remnawave_panel_frontend_domain | default(haproxy_panel_domain) }}"
-      - "{{ remnawave_sub_public_domain }}"
   tags: [haproxy]
 
 # Выпуск сертификата для домена подписки (поддержка HTTP-01 и DNS-01)

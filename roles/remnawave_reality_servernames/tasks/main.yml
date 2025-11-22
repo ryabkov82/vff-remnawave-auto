@@ -1,0 +1,204 @@
+---
+# ======================================================================
+#   Patch REALITY serverNames для одного inbound в Remnawave Panel
+# ======================================================================
+
+# ------------------------ 1. Validate inputs ----------------------------
+- name: Reality | Assert required inputs
+  ansible.builtin.assert:
+    that:
+      - remnawave_api_base_url | length > 0
+      - remnawave_panel_api_token | length > 0
+      - remnawave_reality_add_servernames is sequence
+      - remnawave_reality_remove_servernames is sequence
+    fail_msg: >-
+      remnawave_reality_servernames: обязательные переменные:
+      remnawave_api_base_url, remnawave_panel_api_token,
+      remnawave_reality_add_servernames, remnawave_reality_remove_servernames.
+
+# ------------------------ 2. API HEADERS --------------------------------
+- name: Reality | Compose API headers
+  ansible.builtin.set_fact:
+    _h:
+      Authorization: "Bearer {{ remnawave_panel_api_token }}"
+      Content-Type: "application/json"
+
+# ------------------------ 3. Early-exit: we already know all UUIDs -------
+- name: Reality | Early-exit when inbound/profile UUIDs already provided
+  ansible.builtin.set_fact:
+    _resolved_inb_uuid: "{{ remnawave_reality_inbound_uuid }}"
+    _resolved_prof_uuid: "{{ remnawave_reality_profile_uuid }}"
+    _resolved_tag: "{{ remnawave_reality_inbound_tag }}"
+  when:
+    - (remnawave_reality_profile_uuid | length) > 0
+    - (remnawave_reality_inbound_uuid | length) > 0
+    - (remnawave_reality_inbound_tag | length) > 0
+
+# ------------------------ 4. Load inbound list (global) -------------------
+- name: Reality | GET /config-profiles/inbounds
+  ansible.builtin.uri:
+    url: "{{ remnawave_api_base_url }}/config-profiles/inbounds"
+    method: GET
+    headers: "{{ _h }}"
+    return_content: true
+    status_code: [200]
+  register: _all_inb_resp
+  when: _resolved_inb_uuid is not defined
+
+- name: Reality | Extract inbound list
+  ansible.builtin.set_fact:
+    _all_inb: "{{ _all_inb_resp.json.response.inbounds | default([]) }}"
+  when: _resolved_inb_uuid is not defined
+
+# ------------------------ 5. Resolve inbound/profile by UUID if present ----
+- name: Reality | Resolve inbound+profile by inbound_uuid
+  when:
+    - _resolved_inb_uuid is not defined
+    - (remnawave_reality_inbound_uuid | length) > 0
+  block:
+    - name: Reality | Find inbound by UUID
+      vars:
+        _match: "{{ _all_inb | selectattr('uuid', 'equalto', remnawave_reality_inbound_uuid) | list }}"
+      ansible.builtin.set_fact:
+        _resolved_inb_uuid: "{{ (_match | first).uuid }}"
+        _resolved_prof_uuid: "{{ (_match | first).profileUuid }}"
+        _resolved_tag: "{{ (_match | first).tag }}"
+      failed_when: (_match | length) != 1
+
+# ------------------------ 6. Resolve inbound by TAG (global) --------------
+- name: Reality | Resolve inbound by tag when uuid not provided
+  when:
+    - _resolved_inb_uuid is not defined
+    - (remnawave_reality_inbound_tag | length) > 0
+  block:
+    - name: Reality | Find inbound by TAG
+      vars:
+        _m: "{{ _all_inb | selectattr('tag', 'equalto', remnawave_reality_inbound_tag) | list }}"
+      ansible.builtin.set_fact:
+        _resolved_inb_uuid: "{{ (_m | first).uuid }}"
+        _resolved_prof_uuid: "{{ (_m | first).profileUuid }}"
+        _resolved_tag: "{{ (_m | first).tag }}"
+      failed_when: (_m | length) != 1
+
+# ------------------------ 7. Final assert inbound/profile resolved ---------
+- name: Reality | Assert inbound/profile resolved
+  ansible.builtin.assert:
+    that:
+      - _resolved_inb_uuid is defined
+      - _resolved_prof_uuid is defined
+      - _resolved_tag is defined
+      - _resolved_inb_uuid | length > 0
+      - _resolved_prof_uuid | length > 0
+      - _resolved_tag | length > 0
+    fail_msg: >-
+      remnawave_reality_servernames: не удалось определить inbound UUID / profile UUID / tag.
+
+# ------------------------ 8. Load config-profile ---------------------------
+- name: Reality | GET /config-profiles/<profileUuid>
+  ansible.builtin.uri:
+    url: "{{ remnawave_api_base_url }}/config-profiles/{{ _resolved_prof_uuid }}"
+    method: GET
+    headers: "{{ _h }}"
+    return_content: true
+    status_code: [200]
+  register: _prof_resp
+
+- name: Reality | Extract profile config
+  ansible.builtin.set_fact:
+    _cfg: "{{ _prof_resp.json.response.config | default({}) }}"
+    _cfg_inbounds: "{{ _prof_resp.json.response.config.inbounds | default([]) }}"
+
+# ------------------------ 9. Pick inbound inside config ---------------------
+- name: Reality | Select inbound in config.inbounds
+  ansible.builtin.set_fact:
+    _cfg_inb: >-
+      {{
+        _cfg_inbounds
+        | selectattr('tag','equalto',_resolved_tag)
+        | list | first | default({})
+      }}
+
+- name: Reality | Assert inbound exists in config.inbounds
+  ansible.builtin.assert:
+    that:
+      - _cfg_inb | length > 0
+    fail_msg: "Инбаунд '{{ _resolved_tag }}' отсутствует в config.inbounds!"
+
+# ------------------------ 10. Patch REALITY.serverNames ----------------------
+- name: Reality | Extract REALITY settings
+  ansible.builtin.set_fact:
+    _stream: "{{ _cfg_inb.streamSettings | default({}) }}"
+    _reality: "{{ _cfg_inb.streamSettings.realitySettings | default({}) }}"
+
+- name: Reality | Existing serverNames normalize
+  ansible.builtin.set_fact:
+    _srv_existing: >-
+      {{
+        (_reality.serverNames is string)
+          | ternary([_reality.serverNames],
+                    (_reality.serverNames | default([])))
+      }}
+
+# === NEW LOGIC: remove & add serverNames =======================================
+
+- name: Reality | Remove serverNames
+  ansible.builtin.set_fact:
+    _srv_after_remove: >-
+      {{
+        _srv_existing
+        | reject('in', remnawave_reality_remove_servernames | default([]))
+        | list
+      }}
+
+- name: Reality | Add serverNames
+  ansible.builtin.set_fact:
+    _srv_new: >-
+      {{
+        (_srv_after_remove + (remnawave_reality_add_servernames | default([])))
+        | reject('equalto', '')
+        | list
+        | unique
+      }}
+
+- name: Reality | Build patched inbound
+  ansible.builtin.set_fact:
+    _cfg_inb_patched: >-
+      {{
+        _cfg_inb
+        | combine(
+            {'streamSettings':
+              {'realitySettings':
+                {'serverNames': _srv_new}
+              }
+            },
+            recursive=true
+          )
+      }}
+
+# ------------------------ 11. Rebuild inbounds list --------------------------
+- name: Reality | Rebuild config.inbounds
+  ansible.builtin.set_fact:
+    _cfg_inbounds_new: >-
+      {{
+        _cfg_inbounds
+        | rejectattr('tag','equalto',_resolved_tag)
+        | list
+        + [_cfg_inb_patched]
+      }}
+
+# ------------------------ 12. Build final config and PATCH -------------------
+- name: Reality | Build full config patch
+  ansible.builtin.set_fact:
+    _cfg_final: "{{ _cfg | combine({'inbounds': _cfg_inbounds_new}, recursive=true) }}"
+
+- name: Reality | PATCH /config-profiles
+  ansible.builtin.uri:
+    url: "{{ remnawave_api_base_url }}/config-profiles"
+    method: PATCH
+    headers: "{{ _h }}"
+    body_format: json
+    body:
+      uuid: "{{ _resolved_prof_uuid }}"
+      config: "{{ _cfg_final }}"
+    status_code: [200]
+  register: _patch_resp
