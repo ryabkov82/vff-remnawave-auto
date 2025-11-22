@@ -1,0 +1,22 @@
+---
+# Где взять сертификаты (сертификационный мастер) и для какого домена
+cert_master_host: ""                  # ОБЯЗАТЕЛЬНО: SSH-алиас/host мастера
+cert_domain: ""                       # ОБЯЗАТЕЛЬНО: например, digitalstreamers.xyz
+cert_master_user: root
+cert_master_ssh_common_args: "-o StrictHostKeyChecking=accept-new"
+
+# Пути сертификатов на мастере (Let's Encrypt)
+cert_src_dir: "/etc/letsencrypt/live/{{ cert_domain }}"
+cert_src_fullchain: "{{ cert_src_dir }}/fullchain.pem"
+cert_src_privkey: "{{ cert_src_dir }}/privkey.pem"
+
+# Куда класть на целевой ноде (по умолчанию тот же путь LE)
+cert_dest_dir: "/etc/letsencrypt/live/{{ cert_domain }}"
+nginx_ssl_cert: "{{ cert_dest_dir }}/fullchain.pem"
+nginx_ssl_key: "{{ cert_dest_dir }}/privkey.pem"
+
+# Доп. опции
+reload_services: ["nginx", "haproxy"]  # сервисы, которые перезагрузить после обновления
+tls_create_ssl_symlink: false          # создать симлинк /etc/ssl/<domain> -> cert_dest_dir
+tls_sync_manage_known_hosts: true      # добавить cert-master в known_hosts (ssh-keyscan)
+tls_verify_subject: true               # сделать мягкую проверку subject у сертификата

@@ -1,0 +1,133 @@
+---
+- name: "TLS Sync | Check Required Inputs"
+  ansible.builtin.assert:
+    that:
+      - (cert_master_host | length) > 0
+      - (cert_domain | length) > 0
+    fail_msg: "tls_sync: set cert_master_host and cert_domain (see defaults)."
+
+# Resolve real Host/Port for keyscan: prefer inventory's ansible_host/port,
+# then ssh -G output, finally fallback to cert_master_host/22.
+- name: "TLS Sync | Resolve Cert-Master Real Host (via ssh -G)"
+  ansible.builtin.command:
+    cmd: ssh -G {{ cert_master_host }}
+  register: tls_sync_sshg
+  changed_when: false
+  failed_when: false
+  delegate_to: localhost
+  run_once: true
+
+- name: "TLS Sync | Set Scan Host/Port Facts"
+  vars:
+    _inv_host: "{{ (hostvars[cert_master_host].ansible_host | default('')) if (cert_master_host in hostvars) else '' }}"
+    _inv_port: "{{ (hostvars[cert_master_host].ansible_port | default('')) if (cert_master_host in hostvars) else '' }}"
+    _host_matches: "{{ tls_sync_sshg.stdout | default('') | regex_findall('(?im)^hostname\\s+(\\S+)') }}"
+    _port_matches: "{{ tls_sync_sshg.stdout | default('') | regex_findall('(?im)^port\\s+(\\d+)') }}"
+  ansible.builtin.set_fact:
+    cert_master_scan_host: >-
+      {{ _inv_host | default('', true)
+         | ternary(_inv_host,
+                   ((_host_matches[0]) if (_host_matches|length>0) else cert_master_host)) }}
+    cert_master_scan_port: >-
+      {{ _inv_port | default('', true)
+         | ternary(_inv_port,
+                   (((_port_matches[0]) if (_port_matches|length>0) else 22)) ) | int }}
+  delegate_to: localhost
+  run_once: true
+
+- name: "TLS Sync | ssh-keyscan Cert-Master (Optional)"
+  when: tls_sync_manage_known_hosts | bool
+  ansible.builtin.command:
+    cmd: ssh-keyscan -p {{ cert_master_scan_port }} -H {{ cert_master_scan_host }}
+  register: tls_sync_scan
+  changed_when: false
+  failed_when: false          # не валим плей, если скан не удался (например, алиас)
+  delegate_to: localhost
+  run_once: true
+
+- name: "TLS Sync | Add Cert-Master To known_hosts"
+  when:
+    - tls_sync_manage_known_hosts | bool
+    - tls_sync_scan is defined
+    - tls_sync_scan.rc is defined
+    - tls_sync_scan.rc | int == 0
+    - tls_sync_scan.stdout is defined
+    - (tls_sync_scan.stdout | length) > 0
+  ansible.builtin.known_hosts:
+    name: "{{ cert_master_scan_host }}"
+    key: "{{ tls_sync_scan.stdout }}"
+    state: present
+  delegate_to: localhost
+  run_once: true
+
+# Read certs from the master once
+- name: "TLS Sync | Read Cert Files From Cert-Master"
+  delegate_to: "{{ cert_master_scan_host | default(cert_master_host) }}"
+  remote_user: "{{ cert_master_user | default('root') }}"
+  vars:
+    ansible_port: "{{ cert_master_scan_port | default(22) | int }}"
+    ansible_ssh_common_args: "{{ cert_master_ssh_common_args | default('-o StrictHostKeyChecking=accept-new') }}"
+  become: true
+  run_once: true
+  block:
+    - name: "TLS Sync | Read Fullchain On Cert-Master"
+      ansible.builtin.slurp:
+        src: "{{ cert_src_fullchain }}"
+      register: tls_fullchain_b64
+
+    - name: "TLS Sync | Read Privkey On Cert-Master"
+      ansible.builtin.slurp:
+        src: "{{ cert_src_privkey }}"
+      register: tls_privkey_b64
+      no_log: true
+
+# Prepare destination on target
+- name: "TLS Sync | Ensure Destination Directory Exists"
+  ansible.builtin.file:
+    path: "{{ cert_dest_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# Copy files to target
+- name: "TLS Sync | Install fullchain.pem"
+  ansible.builtin.copy:
+    content: "{{ tls_fullchain_b64.content | b64decode }}"
+    dest: "{{ nginx_ssl_cert }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: "Reload Services"
+
+- name: "TLS Sync | Install privkey.pem"
+  ansible.builtin.copy:
+    content: "{{ tls_privkey_b64.content | b64decode }}"
+    dest: "{{ nginx_ssl_key }}"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: "Reload Services"
+  no_log: true
+
+# Make data available to handlers (which run later)
+- name: "TLS Sync | Gather Service Facts"
+  ansible.builtin.service_facts:
+
+# Optional symlink — шаблон только в конце name
+- name: "TLS Sync | Create SSL Symlink (domain={{ cert_domain }})"
+  when: tls_create_ssl_symlink | bool
+  ansible.builtin.file:
+    src: "{{ cert_dest_dir }}"
+    dest: "/etc/ssl/{{ cert_domain }}"
+    state: link
+    force: true
+
+# Soft verification — без shell/pipe, через command
+- name: "TLS Sync | Verify Certificate Subject (Soft Check)"
+  when: tls_verify_subject | bool
+  ansible.builtin.command:
+    cmd: >-
+      openssl x509 -in {{ nginx_ssl_cert }} -noout -subject -issuer -dates
+  changed_when: false
+  failed_when: false

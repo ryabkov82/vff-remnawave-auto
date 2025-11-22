@@ -1,0 +1,18 @@
+---
+# Где находится панель Remnawave API
+remnawave_api_base_url: "https://{{ remnawave_panel_frontend_domain }}/api"
+remnawave_panel_api_token: ""
+
+# Имя ноды (fallback к inventory_hostname)
+remnawave_node_name: "{{ inventory_hostname }}"
+remnawave_node_uuid: ""
+
+# Параметры сайта (Nginx)
+nginx_https_bind: "127.0.0.1:4443"     # куда прокидывать домены сайта
+
+# Домены, которые обслуживает Nginx
+website_domains:
+  - "{{ remnawave_node_domain | default('digitalstreamers.xyz') }}"
+
+# Путь куда класть haproxy.cfg
+haproxy_cfg_path: "/etc/haproxy/haproxy.cfg"

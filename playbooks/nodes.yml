@@ -14,14 +14,53 @@
 
     # DNS для домена хоста (создаём A/AAAA или CNAME)
     - role: cf_dns
+      vars:
+        cf_dns_zone: "{{ cf_dns_zone_nodes }}"
       when:
-        - cf_dns_zone is defined
+        - cf_dns_zone_nodes is defined
         - cf_dns_records is defined
         - (cf_dns_records | length) > 0
       tags: [cf_dns]
 
     - role: remnawave_add_host
       tags: [register_host]
+
+    # Enroll ноды на cert-master (даём мастеру ключ и добавляем в список рассылки)
+    - role: cert_master_enroll
+      when:
+        - (cert_master_enroll_host | default('')) | length > 0
+      tags: [cert_enroll, node]
+
+    # Синхронизация TLS-серта с cert-master на ноду
+    - role: tls_sync
+      when:
+        - (cert_master_host | default('')) | length > 0
+        - (cert_domain | default(remnawave_node_domain | default(''))) | length > 0
+      tags: [tls_sync, node]
+
+    # HTTPS vhost на ноде (nginx :4443 с тем же сертификатом)
+    - role: remnawave_node_nginx
+      when:
+        - remnawave_node_enable_nginx | default(true) | bool
+      tags: [nginx, node_nginx, node]
+
+    # === HAProxy на ноде: два режима ===
+
+    # 1) Если нода работает на том же хосте, что и панель → используем haproxy_tls_sni
+    - role: haproxy_tls_sni
+      when:
+        - remnawave_node_enable_haproxy | default(true) | bool
+        - remnawave_group_panel is defined
+        - inventory_hostname in groups[remnawave_group_panel]
+      tags: [haproxy, node_haproxy, node, haproxy_tls_sni]
+
+    # 2) Если нода — обычная (вне хоста панели) → используем remnawave_node_haproxy
+    - role: remnawave_node_haproxy
+      when:
+        - remnawave_node_enable_haproxy | default(true) | bool
+        - remnawave_group_panel is not defined
+          or inventory_hostname not in groups[remnawave_group_panel]
+      tags: [haproxy, node_haproxy, node]
 
     - role: remnawave_node
       tags: [node]
