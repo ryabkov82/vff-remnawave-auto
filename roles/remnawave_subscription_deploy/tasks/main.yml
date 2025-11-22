@@ -1,4 +1,16 @@
 ---
+- name: Detect deploy mode if not set (panel vs subscription)
+  ansible.builtin.set_fact:
+    remnawave_sub_deploy_mode: >-
+      {{
+        remnawave_sub_deploy_mode
+        | default(
+            'separate' if (remnawave_group_subscription in groups and
+                            inventory_hostname in groups[remnawave_group_subscription])
+            else 'bundled'
+          )
+      }}
+
 # Role entrypoint: dispatch to selected deploy mode
 - name: Select subscription deploy mode
   ansible.builtin.include_tasks: "{{ remnawave_sub_deploy_mode }}.yml"

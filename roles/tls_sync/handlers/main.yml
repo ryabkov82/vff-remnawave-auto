@@ -1,0 +1,9 @@
+---
+- name: "Reload Services"
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: reloaded
+  loop: "{{ reload_services | default([]) }}"
+  when: >
+    (item in ansible_facts.services) or
+    ((item ~ '.service') in ansible_facts.services)

@@ -117,6 +117,10 @@ nodes: ## Деплой Remnawave Nodes (+ регистрация, health-checks)
 	@#   make nodes LIMIT=de-fra-1 TAGS=register_host
 	@#   make nodes LIMIT=de-fra-1 TAGS=register_host EXTRA='-e rw_host_force_recreate=true'
 	@#   make nodes LIMIT=de-fra-1 TAGS=cf_dns
+	@#   make nodes LIMIT=de-fra-1 TAGS=cert_enroll
+	@#   make nodes LIMIT=de-fra-1 TAGS=tls_sync
+	@#   make nodes LIMIT=de-fra-1 TAGS=haproxy
+	@#   make nodes LIMIT=de-fra-1 TAGS=nginx
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_NODES) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
 
 disable-node: ## Отключить/включить ноду (опц.: отключить её хосты)

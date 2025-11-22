@@ -1,0 +1,14 @@
+---
+# Default values for SNI map role
+
+# Имя ноды (используется если UUID не передан)
+remnawave_sni_node_name: "{{ remnawave_node_name | default(inventory_hostname) }}"
+
+# URL API панели
+remnawave_api_base_url: "{{ remnawave_api_base_url | default((remnawave_panel_url | default('')) ~ '/api') }}"
+
+# Токен панели
+remnawave_panel_api_token: ""
+
+# UUID ноды (опционально, можно не задавать)
+remnawave_node_uuid: ""

@@ -1,0 +1,28 @@
+---
+# =====================================================================
+# BUILD SNI MAP (shared role)
+# =====================================================================
+
+- name: Build SNI→PORT map using remnawave_sni_map
+  ansible.builtin.include_role:
+    name: remnawave_sni_map
+  vars:
+    remnawave_sni_node_name: "{{ remnawave_node_name | default(inventory_hostname) }}"
+    remnawave_sni_api_base_url: "{{ remnawave_api_base_url }}"
+    remnawave_sni_api_token: "{{ remnawave_panel_api_token }}"
+  tags: ['sni_map']
+
+# ========= 7) Render haproxy.cfg ==============================================
+- name: "Render haproxy.cfg"
+  ansible.builtin.template:
+    src: haproxy_node.cfg.j2
+    dest: "{{ haproxy_cfg_path }}"
+    mode: "0644"
+  notify: Restart HAProxy
+
+# ========= 8) Ensure HAProxy running ==========================================
+- name: Ensure HAProxy enabled and running
+  ansible.builtin.service:
+    name: haproxy
+    state: started
+    enabled: true

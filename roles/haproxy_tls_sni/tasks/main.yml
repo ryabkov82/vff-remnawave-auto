@@ -6,17 +6,30 @@
       - haproxy_bind_port   | int > 0
       - haproxy_nginx_port  | int > 0
       - haproxy_xray_port   | int > 0
-    fail_msg: "haproxy_panel_domain/bind_port/nginx_port/xray_port must be set."
+      - remnawave_api_base_url | length > 0
+      - remnawave_panel_api_token | length > 0
+    fail_msg: "Missing required vars: haproxy_panel_domain/nginx_port/xray_port/API token."
   tags: [haproxy]
 
-- name: Install HAProxy
-  ansible.builtin.apt:
-    name: haproxy
-    state: present
-    update_cache: true
-  tags: [haproxy, install]
 
-- name: Render haproxy.cfg (TCP passthrough with SNI routing)
+# =====================================================================
+# BUILD SNI MAP
+# =====================================================================
+
+- name: Build SNI→PORT map using remnawave_sni_map
+  ansible.builtin.include_role:
+    name: remnawave_sni_map
+  vars:
+    remnawave_sni_node_name: "{{ remnawave_node_name | default(inventory_hostname) }}"
+    remnawave_sni_api_base_url: "{{ remnawave_api_base_url }}"
+    remnawave_sni_api_token: "{{ remnawave_panel_api_token }}"
+  tags: ['sni_map']
+
+# =====================================================================
+# 7) Render haproxy.cfg
+# =====================================================================
+
+- name: Render haproxy.cfg
   ansible.builtin.template:
     src: haproxy.cfg.j2
     dest: "{{ haproxy_cfg_path }}"
@@ -25,14 +38,12 @@
     mode: "0644"
     validate: "haproxy -c -f %s"
   notify: HAProxy Reconfigure
-  tags: [haproxy, config]
 
-- name: Ensure HAProxy is enabled and started
+- name: Ensure HAProxy is started
   ansible.builtin.service:
     name: haproxy
     enabled: true
     state: started
-  tags: [haproxy]
 
-- name: Flush handlers (apply HAProxy changes)
+- name: Flush handlers
   ansible.builtin.meta: flush_handlers

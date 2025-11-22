@@ -1,0 +1,24 @@
+---
+# Управление: present (добавить) / absent (удалить)
+cert_master_enroll_state: present
+
+# Где и кем подключаемся к сертификационному мастеру
+cert_master_enroll_host: "{{ cert_master_host | default('') }}"
+cert_master_enroll_user: "{{ cert_master_user | default('root') }}"
+cert_master_enroll_ssh_common_args: >-
+  {{
+    cert_master_ssh_common_args
+      | default('-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10')
+  }}
+
+# Файлы на мастере
+cert_master_enroll_servers_file: "/root/etc/cert-sync-servers.txt"
+cert_master_enroll_private_key_path: "/root/.ssh/cert_sync_key"
+cert_master_enroll_public_key_path: "{{ cert_master_enroll_private_key_path }}.pub"
+
+# На узле (куда даём/забираем доступ мастеру)
+cert_master_enroll_auth_user: "root"
+cert_master_enroll_authorized_keys_path: "/root/.ssh/authorized_keys"
+
+# Как строку записывать в SERVERS_FILE (по умолчанию IP узла)
+cert_master_enroll_server_entry: "{{ hostvars[inventory_hostname].ansible_host | default(inventory_hostname) }}"
