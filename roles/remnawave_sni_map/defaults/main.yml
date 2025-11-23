@@ -5,7 +5,7 @@
 remnawave_sni_node_name: "{{ remnawave_node_name | default(inventory_hostname) }}"
 
 # URL API панели
-remnawave_api_base_url: "{{ remnawave_api_base_url | default((remnawave_panel_url | default('')) ~ '/api') }}"
+remnawave_api_base_url: "{{ remnawave_panel_url | default('') ~ '/api' }}"
 
 # Токен панели
 remnawave_panel_api_token: ""

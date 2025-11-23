@@ -3,7 +3,7 @@
 # --------------------------------------------------------------------
 # API base & token
 # --------------------------------------------------------------------
-remnawave_api_base_url: "{{ remnawave_api_base_url | default((remnawave_panel_url | default('')) ~ '/api') }}"
+remnawave_api_base_url: "{{ remnawave_panel_url | default('') ~ '/api' }}"
 remnawave_panel_api_token: ""
 
 # --------------------------------------------------------------------

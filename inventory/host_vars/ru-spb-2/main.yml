@@ -1,0 +1,34 @@
+remnawave_node_write_env: true
+remnawave_node_port: 2222
+remnawave_node_env_content: |
+  NODE_PORT={{ remnawave_node_port }}
+  SECRET_KEY={{ remnawave_secret_key }}
+
+timezone: Europe/Moscow
+
+remnawave_node_address: "92.53.115.21"
+remnawave_node_name: "{{ inventory_hostname }}"
+
+remnawave_host_address: "edge-spb-02.digitalstreamers.xyz"
+remnawave_node_country_code: "RU"
+remnawave_host_remark: "🇷🇺 2 vpn-for-friends"
+remnawave_host_sni:
+  - "cloudflare.com"
+  - "www.cloudflare.com"
+
+remnawave_inbound_tag: "VLESS TCP REALITY"
+
+# Набор записей для этой ноды
+cf_dns_records:
+  - { name: "www",               type: "A", proxied: false }
+  - { name: "site",              type: "A", proxied: false }
+  - { name: "edge-spb-02",       type: "A", proxied: false }
+
+# домены, по которым нода должна отдавать свой nginx (через HAProxy)
+haproxy_node_nginx_sni_domains:
+  - site.digitalstreamers.xyz
+  - www.digitalstreamers.xyz
+
+# адрес nginx на ноде (тот же, что nginx_https_bind в remnawave_node_nginx)
+haproxy_node_nginx_host: "127.0.0.1"
+haproxy_node_nginx_port: 4443

@@ -410,4 +410,3 @@ PR приветствуются: дополнения к ролям, новые 
 ---
 
 © [VPN for Friends](https://t.me/vpn_for_myfriends_bot)
-

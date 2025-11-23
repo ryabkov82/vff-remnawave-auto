@@ -1,4 +1,7 @@
 ---
+# ------------------------------------------------------------
+# Установка nginx
+# ------------------------------------------------------------
 - name: Nginx | Install nginx and ssl-cert
   ansible.builtin.apt:
     name:
@@ -8,19 +11,16 @@
     update_cache: true
   tags: [nginx, node_nginx]
 
-# Локальные «резолвнутые» пути/имена с безопасными значениями по умолчанию
-- name: Nginx | Set local vars
+# ------------------------------------------------------------
+# Локальные переменные (внутренние пути и имена)
+# ------------------------------------------------------------
+- name: Nginx | Derive local vars
   ansible.builtin.set_fact:
-    nginx_sites_available_dir_resolved: "{{ nginx_sites_available_dir | default('/etc/nginx/sites-available') }}"
-    nginx_sites_enabled_dir_resolved: "{{ nginx_sites_enabled_dir | default('/etc/nginx/sites-enabled') }}"
-    nginx_conf_d_dir_resolved: "{{ nginx_conf_d_dir | default('/etc/nginx/conf.d') }}"
-    nginx_vhost_name_resolved: "{{ nginx_vhost_name | default('digitalstreamers.xyz') }}"
-  tags: [nginx, node_nginx]
-
-- name: Nginx | Derive vhost paths
-  ansible.builtin.set_fact:
-    nginx_vhost_conf_resolved: "{{ nginx_sites_available_dir_resolved }}/{{ nginx_vhost_name_resolved }}"
-    nginx_enabled_link_resolved: "{{ nginx_sites_enabled_dir_resolved }}/{{ nginx_vhost_name_resolved }}"
+    nginx_sites_available_dir_resolved: "{{ nginx_sites_available_dir }}"
+    nginx_sites_enabled_dir_resolved: "{{ nginx_sites_enabled_dir }}"
+    nginx_vhost_name_resolved: "{{ nginx_vhost_name }}"
+    nginx_vhost_conf_resolved: "{{ nginx_sites_available_dir }}/{{ nginx_vhost_name }}.conf"
+    nginx_enabled_link_resolved: "{{ nginx_sites_enabled_dir }}/{{ nginx_vhost_name }}.conf"
   tags: [nginx, node_nginx]
 
 - name: Nginx | Ensure sites-available/sites-enabled exist
@@ -33,27 +33,60 @@
     - "{{ nginx_sites_enabled_dir_resolved }}"
   tags: [nginx, node_nginx]
 
-- name: Nginx | Deploy vhost into sites-available
+# ------------------------------------------------------------
+# Деплой vhost
+# ------------------------------------------------------------
+- name: Nginx | Deploy vhost
   ansible.builtin.template:
     src: node_https_4443.conf.j2
     dest: "{{ nginx_vhost_conf_resolved }}"
     mode: "0644"
-    backup: true
-  notify: Validate nginx config
+  notify: nginx restart
   tags: [nginx, node_nginx]
 
-- name: Nginx | Enable vhost via symlink in sites-enabled
+- name: Nginx | Enable vhost
   ansible.builtin.file:
     src: "{{ nginx_vhost_conf_resolved }}"
     dest: "{{ nginx_enabled_link_resolved }}"
     state: link
     force: true
-  notify: Validate nginx config
+  notify: nginx restart
   tags: [nginx, node_nginx]
 
-- name: Nginx | Ensure nginx enabled and running
+# ------------------------------------------------------------
+# Включение сервиса
+# ------------------------------------------------------------
+- name: Nginx | Ensure nginx running
   ansible.builtin.service:
     name: nginx
     state: started
     enabled: true
+  tags: [nginx, node_nginx]
+
+# ------------------------------------------------------------
+# Проверки (без wide-bind)
+# ------------------------------------------------------------
+- name: Nginx | Apply pending handlers
+  ansible.builtin.meta: flush_handlers
+  tags: [nginx, node_nginx]
+
+- name: Nginx | Wait until HTTPS is listening on loopback
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: "{{ nginx_https_port }}"
+    state: started
+    timeout: 20
+  tags: [nginx, node_nginx]
+
+- name: Nginx | HTTPS sanity check via loopback
+  ansible.builtin.uri:
+    url: "https://127.0.0.1:{{ nginx_https_port }}/"
+    status_code: [200, 301, 302]
+    validate_certs: false
+    return_content: false
+    timeout: 10
+  register: _https_local
+  retries: 3
+  delay: 3
+  until: _https_local.status in [200, 301, 302]
   tags: [nginx, node_nginx]

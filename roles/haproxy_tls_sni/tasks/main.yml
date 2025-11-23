@@ -25,6 +25,12 @@
     remnawave_sni_api_token: "{{ remnawave_panel_api_token }}"
   tags: ['sni_map']
 
+- name: Install HAProxy
+  ansible.builtin.apt:
+    name: haproxy
+    state: present
+    update_cache: true
+
 # =====================================================================
 # 7) Render haproxy.cfg
 # =====================================================================
