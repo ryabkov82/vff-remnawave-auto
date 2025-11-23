@@ -29,8 +29,10 @@ frontend https_in
     # ============================================================
 
     {% for sni, port in _sni_port_map.items() %}
+
     acl SNI_XRAY_{{ loop.index }} req.ssl_sni -i {{ sni }}
     use_backend be_xray_{{ port }} if SNI_XRAY_{{ loop.index }}
+
     {% endfor %}
 
     # Default route → nginx

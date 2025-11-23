@@ -1,10 +1,20 @@
 ---
-- name: Validate nginx config
-  ansible.builtin.command: nginx -t
+- name: Test nginx config
+  ansible.builtin.command:
+    cmd: /usr/sbin/nginx -t
   changed_when: false
-  notify: Reload nginx
+  listen:
+    - nginx reload
+    - nginx restart
 
 - name: Reload nginx
   ansible.builtin.service:
     name: nginx
     state: reloaded
+  listen: nginx reload
+
+- name: Restart nginx
+  ansible.builtin.service:
+    name: nginx
+    state: restarted
+  listen: nginx restart
