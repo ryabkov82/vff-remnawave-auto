@@ -1,15 +1,18 @@
 ---
-# Где храним vhost
+# Директории для nginx sites
 nginx_sites_available_dir: /etc/nginx/sites-available
 nginx_sites_enabled_dir: /etc/nginx/sites-enabled
 nginx_conf_d_dir: /etc/nginx/conf.d
 
-# Имя vhost-файла: по умолчанию домен ноды, иначе — digitalstreamers.xyz
+# Имя vhost-файла = домен ноды
 nginx_vhost_name: "{{ remnawave_node_domain | default('digitalstreamers.xyz') }}"
 
-# Порт/адрес назначения HTTPS на ноде
+# Bind адрес и порт для HTTPS на ноде
 nginx_https_bind: "0.0.0.0:4443"
 
-# Домены, на которые отвечает vhost
+# Выделяем порт из nginx_https_bind
+nginx_https_port: "{{ (nginx_https_bind.split(':')[-1]) | int }}"
+
+# Домены, на которые отвечает nginx
 website_domains:
   - "{{ remnawave_node_domain | default('digitalstreamers.xyz') }}"
