@@ -10,7 +10,8 @@
       ],
       "./.vscode/schemas/requirements.json": [
         "collections/requirements.yml",
-        "roles/**/requirements.yml"
+        "roles/**/requirements.yml",
+        ".ansible/requirements.yml"
       ]
     },
   

@@ -1,0 +1,6 @@
+---
+roles:
+  - name: qos_per_user_xray
+    src: git@github.com:ryabkov82/vff-qos.git
+    scm: git
+    version: v0.1.4

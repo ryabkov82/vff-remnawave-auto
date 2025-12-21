@@ -1,0 +1,29 @@
+---
+remnawave_release: {}
+
+remnawave_panel_version: "{{ remnawave_release.panel | default(omit) }}"
+remnawave_node_version: "{{ remnawave_release.node | default(omit) }}"
+
+# Node directory (compose dir)
+remnawave_node_dir: "/opt/remnanode"
+
+remnawave_compose_cmd: "docker compose"
+remnawave_force_pull: true
+
+# Panel API verify (optional; можно отключить и полагаться на metrics health из роли панели)
+remnawave_upgrade_verify_api: false
+remnawave_api_base_url: ""
+remnawave_panel_api_token: ""
+remnawave_validate_certs: true
+remnawave_health_retries: 30
+remnawave_health_delay: 2
+
+# Stages
+remnawave_upgrade_do_prepull: true
+remnawave_upgrade_do_panel: true
+remnawave_upgrade_do_nodes: true
+remnawave_upgrade_verify: true
+
+# Node env handling: .env НЕ управляем
+remnawave_node_env_filename: ".env"
+remnawave_node_env_require_secret_key: true

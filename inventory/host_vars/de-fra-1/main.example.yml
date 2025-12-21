@@ -1,0 +1,49 @@
+# Example host_vars for Remnawave node
+# Copy to main.yml and adjust values for real host
+# DO NOT COMMIT main.yml
+
+# --- Node runtime ---
+remnawave_node_write_env: true
+remnawave_node_port: 2222
+
+remnawave_node_env_content: |
+  NODE_PORT={{ remnawave_node_port }}
+  SECRET_KEY={{ remnawave_secret_key }}
+
+# --- Node identity ---
+remnawave_node_name: "{{ inventory_hostname }}"
+remnawave_node_country_code: "DE"
+
+# --- Network addresses (example values) ---
+remnawave_node_address: "203.0.113.10"          # example IP (RFC 5737)
+remnawave_host_address: "edge-fra-01.example.com"
+
+# --- UI / remarks ---
+remnawave_host_remark: "🇩🇪 Example node"
+
+# --- TLS / SNI ---
+remnawave_host_sni:
+  - "edge-fra-01.example.com"
+  - "stream-fra-01.example.com"
+  - "cache-fra-01.example.com"
+  - "segment-fra-01.example.com"
+
+# --- Inbound ---
+remnawave_inbound_tag: "VLESS TCP REALITY (DS)"
+
+# --- Cloudflare DNS records (relative names) ---
+cf_dns_records:
+  - { name: "www",            type: "A", proxied: false }
+  - { name: "site",           type: "A", proxied: false }
+  - { name: "edge-fra-01",    type: "A", proxied: false }
+  - { name: "stream-fra-01",  type: "A", proxied: false }
+  - { name: "cache-fra-01",   type: "A", proxied: false }
+  - { name: "segment-fra-01", type: "A", proxied: false }
+
+# --- HAProxy → nginx on node ---
+haproxy_node_nginx_sni_domains:
+  - site.example.com
+  - www.example.com
+
+haproxy_node_nginx_host: "127.0.0.1"
+haproxy_node_nginx_port: 4443

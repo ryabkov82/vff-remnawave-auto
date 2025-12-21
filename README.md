@@ -286,6 +286,7 @@ make migrate-users LIMIT=panel EXTRA='-e remnawave_migrate_users_dry_run=false -
 | Раздел | Файл | Описание |
 |--------|------|----------|
 | Панель | [docs/remnawave_panel.md](docs/remnawave_panel.md) | Установка панели и сервисов |
+| **Обновление (Upgrade)** | **[docs/remnawave_upgrade.md](docs/remnawave_upgrade.md)** | **Безопасное обновление панели и нод (upgrade flow)** |
 | Inbounds | [roles/remnawave_inbounds/README.md](roles-remnawave_inbounds-README.md) | Добавление и регистрация inbound’ов |
 | HAProxy | [docs/haproxy_tls_sni.md](docs/haproxy_tls_sni.md) | Совместная работа панели и Xray |
 | Ноды | [docs/remnawave_node.md](docs/remnawave_node.md) | Запуск контейнера с SECRET_KEY |
