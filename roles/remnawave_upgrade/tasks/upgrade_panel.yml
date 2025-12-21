@@ -1,0 +1,6 @@
+---
+- name: PANEL | Run remnawave_panel role (render + pull + up + wait metrics health)
+  ansible.builtin.include_role:
+    name: remnawave_panel
+  vars:
+    remnawave_panel_version: "{{ remnawave_release.panel }}"

@@ -1,0 +1,18 @@
+---
+- name: NODES | Ensure node .env exists (SECRET_KEY must remain)
+  ansible.builtin.stat:
+    path: "{{ remnawave_node_dir }}/.env"
+  register: _node_env
+
+- name: NODES | Fail if node .env missing
+  ansible.builtin.assert:
+    that: [_node_env.stat.exists]
+    fail_msg: "Node .env is missing in {{ remnawave_node_dir }}. It must contain SECRET_KEY from panel."
+
+- name: NODES | Upgrade via remnawave_node role (versioned image, don't touch .env)
+  ansible.builtin.include_role:
+    name: remnawave_node
+  vars:
+    remnawave_node_version: "{{ remnawave_release.node }}"
+    remnawave_node_write_env: false
+    remnawave_node_pull: true

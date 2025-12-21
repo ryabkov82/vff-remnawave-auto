@@ -1,0 +1,21 @@
+---
+- name: Ensure node dir exists
+  ansible.builtin.stat:
+    path: "{{ remnawave_node_dir }}"
+  register: _node_dir
+
+- name: Fail if node dir missing
+  ansible.builtin.assert:
+    that: [_node_dir.stat.exists]
+    fail_msg: "Node dir does not exist: {{ remnawave_node_dir }}"
+
+- name: Nodes | Pre-pull images (no restart)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd "{{ remnawave_node_dir }}"
+    {{ remnawave_compose_cmd }} pull
+  args:
+    executable: /bin/bash
+  register: _nodes_prepull
+  changed_when: "'Downloaded newer image' in (_nodes_prepull.stdout | default('')) or 'Pull complete' in (_nodes_prepull.stdout | default(''))"
+  when: remnawave_force_pull | bool

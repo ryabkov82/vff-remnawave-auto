@@ -16,3 +16,10 @@ remnawave_sub_public_domain: sub.vpn-for-friends.com
 remnawave_group_panel: "panel"
 remnawave_group_nodes: "nodes"
 remnawave_group_subscription: "subscription"
+
+remnawave_release:
+  panel: "2.3.2"
+  node:  "2.3.1"
+
+remnawave_panel_version: "{{ remnawave_release.panel }}"
+remnawave_node_version:  "{{ remnawave_release.node }}"

@@ -1,5 +1,5 @@
 remnawave_node_dir: /opt/remnanode
-remnawave_node_image: remnawave/node:latest
+remnawave_node_version: "{{ remnawave_release.node }}"
 remnawave_node_container_name: remnanode
 remnawave_node_network_mode: host
 remnawave_node_restart_policy: always
@@ -18,7 +18,7 @@ remnawave_panel_url: "https://remna.vpn-for-friends.com"
 cf_dns_zone_nodes: "digitalstreamers.xyz"
 
 # Глобальные настройки cert-master
-cert_master_host: "nl-ams-1"
+cert_master_host: "ru-msk-1"
 cert_master_user: "root"
 cert_master_ssh_common_args: "-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
 
@@ -27,3 +27,8 @@ cert_domain: "digitalstreamers.xyz"
 website_domains:
   - site.digitalstreamers.xyz
   - www.digitalstreamers.xyz
+
+remnawave_node_enable_qos: true
+remnawave_node_qos_state: present
+qos_upload_default: "50mbit"
+qos_download_default: "100mbit"

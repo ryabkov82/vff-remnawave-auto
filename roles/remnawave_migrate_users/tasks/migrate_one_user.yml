@@ -61,7 +61,7 @@
           'NO_RESET'
         )
       }}
-    _mu_description: "{{ mu_user.note | default('') }}"
+    _mu_description: "{{ mu_user.note }}"
     _mu_active_squads: >-
       {%- if _mu.assign_squad
             and _mu_internal_squad_uuid is defined
@@ -112,12 +112,12 @@
 - name: MU | Build create/update payloads
   ansible.builtin.set_fact:
     _mu_create_body:
-      username: "{{ _mu_username }}"
+      username: "{{ mu_username }}"
       status: "{{ _mu_status }}"
       expireAt: "{{ _mu_expire_at }}"
       trafficLimitBytes: "{{ _mu_traffic_limit_bytes }}"
       trafficLimitStrategy: "{{ _mu_traffic_strategy }}"
-      description: "{{ _mu_description }}"
+      description: "{{ _mu_description if (_mu_description is string) and (_mu_description|length > 0) else omit }}"
       activeInternalSquads: "{{ _mu_active_squads }}"
       vlessUuid: "{{ _mu_vless_uuid if (_mu_vless_uuid | length) > 0 else omit }}"
     _mu_update_body:

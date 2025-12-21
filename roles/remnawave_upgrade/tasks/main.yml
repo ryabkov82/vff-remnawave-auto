@@ -1,0 +1,19 @@
+---
+- name: Preflight
+  ansible.builtin.import_tasks: preflight.yml
+
+- name: Pre-pull node images (no restart)
+  ansible.builtin.import_tasks: prepull_nodes.yml
+  when: remnawave_upgrade_do_prepull | bool
+
+- name: Upgrade panel
+  ansible.builtin.import_tasks: upgrade_panel.yml
+  when: remnawave_upgrade_do_panel | bool
+
+- name: Upgrade nodes
+  ansible.builtin.import_tasks: upgrade_nodes.yml
+  when: remnawave_upgrade_do_nodes | bool
+
+- name: Verify
+  ansible.builtin.import_tasks: verify.yml
+  when: remnawave_upgrade_verify | bool

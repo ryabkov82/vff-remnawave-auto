@@ -1,0 +1,35 @@
+---
+- name: Require remnawave_release
+  ansible.builtin.assert:
+    that:
+      - remnawave_release is mapping
+      - remnawave_release.panel is defined
+      - remnawave_release.node is defined
+      - remnawave_release.panel | string | length > 0
+      - remnawave_release.node  | string | length > 0
+    fail_msg: |
+      remnawave_release must be explicitly defined:
+        remnawave_release:
+          panel: "2.3.2"
+          node:  "2.3.1"
+
+- name: Check docker exists
+  ansible.builtin.command: docker --version
+  register: _docker_ver
+  changed_when: false
+
+- name: Check docker compose exists
+  ansible.builtin.command: docker compose version
+  register: _compose_ver
+  changed_when: false
+
+- name: Require API vars if API verify is enabled
+  ansible.builtin.assert:
+    that:
+      - remnawave_api_base_url | length > 0
+      - remnawave_panel_api_token | length > 0
+    fail_msg: "remnawave_api_base_url and remnawave_panel_api_token must be set when remnawave_upgrade_verify_api=true."
+  when:
+    - remnawave_upgrade_verify | bool
+    - remnawave_upgrade_verify_api | bool
+  

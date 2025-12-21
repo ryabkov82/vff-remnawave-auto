@@ -18,6 +18,7 @@ INVENTORY ?= inventory/hosts.ini
 PLAY_BOOTSTRAP ?= playbooks/bootstrap.yml
 PLAY_PANEL     ?= playbooks/panel.yml
 PLAY_NODES     ?= playbooks/nodes.yml
+PLAY_UPGRADE_REMNAWAVE ?= playbooks/upgrade-remnawave.yml
 PLAY_HAPROXY   ?= playbooks/haproxy.yml
 PLAY_SMOKE     ?= playbooks/smoke.yml
 PLAY_SITE      ?= playbooks/site.yml
@@ -53,7 +54,7 @@ include .env
 export $(shell sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' .env)
 endif
 
-.PHONY: help bootstrap dns dns-plan dns-absent panel nodes haproxy up smoke smoke-docker site lint vault ping facts destroy
+.PHONY: help bootstrap dns dns-plan dns-absent panel nodes haproxy up smoke smoke-docker site lint vault ping facts destroy upgrade upgrade-remnawave
 
 help: ## Показать справку по целям
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*##/: /' | sort
@@ -121,6 +122,7 @@ nodes: ## Деплой Remnawave Nodes (+ регистрация, health-checks)
 	@#   make nodes LIMIT=de-fra-1 TAGS=tls_sync
 	@#   make nodes LIMIT=de-fra-1 TAGS=haproxy
 	@#   make nodes LIMIT=de-fra-1 TAGS=nginx
+	@#   make nodes LIMIT=de-fra-1 TAGS=qos
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_NODES) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
 
 disable-node: ## Отключить/включить ноду (опц.: отключить её хосты)
@@ -140,6 +142,24 @@ delete-node: ## Удалить ноду (опц.: каскадно удалит�
 	@#   # DRY-RUN:
 	@#   make delete-node EXTRA='-e remnawave_node_name=de-fra-1 -e remnawave_dry_run=true'
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_DELETE_NODE) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
+
+upgrade-remnawave: ## Обновление Remnawave panel + nodes (prepull -> panel -> rolling nodes -> verify)
+	@# Примеры:
+	@#   make upgrade-remnawave
+	@#   make upgrade-remnawave ANSIBLE_FLAGS="--ask-vault-pass"
+	@#   make upgrade-remnawave EXTRA='-e remnawave_upgrade_verify_api=true -e remnawave_api_base_url=https://remna.example.com -e remnawave_panel_api_token=...'
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_UPGRADE_REMNAWAVE) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
+
+upgrade: upgrade-remnawave ## Alias для upgrade-remnawave
+
+verify-remnawave: ## Verify Remnawave via panel API (LIMIT=panel)
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_UPGRADE_REMNAWAVE) --limit panel \
+		-e remnawave_upgrade_do_prepull=false \
+		-e remnawave_upgrade_do_panel=false \
+		-e remnawave_upgrade_do_nodes=false \
+		-e remnawave_upgrade_verify=true \
+		-e remnawave_upgrade_verify_api=true \
+		$(ANSIBLE_FLAGS) $(EXTRA)
 
 sub: ## Deploy subscription page (auto detect bundled/separate)
 	@# Примеры:
@@ -242,6 +262,14 @@ venv: ## Создать локальное venv с ansible-core 2.17
 collections: ## Установить Ansible collections из requirements.yml
 	$(ANSIBLE) --version >/dev/null
 	$(ANSIBLE_GALAXY) collection install -r collections/requirements.yml --force
+
+.PHONY: roles
+roles: ## Установить Ansible roles из .ansible/requirements.yml
+	$(ANSIBLE) --version >/dev/null
+	$(ANSIBLE_GALAXY) role install -r .ansible/requirements.yml -p .ansible/roles --force
+
+.PHONY: deps
+deps: collections roles ## Установить все Ansible зависимости (collections + roles)
 
 migrate-inbound: ## Миграция inbound VLESS TCP REALITY из Marzban в Remnawave
 	@# Примеры:

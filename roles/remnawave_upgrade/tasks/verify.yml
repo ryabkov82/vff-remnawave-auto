@@ -1,0 +1,53 @@
+---
+- name: Verify | Skip API checks (panel role already checked metrics health)
+  ansible.builtin.debug:
+    msg: "API verification is disabled; relying on remnawave_panel role health checks."
+  when: not (remnawave_upgrade_verify_api | bool)
+
+- name: Verify | Panel API health
+  ansible.builtin.uri:
+    url: "{{ remnawave_api_base_url }}/system/health"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ remnawave_panel_api_token }}"
+    status_code: 200
+    validate_certs: "{{ remnawave_validate_certs }}"
+  register: _api_health
+  retries: "{{ remnawave_health_retries }}"
+  delay: "{{ remnawave_health_delay }}"
+  until: _api_health.status == 200
+  when: remnawave_upgrade_verify_api | bool
+
+- name: Verify | Nodes list (wait until available)
+  ansible.builtin.uri:
+    url: "{{ remnawave_api_base_url }}/nodes"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ remnawave_panel_api_token }}"
+    status_code: 200
+    return_content: true
+    validate_certs: "{{ remnawave_validate_certs }}"
+  register: _api_nodes
+  retries: "{{ remnawave_health_retries }}"
+  delay: "{{ remnawave_health_delay }}"
+  until:
+    - _api_nodes.status == 200
+    - (_api_nodes.content | default('') | length) > 0
+  when: remnawave_upgrade_verify_api | bool
+
+- name: Verify | Nodes metrics (wait until available)
+  ansible.builtin.uri:
+    url: "{{ remnawave_api_base_url }}/system/nodes/metrics"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ remnawave_panel_api_token }}"
+    status_code: 200
+    return_content: true
+    validate_certs: "{{ remnawave_validate_certs }}"
+  register: _api_nodes_metrics
+  retries: "{{ remnawave_health_retries }}"
+  delay: "{{ remnawave_health_delay }}"
+  until:
+    - _api_nodes_metrics.status == 200
+    - (_api_nodes_metrics.content | default('') | length) > 0
+  when: remnawave_upgrade_verify_api | bool

@@ -5,7 +5,9 @@ remnawave_node_dir: /opt/remnanode
 # 1) как "сырой" YAML из панели — remnawave_node_compose_raw
 # 2) или заполнить шаблон templates/docker-compose.yml.j2 — см. vars ниже
 remnawave_node_compose_raw: ""     # если не пусто — будет записан как есть
-remnawave_node_image: "remnawave/node:latest"
+remnawave_node_image_repo: "remnawave/node"
+remnawave_node_version: "latest"
+remnawave_node_image: "{{ remnawave_node_image_repo }}:{{ remnawave_node_version }}"
 remnawave_node_container_name: "remnanode"
 remnawave_node_restart_policy: "always"
 remnawave_node_network_mode: "host"
