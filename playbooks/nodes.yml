@@ -64,3 +64,13 @@
 
     - role: remnawave_node
       tags: [node]
+
+    - role: qos_per_user_xray
+      when:
+        - remnawave_node_enable_qos | default(false) | bool
+      vars:
+        qos_state: "{{ remnawave_node_qos_state | default('present') }}"
+        qos_container: "{{ remnawave_node_container_name | default('remnanode') }}"
+        qos_xray_access_log_path: "{{ remnawave_node_xray_access_log_path | default('/var/log/supervisor/xray.out.log') }}"
+        qos_vpn_port: "{{ remnawave_node_vpn_port | default('443') }}"
+      tags: [qos]

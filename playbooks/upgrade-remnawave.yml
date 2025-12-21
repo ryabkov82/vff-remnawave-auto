@@ -1,0 +1,42 @@
+---
+- name: "NODES | Pre-pull images (no restart)"
+  hosts: nodes
+  become: true
+  roles:
+    - role: remnawave_upgrade
+      remnawave_upgrade_do_prepull: true
+      remnawave_upgrade_do_panel: false
+      remnawave_upgrade_do_nodes: false
+      remnawave_upgrade_verify: false
+
+- name: "PANEL | Upgrade panel"
+  hosts: panel
+  become: true
+  roles:
+    - role: remnawave_upgrade
+      remnawave_upgrade_do_prepull: false
+      remnawave_upgrade_do_panel: true
+      remnawave_upgrade_do_nodes: false
+      remnawave_upgrade_verify: false   # роль панели сама ждёт health
+
+- name: "NODES | Upgrade nodes (rolling)"
+  hosts: nodes
+  become: true
+  serial: 1
+  roles:
+    - role: remnawave_upgrade
+      remnawave_upgrade_do_prepull: false
+      remnawave_upgrade_do_panel: false
+      remnawave_upgrade_do_nodes: true
+      remnawave_upgrade_verify: false
+
+- name: "VERIFY | Verify via panel API (once)"
+  hosts: panel
+  become: false
+  roles:
+    - role: remnawave_upgrade
+      remnawave_upgrade_do_prepull: false
+      remnawave_upgrade_do_panel: false
+      remnawave_upgrade_do_nodes: false
+      remnawave_upgrade_verify: true
+      remnawave_upgrade_verify_api: true

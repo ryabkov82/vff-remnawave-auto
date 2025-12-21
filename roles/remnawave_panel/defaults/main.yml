@@ -4,7 +4,7 @@ remnawave_panel_group: root
 
 
 # Image tag: upstream uses `remnawave/backend:2` in docker-compose-prod.yml
-remnawave_panel_version: "2"
+remnawave_panel_version: "{{ remnawave_release.panel }}"
 
 
 # Ports bound on loopback, per official docs

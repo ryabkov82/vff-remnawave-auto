@@ -1,0 +1,3 @@
+qos_wan_ceil: "1gbit"
+qos_tc_default_ul: "1gbit"
+qos_tc_default_dl: "1gbit"

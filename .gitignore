@@ -9,3 +9,19 @@ __pycache__/
 collections/
 !.gitkeep
 !collections/requirements.yml
+.ansible/*
+!.ansible/requirements.yml
+
+# --- inventory/host_vars: ignore everything ---
+inventory/host_vars/*
+
+# allow subdirectories
+!inventory/host_vars/*/
+
+# inside each host dir: ignore everything
+inventory/host_vars/*/*
+
+# allow only examples + docs
+!inventory/host_vars/*/*.example.yml
+!inventory/host_vars/*/README.md
+!inventory/host_vars/*/.gitkeep
