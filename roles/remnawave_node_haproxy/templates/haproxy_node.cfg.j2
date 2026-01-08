@@ -45,7 +45,7 @@ backend be_nginx
 {% for port in _sni_port_map.values() | unique %}
 backend be_xray_{{ port }}
     mode tcp
-    server xray_local 127.0.0.1:{{ port }} check
+    server xray_local 127.0.0.1:{{ port }} send-proxy-v2
 {% endfor %}
 
 listen stats

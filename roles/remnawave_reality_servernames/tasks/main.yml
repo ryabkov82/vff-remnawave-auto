@@ -3,18 +3,17 @@
 #   Patch REALITY serverNames для одного inbound в Remnawave Panel
 # ======================================================================
 
-# ------------------------ 1. Validate inputs ----------------------------
 - name: Reality | Assert required inputs
   ansible.builtin.assert:
     that:
       - remnawave_api_base_url | length > 0
       - remnawave_panel_api_token | length > 0
-      - remnawave_reality_add_servernames is sequence
-      - remnawave_reality_remove_servernames is sequence
+      - (remnawave_reality_add_servernames | default([])) is sequence
+      - (remnawave_reality_remove_servernames | default([])) is sequence
     fail_msg: >-
       remnawave_reality_servernames: обязательные переменные:
       remnawave_api_base_url, remnawave_panel_api_token,
-      remnawave_reality_add_servernames, remnawave_reality_remove_servernames.
+      remnawave_reality_add_servernames (list), remnawave_reality_remove_servernames (list).
 
 # ------------------------ 2. API HEADERS --------------------------------
 - name: Reality | Compose API headers
@@ -160,6 +159,15 @@
         | unique
       }}
 
+- name: Reality | Normalize current/desired serverNames for diff
+  ansible.builtin.set_fact:
+    _srv_existing_norm: "{{ _srv_existing | reject('equalto', '') | list | unique | sort }}"
+    _srv_new_norm: "{{ _srv_new | reject('equalto', '') | list | unique | sort }}"
+
+- name: Reality | Decide if patch is needed
+  ansible.builtin.set_fact:
+    _need_patch: "{{ _srv_existing_norm != _srv_new_norm }}"
+
 - name: Reality | Build patched inbound
   ansible.builtin.set_fact:
     _cfg_inb_patched: >-
@@ -179,19 +187,24 @@
 - name: Reality | Rebuild config.inbounds
   ansible.builtin.set_fact:
     _cfg_inbounds_new: >-
-      {{
-        _cfg_inbounds
-        | rejectattr('tag','equalto',_resolved_tag)
-        | list
-        + [_cfg_inb_patched]
-      }}
+      {%- set out = [] -%}
+      {%- for ib in _cfg_inbounds -%}
+        {%- if (ib.tag | default('')) == _resolved_tag -%}
+          {%- set _ = out.append(_cfg_inb_patched) -%}
+        {%- else -%}
+          {%- set _ = out.append(ib) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
 
 # ------------------------ 12. Build final config and PATCH -------------------
 - name: Reality | Build full config patch
   ansible.builtin.set_fact:
     _cfg_final: "{{ _cfg | combine({'inbounds': _cfg_inbounds_new}, recursive=true) }}"
+  when: _need_patch | bool
 
 - name: Reality | PATCH /config-profiles
+  when: _need_patch | bool
   ansible.builtin.uri:
     url: "{{ remnawave_api_base_url }}/config-profiles"
     method: PATCH

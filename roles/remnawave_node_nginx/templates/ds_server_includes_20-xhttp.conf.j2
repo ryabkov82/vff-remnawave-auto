@@ -1,0 +1,15 @@
+# xHTTP endpoint (HTTP/2 upstream)
+location {{ nginx_xhttp_location }} {
+    client_max_body_size 0;
+
+    grpc_set_header Host              $host;
+    grpc_set_header X-Real-IP         $remote_addr;
+    grpc_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    grpc_set_header X-Forwarded-Proto $scheme;
+
+    client_body_timeout {{ nginx_xhttp_client_body_timeout }};
+    grpc_read_timeout   {{ nginx_xhttp_grpc_read_timeout }};
+    grpc_send_timeout   {{ nginx_xhttp_grpc_send_timeout }};
+
+    grpc_pass grpc://{{ nginx_xhttp_upstream }};
+}

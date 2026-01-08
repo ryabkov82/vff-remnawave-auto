@@ -82,25 +82,23 @@ frontend https_in
     {% endif %}
 
     use_backend be_panel if SNI_PANEL
-    default_backend be_panel
+    default_backend be_node_nginx
 
 backend be_panel
     mode tcp
     option srvtcpka
     server nginx_local {{ haproxy_nginx_host }}:{{ haproxy_nginx_port }} check
 
-{% if _node_domains | length > 0 %}
 backend be_node_nginx
     mode tcp
     option srvtcpka
     server node_nginx_local {{ haproxy_node_nginx_host }}:{{ haproxy_node_nginx_port }} check
-{% endif %}
 
 {% for port in _sni_port_map.values() | unique %}
 backend be_xray_{{ port }}
     mode tcp
     option srvtcpka
-    server xray_local 127.0.0.1:{{ port }} check
+    server xray_local 127.0.0.1:{{ port }} send-proxy-v2
 {% endfor %}
 
 {% if haproxy_stats_enabled %}

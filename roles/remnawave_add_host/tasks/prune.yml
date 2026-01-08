@@ -1,0 +1,152 @@
+---
+- name: Assert prune scope is per_node
+  ansible.builtin.assert:
+    that:
+      - (rw_host_prune_scope | default('per_node')) == 'per_node'
+    fail_msg: >-
+      Unsupported rw_host_prune_scope={{ rw_host_prune_scope }}.
+      Only 'per_node' is supported.
+
+- name: Build desired host keys
+  vars:
+    _want: "{{ _rw_hosts_desired }}"
+    tmp: >-
+      {%- set out = [] -%}
+      {%- for h in _want -%}
+        {%- if rw_host_match_by == 'address_port' -%}
+          {%- set _ = out.append(h.address ~ ':' ~ (h.port | default(443) | int)) -%}
+        {%- else -%}
+          {%- set _ = out.append(h.remark) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out | to_json }}
+  ansible.builtin.set_fact:
+    _rw_desired_keys: "{{ tmp | from_json }}"
+
+- name: Select managed hosts (tag == rw_host_managed_tag)
+  ansible.builtin.set_fact:
+    _rw_managed_existing: >-
+      {{
+        _rw_hosts_existing
+        | selectattr('tag', 'defined')
+        | selectattr('tag', 'equalto', rw_host_managed_tag)
+        | list
+      }}
+
+- name: Assert host DTO contains 'nodes' for per_node prune
+  ansible.builtin.assert:
+    that:
+      - (_rw_managed_existing | length) == 0
+        or ((_rw_managed_existing | first).nodes is defined)
+    fail_msg: >-
+      Cannot prune with scope=per_node: host DTO does not include 'nodes' field.
+
+- name: Keep only managed hosts bound to current node
+  ansible.builtin.set_fact:
+    _rw_managed_existing: >-
+      {{
+        _rw_managed_existing
+        | selectattr('nodes', 'defined')
+        | selectattr('nodes', 'contains', _node_uuid)
+        | list
+      }}
+
+- name: Compute managed hosts to prune (existing - desired)
+  vars:
+    tmp: >-
+      {%- set out = [] -%}
+      {%- for h in _rw_managed_existing -%}
+        {%- if rw_host_match_by == 'address_port' -%}
+          {%- set key = h.address ~ ':' ~ (h.port | int) -%}
+        {%- else -%}
+          {%- set key = h.remark -%}
+        {%- endif -%}
+
+        {%- if key not in _rw_desired_keys -%}
+          {%- set sni_raw = (h.sni | default('') | string) -%}
+          {%- set sni_list = [] -%}
+          {%- if (sni_raw | trim | length) > 0 -%}
+            {%- for x in (sni_raw.split(',')) -%}
+              {%- set x2 = (x | trim) -%}
+              {%- if x2 != '' -%}
+                {%- set _ = sni_list.append(x2) -%}
+              {%- endif -%}
+            {%- endfor -%}
+          {%- else -%}
+            {%- set _ = sni_list.append(h.address) -%}
+          {%- endif -%}
+
+          {%- set _ = out.append({
+                'uuid': h.uuid,
+                'key': key,
+                'profile_uuid': (h.inbound.configProfileUuid | default('')),
+                'inbound_uuid': (h.inbound.configProfileInboundUuid | default('')),
+                'sni_list': sni_list
+              }) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out | to_json }}
+  ansible.builtin.set_fact:
+    _rw_to_prune: "{{ tmp | from_json }}"
+
+- name: Build REALITY remove map (inbound_uuid -> servernames)
+  vars:
+    tmp: >-
+      {%- set m = {} -%}
+      {%- for it in _rw_to_prune -%}
+        {%- set inb = (it.inbound_uuid | default('') | string) -%}
+        {%- if (inb | length) > 0 -%}
+          {%- if m[inb] is not defined -%}
+            {%- set _ = m.update({inb: []}) -%}
+          {%- endif -%}
+          {%- for s in (it.sni_list | default([])) -%}
+            {%- set s2 = (s | string | trim) -%}
+            {%- if s2 != '' and s2 not in m[inb] -%}
+              {%- set _ = m[inb].append(s2) -%}
+            {%- endif -%}
+          {%- endfor -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ m | to_json }}
+  ansible.builtin.set_fact:
+    _rw_reality_remove_map: "{{ tmp | from_json }}"
+
+- name: Prune dry-run output
+  when: rw_host_prune_dry_run | bool
+  ansible.builtin.debug:
+    msg:
+      prune_scope: "per_node"
+      match_by: "{{ rw_host_match_by }}"
+      managed_tag: "{{ rw_host_managed_tag }}"
+      node_uuid: "{{ _node_uuid }}"
+      to_prune: "{{ _rw_to_prune }}"
+      reality_remove_map: "{{ _rw_reality_remove_map }}"
+
+# 1) сначала патчим REALITY (cleanup)
+- name: Patch REALITY serverNames (remove pruned host SNI)
+  when:
+    - not (rw_host_prune_dry_run | bool)
+    - (_rw_reality_remove_map | default({}) | length) > 0
+  ansible.builtin.include_role:
+    name: remnawave_reality_servernames
+  vars:
+    remnawave_reality_inbound_uuid: "{{ item.key }}"
+    remnawave_reality_profile_uuid: ""   # можно не передавать: inbound_uuid достаточно
+    remnawave_reality_inbound_tag: ""
+    remnawave_reality_add_servernames: []
+    remnawave_reality_remove_servernames: "{{ item.value }}"
+  loop: "{{ _rw_reality_remove_map | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+# 2) затем DELETE
+- name: Prune (DELETE) managed hosts bound to current node
+  when: not (rw_host_prune_dry_run | bool)
+  ansible.builtin.uri:
+    url: "{{ remnawave_panel_api_base }}/hosts/{{ item.uuid }}"
+    method: DELETE
+    headers: "{{ _rw_headers }}"
+    status_code: [200]
+  loop: "{{ _rw_to_prune }}"
+  loop_control:
+    label: "{{ item.key }}"
