@@ -12,60 +12,101 @@
     - name: "Derive node identity"
       ansible.builtin.set_fact:
         _node_name: "{{ remnawave_node_name | default(inventory_hostname) }}"
-        _node_address: "{{ remnawave_node_address
-                           | default(hostvars[inventory_hostname].ansible_host
-                           | default(inventory_hostname)) }}"
-        _node_port: "{{ remnawave_node_port | int }}"
-
-    - name: "Lookup inbound list"
-      delegate_to: localhost
-      ansible.builtin.uri:
-        url: "{{ remnawave_panel_url }}/api/config-profiles/inbounds"
-        method: GET
-        headers:
-          Authorization: "Bearer {{ remnawave_panel_api_token }}"
-          Accept: "application/json"
-      register: _inb_resp
-      failed_when: _inb_resp.status not in [200]
-
-    # 1) сначала вычисляем сам объект (exact match c trim)
-    - name: "Pick inbound object by exact tag"
-      ansible.builtin.set_fact:
-        _inbound_obj: >-
+        _node_address: >-
           {{
-            (_inb_resp.json.response.inbounds | default([])
-              | selectattr('tag','equalto', (remnawave_inbound_tag | default('') | trim))
-              | list | first) | default({})
+            remnawave_node_address
+            | default(hostvars[inventory_hostname].ansible_host
+            | default(inventory_hostname))
           }}
 
-    # 2) затем — производные поля из него
-    - name: "Extract inbound uuid/profile from object"
+    - name: "Normalize desired inbound tags (backward compatible)"
       ansible.builtin.set_fact:
-        _inbound_uuid: "{{ _inbound_obj.uuid | default('') }}"
-        _profile_uuid_from_inb: "{{ _inbound_obj.profileUuid | default('') }}"
+        _desired_inbound_tags: >-
+          {{
+            (
+              (remnawave_inbound_tags | default([]) | length) > 0
+            )
+            | ternary(
+                (remnawave_inbound_tags | map('trim') | list),
+                [ (remnawave_inbound_tag | default('') | trim) ]
+              )
+          }}
 
-    # отладка и проверка
-    - name: "Debug: available inbound tags (first 10)"
-      when: _inbound_uuid | length == 0
-      ansible.builtin.debug:
-        msg: "{{ (_inb_resp.json.response.inbounds | map(attribute='tag') | list)[:10] }}"
-
-    - name: "Ensure inbound found"
+    - name: "Ensure inbound tag list is not empty"
       ansible.builtin.assert:
-        that: _inbound_uuid | length > 0
-        fail_msg: "Inbound with tag '{{ remnawave_inbound_tag }}' not found in panel."
+        that:
+          - _desired_inbound_tags | reject('equalto','') | list | length > 0
+        fail_msg: "Set remnawave_inbound_tags (preferred) or remnawave_inbound_tag."
+
+    # ---------------------------------------------------------
+    # Resolve inbound/profile via centralized cache role
+    # remnawave_inbounds_cache MUST export:
+    #   remnawave_inbounds_by_tag: { <tag>: { inbound_uuid, profile_uuid }, ... }
+    # ---------------------------------------------------------
+    - name: Ensure inbound cache is built (tag→uuid/profile)
+      ansible.builtin.include_role:
+        name: remnawave_inbounds_cache
+
+    - name: "Ensure all desired inbound tags exist in remnawave_inbounds_by_tag"
+      vars:
+        _need: "{{ _desired_inbound_tags | reject('equalto', '') | list }}"
+        _missing: "{{ _need | reject('in', (remnawave_inbounds_by_tag.keys() | list)) | list }}"
+      ansible.builtin.assert:
+        that:
+          - _missing | length == 0
+        fail_msg: "Inbound tags not found in remnawave_inbounds_by_tag: {{ _missing }}"
+
+    - name: "Resolve inbound UUIDs list from mapping"
+      vars:
+        _need: "{{ _desired_inbound_tags | reject('equalto', '') | list }}"
+        tmp: >-
+          {% set out = [] %}
+          {% for t in _need %}
+            {% set _ = out.append(remnawave_inbounds_by_tag[t].inbound_uuid) %}
+          {% endfor %}
+          {{ out | to_json }}
+      ansible.builtin.set_fact:
+        _desired_inbound_uuids: "{{ tmp | from_json }}"
+
+    - name: "Set final inbound uuids default (for new node and export)"
+      ansible.builtin.set_fact:
+        _final_inbound_uuids: "{{ _desired_inbound_uuids }}"
 
     - name: "Decide profile UUID"
+      vars:
+        _explicit_profile: "{{ remnawave_profile_uuid | default('') }}"
+        _profiles: >-
+          {{
+            _desired_inbound_tags
+            | reject('equalto', '')
+            | map('extract', remnawave_inbounds_by_tag)
+            | map(attribute='profile_uuid')
+            | unique
+            | list
+          }}
       ansible.builtin.set_fact:
         _profile_uuid: >-
-          {{ (remnawave_profile_uuid | default('') | length > 0)
-              | ternary(remnawave_profile_uuid, _profile_uuid_from_inb) }}
+          {{
+            (_explicit_profile | length > 0)
+            | ternary(
+                _explicit_profile,
+                (_profiles | first | default(''))
+              )
+          }}
+        _profiles_from_tags: "{{ _profiles }}"
 
     - name: "Ensure profile UUID present"
       ansible.builtin.assert:
         that:
           - _profile_uuid | length > 0
-        fail_msg: "Profile UUID is required. Set remnawave_profile_uuid or ensure inbound.profileUuid exists."
+        fail_msg: "Profile UUID is required. Set remnawave_profile_uuid or ensure mapping provides profile_uuid."
+
+    - name: "Ensure all selected inbounds belong to same profile (unless profile set explicitly)"
+      when: (remnawave_profile_uuid | default('') | length == 0)
+      ansible.builtin.assert:
+        that:
+          - _profiles_from_tags | length <= 1
+        fail_msg: "Selected inbound tags belong to different profiles: {{ _profiles_from_tags }}. Set remnawave_profile_uuid explicitly."
 
     - name: "List nodes"
       delegate_to: localhost
@@ -80,13 +121,18 @@
 
     - name: "Pick existing node by name (if any)"
       ansible.builtin.set_fact:
-        _node_obj: "{{ (_nodes.json.response
-                        | selectattr('name', 'equalto', _node_name)
-                        | list | first) | default({}) }}"
+        _node_obj: >-
+          {{
+            (_nodes.json.response
+              | selectattr('name', 'equalto', _node_name)
+              | list | first) | default({})
+          }}
         _node_found: >-
-          {{ (_nodes.json.response
+          {{
+            (_nodes.json.response
               | selectattr('name','equalto', _node_name)
-              | list | length) > 0 }}
+              | list | length) > 0
+          }}
 
     # 1) Сборка payload (нативные типы благодаря jinja2_native=True)
     - name: Build payload (typed)
@@ -103,20 +149,8 @@
           consumptionMultiplier: "{{ remnawave_node_consumption_multiplier | float }}"
           configProfile:
             activeConfigProfileUuid: "{{ _profile_uuid }}"
-            activeInbounds:
-              - "{{ _inbound_uuid }}"
+            activeInbounds: "{{ _desired_inbound_uuids }}"
           providerUuid: "{{ (remnawave_node_provider_uuid | default('')) or omit }}"
-
-    # (опционально, разово: убедиться в типах — должны быть int/float/bool)
-    # - name: Check payload types
-    #   ansible.builtin.debug:
-    #     msg:
-    #       port_type: "{{ _payload.port | type_debug }}"
-    #       limit_type: "{{ _payload.trafficLimitBytes | type_debug }}"
-    #       notify_type: "{{ _payload.notifyPercent | type_debug }}"
-    #       reset_type: "{{ _payload.trafficResetDay | type_debug }}"
-    #       cons_type: "{{ _payload.consumptionMultiplier | type_debug }}"
-    #       tracking_type: "{{ _payload.isTrafficTrackingActive | type_debug }}"
 
     # 2) POST (просто передаём собранный dict)
     - name: Create node if absent
@@ -143,18 +177,41 @@
     - name: "Ensure inbound is active on existing node (idempotent PATCH)"
       when: _node_found
       block:
+        - name: "Assert activeInbounds contains objects with uuid"
+          ansible.builtin.assert:
+            that:
+              - (_node_obj.configProfile.activeInbounds | default([]) | length) == 0
+                or ((_node_obj.configProfile.activeInbounds | first) is mapping)
+            fail_msg: >-
+              API returned configProfile.activeInbounds as non-object list;
+              expected list of objects with 'uuid'. Adjust parser.
+
         - name: "Collect current inbound UUIDs"
           ansible.builtin.set_fact:
-            _curr_inb_uuids: "{{ _node_obj.configProfile.activeInbounds
-                                | map(attribute='uuid') | list | default([]) }}"
-        - name: "Merge inbound UUIDs"
+            _curr_inb_uuids: >-
+              {{
+                (_node_obj.configProfile.activeInbounds | default([]))
+                | map(attribute='uuid') | list
+              }}
+
+        - name: "Compute desired inbound UUID list (merge|replace)"
           ansible.builtin.set_fact:
-            _new_inb_uuids: "{{ (_curr_inb_uuids + [_inbound_uuid]) | unique }}"
+            _final_inbound_uuids: >-
+              {{
+                (remnawave_node_inbounds_mode | default('merge') == 'replace')
+                | ternary(
+                    _desired_inbound_uuids,
+                    (_curr_inb_uuids + _desired_inbound_uuids) | unique
+                  )
+              }}
+
         - name: "PATCH node configProfile if changed"
-          when: _new_inb_uuids | length != _curr_inb_uuids | length
+          when: >
+            (_final_inbound_uuids | sort) != (_curr_inb_uuids | sort)
+            or (_node_obj.configProfile.activeConfigProfileUuid | default('')) != _profile_uuid
           delegate_to: localhost
           ansible.builtin.uri:
-            url: "{{ remnawave_panel_url }}/api/nodes/{{ remnawave_node_uuid }}"
+            url: "{{ remnawave_panel_url }}/api/nodes"
             method: PATCH
             headers:
               Authorization: "Bearer {{ remnawave_panel_api_token }}"
@@ -162,14 +219,15 @@
               Accept: "application/json"
             body_format: json
             body:
+              uuid: "{{ remnawave_node_uuid }}"
               configProfile:
                 activeConfigProfileUuid: "{{ _profile_uuid }}"
-                activeInbounds: "{{ _new_inb_uuids }}"
+                activeInbounds: "{{ _final_inbound_uuids }}"
           register: _patched
           failed_when: _patched.status not in [200]
 
     - name: "Expose UUID facts for subsequent roles"
       ansible.builtin.set_fact:
         remnawave_node_uuid: "{{ remnawave_node_uuid }}"
-        remnawave_inbound_uuid: "{{ _inbound_uuid }}"
+        remnawave_inbound_uuid: "{{ _final_inbound_uuids | first | default('') }}"
         remnawave_profile_uuid: "{{ _profile_uuid }}"

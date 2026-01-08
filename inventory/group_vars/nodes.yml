@@ -32,3 +32,20 @@ remnawave_node_enable_qos: true
 remnawave_node_qos_state: present
 qos_upload_default: "50mbit"
 qos_download_default: "100mbit"
+
+remnawave_host_profiles:
+  "VLESS TCP REALITY":
+    port: 443
+    patch_reality_servernames: true
+    include_in_sni_map: true
+    fingerprint: "chrome"
+    securityLayer: "DEFAULT"
+    shuffleHost: true
+
+  "VLESS xHTTP (behind nginx)":
+    port: 443
+    path: "/api/v1/sync/"
+    patch_reality_servernames: false
+    include_in_sni_map: false
+    securityLayer: "TLS"
+    allowInsecure: false

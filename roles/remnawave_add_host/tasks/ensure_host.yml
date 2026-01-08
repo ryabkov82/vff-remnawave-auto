@@ -1,0 +1,280 @@
+---
+- name: "Ensure host | Reset per-item working facts"
+  ansible.builtin.set_fact:
+    _inbound_uuid: ""
+    _profile_uuid: ""
+    _rw_existing: null
+    _rw_effective_uuid: ""
+    _rw_inbound_differs: false
+    _rw_port_differs: false
+    _rw_sni_base: []
+    _rw_sni_list: []
+    _rw_sni_csv: ""
+
+- name: Ensure host item has required fields
+  ansible.builtin.assert:
+    that:
+      - (rw_item.remark | default('') | length) > 0
+      - (rw_item.address | default('') | length) > 0
+      - (rw_item.inbound_tag | default('') | trim | length) > 0
+    fail_msg: "Host item must provide remark, address and inbound_tag."
+
+# ---------------------------------------------------------
+# Resolve inbound/profile UUIDs for this host:
+# 1) rw_item explicit inbound_uuid/profile_uuid (optional override)
+# 2) from mapping remnawave_inbounds_by_tag (preferred)
+# 3) fallback to API (global inbounds) and extend cache
+# ---------------------------------------------------------
+
+# 1) per-host override
+- name: Use per-host inbound/profile UUID override if present
+  ansible.builtin.set_fact:
+    _inbound_uuid: "{{ rw_item.inbound_uuid }}"
+    _profile_uuid: "{{ rw_item.profile_uuid }}"
+  when:
+    - (rw_item.inbound_uuid | default('') | length) > 0
+    - (rw_item.profile_uuid | default('') | length) > 0
+
+# 2) diagnostic guard (only when no override)
+- name: Assert inbound_tag exists in cache when no per-host override
+  ansible.builtin.assert:
+    that:
+      - (
+          (_inbound_uuid | default('') | length) > 0
+          and (_profile_uuid | default('') | length) > 0
+        )
+        or (rw_item.inbound_tag in (_rw_inbounds_by_tag | default({})))
+    fail_msg: >-
+      inbound_tag={{ rw_item.inbound_tag }} not found in remnawave_inbounds_by_tag.
+      Ensure remnawave_register_node exported remnawave_inbounds_by_tag
+      or run remnawave_inbounds_cache before remnawave_add_host.
+
+# 3) mapping resolve
+- name: Resolve inbound/profile from mapping (preferred)
+  ansible.builtin.set_fact:
+    _inbound_uuid: "{{ _rw_inbounds_by_tag[rw_item.inbound_tag].inbound_uuid }}"
+    _profile_uuid: "{{ _rw_inbounds_by_tag[rw_item.inbound_tag].profile_uuid }}"
+  when:
+    - (_inbound_uuid | default('') | length) == 0 or (_profile_uuid | default('') | length) == 0
+    - rw_item.inbound_tag in (_rw_inbounds_by_tag | default({}))
+
+# 4) final assert
+- name: Final assert on resolved inbound/profile UUIDs
+  ansible.builtin.assert:
+    that:
+      - (_inbound_uuid | default('') | length) > 0
+      - (_profile_uuid | default('') | length) > 0
+    fail_msg: "Failed to resolve inbound/profile UUIDs for inbound_tag={{ rw_item.inbound_tag }}"
+
+# ---------------------------------------------------------
+# Build SNI list (string/list -> CSV)
+# ---------------------------------------------------------
+- name: Hosts | Init SNI base list
+  ansible.builtin.set_fact:
+    _rw_sni_base: []
+
+- name: Hosts | Use SNI from string (possibly comma-separated)
+  when:
+    - rw_item.sni is defined
+    - rw_item.sni is string
+    - (rw_item.sni | trim | length) > 0
+  ansible.builtin.set_fact:
+    _rw_sni_base: "{{ rw_item.sni | trim | split(',') | map('trim') | list }}"
+
+- name: Hosts | Use SNI from list/sequence
+  when:
+    - rw_item.sni is defined
+    - rw_item.sni is sequence
+    - not (rw_item.sni is string)
+  ansible.builtin.set_fact:
+    _rw_sni_base: "{{ rw_item.sni | map('string') | map('trim') | reject('equalto', '') | list }}"
+
+- name: Hosts | Ensure SNI has at least address fallback
+  ansible.builtin.set_fact:
+    _rw_sni_list: >-
+      {{
+        (_rw_sni_base | reject('equalto','') | list | unique)
+        if (_rw_sni_base | reject('equalto','') | list | length > 0)
+        else [rw_item.address]
+      }}
+
+- name: Hosts | Build CSV SNI
+  ansible.builtin.set_fact:
+    _rw_sni_csv: "{{ _rw_sni_list | join(',') }}"
+
+# ---------------------------------------------------------
+# Patch REALITY serverNames (optional per-host, default true)
+# ---------------------------------------------------------
+- name: Hosts | Patch REALITY serverNames with host SNI names
+  when: (rw_item.patch_reality_servernames | default(true)) | bool
+  ansible.builtin.include_role:
+    name: remnawave_reality_servernames
+  vars:
+    remnawave_reality_profile_uuid: "{{ _profile_uuid }}"
+    remnawave_reality_inbound_uuid: "{{ _inbound_uuid }}"
+    remnawave_reality_inbound_tag: "{{ rw_item.inbound_tag | default('') }}"
+    remnawave_reality_add_servernames: "{{ _rw_sni_list }}"
+
+# ---------------------------------------------------------
+# Select existing host (from prefetched list)
+# ---------------------------------------------------------
+- name: Select existing host by rule
+  ansible.builtin.set_fact:
+    _rw_existing: >-
+      {%- if rw_host_match_by == 'address_port' -%}
+      {{ _rw_hosts_existing | selectattr('address', 'equalto', rw_item.address)
+                           | selectattr('port', 'equalto', (rw_item.port | default(443) | int))
+                           | list | first | default(None) }}
+      {%- else -%}
+      {{ _rw_hosts_existing | selectattr('remark', 'equalto', rw_item.remark)
+                           | list | first | default(None) }}
+      {%- endif -%}
+
+- name: Maybe delete existing host if force_recreate
+  when: _rw_existing is not none and rw_host_force_recreate | bool
+  block:
+    - name: Build SNI list to remove from REALITY (force_recreate)
+      ansible.builtin.set_fact:
+        _rw_existing_sni_list: >-
+          {{
+            (
+              (_rw_existing.sni | default('') | string)
+              | split(',')
+              | map('trim')
+              | reject('equalto','')
+              | list
+            )
+            if ((_rw_existing.sni | default('') | string) | trim | length) > 0
+            else [ _rw_existing.address ]
+          }}
+
+    - name: Hosts | Remove old SNI from REALITY serverNames (force_recreate)
+      when: (rw_item.patch_reality_servernames | default(true)) | bool
+      ansible.builtin.include_role:
+        name: remnawave_reality_servernames
+      vars:
+        remnawave_reality_profile_uuid: "{{ _rw_existing.inbound.configProfileUuid }}"
+        remnawave_reality_inbound_uuid: "{{ _rw_existing.inbound.configProfileInboundUuid }}"
+        remnawave_reality_inbound_tag: ""          # можно не передавать
+        remnawave_reality_add_servernames: []
+        remnawave_reality_remove_servernames: "{{ _rw_existing_sni_list }}"
+
+    - name: Delete host
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}/hosts/{{ _rw_existing.uuid }}"
+        method: DELETE
+        headers: "{{ _rw_headers }}"
+        status_code: [200]
+      register: _rw_delete
+
+    - name: Clear existing after delete
+      ansible.builtin.set_fact:
+        _rw_existing: null
+
+# ---------------------------------------------------------
+# Build create payload (tag is managed marker)
+# ---------------------------------------------------------
+- name: Build create payload
+  ansible.builtin.set_fact:
+    _rw_create_body:
+      remark: "{{ rw_item.remark }}"
+      address: "{{ rw_item.address }}"
+      port: "{{ (rw_item.port | default(443) | int) }}"
+      path: "{{ rw_item.path | default('') }}"
+      sni: "{{ _rw_sni_csv }}"
+      host: "{{ rw_item.host | default('') }}"
+      alpn: "{{ rw_item.alpn | default(None) }}"
+      fingerprint: "{{ rw_item.fingerprint | default('chrome') }}"
+      securityLayer: "{{ rw_item.securityLayer | default('DEFAULT') }}"
+      inbound:
+        configProfileUuid: "{{ _profile_uuid }}"
+        configProfileInboundUuid: "{{ _inbound_uuid }}"
+      serverDescription: "{{ rw_item.serverDescription | default('') }}"
+      tag: "{{ rw_host_managed_tag }}"
+      isHidden: "{{ (rw_item.isHidden | default(false)) | bool }}"
+      overrideSniFromAddress: "{{ (rw_item.overrideSniFromAddress | default(false)) | bool }}"
+      vlessRouteId: "{{ rw_item.vlessRouteId | default(None) }}"
+      allowInsecure: "{{ (rw_item.allowInsecure | default(false)) | bool }}"
+      shuffleHost: "{{ (rw_item.shuffleHost | default(true)) | bool }}"
+      mihomoX25519: "{{ (rw_item.mihomoX25519 | default(false)) | bool }}"
+      nodes: ["{{ _node_uuid }}"]
+
+- name: Create host if missing
+  when: _rw_existing is none
+  block:
+    - name: POST /api/hosts
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}/hosts"
+        method: POST
+        headers: "{{ _rw_headers }}"
+        body_format: json
+        body: "{{ _rw_create_body }}"
+        status_code: [201]
+        return_content: true
+      register: _rw_created
+
+    - name: Remember created host uuid
+      ansible.builtin.set_fact:
+        _rw_effective_uuid: "{{ _rw_created.json.response.uuid }}"
+
+- name: Set effective uuid when existing
+  when: _rw_existing is not none
+  ansible.builtin.set_fact:
+    _rw_effective_uuid: "{{ _rw_existing.uuid }}"
+
+- name: Decide if inbound differs on existing host
+  when: _rw_existing is not none
+  ansible.builtin.set_fact:
+    _rw_inbound_differs: >-
+      {{
+        (_rw_existing.inbound.configProfileUuid | default('')) != _profile_uuid
+        or (_rw_existing.inbound.configProfileInboundUuid | default('')) != _inbound_uuid
+      }}
+
+- name: Reconcile inbound on existing host (bulk set-inbound)
+  when:
+    - _rw_existing is not none
+    - rw_host_set_inbound_if_exists | bool
+    - _rw_inbound_differs | bool
+  ansible.builtin.uri:
+    url: "{{ remnawave_panel_api_base }}/hosts/bulk/set-inbound"
+    method: POST
+    headers: "{{ _rw_headers }}"
+    body_format: json
+    body:
+      uuids: ["{{ _rw_effective_uuid }}"]
+      configProfileUuid: "{{ _profile_uuid }}"
+      configProfileInboundUuid: "{{ _inbound_uuid }}"
+    status_code: [200]
+    return_content: true
+  register: _rw_bulk_inbound
+
+- name: Decide if port differs on existing host
+  when: _rw_existing is not none
+  ansible.builtin.set_fact:
+    _rw_port_differs: "{{ (_rw_existing.port | int) != (rw_item.port | default(443) | int) }}"
+
+- name: Optionally set port on existing host (bulk set-port)
+  when:
+    - _rw_existing is not none
+    - rw_host_set_port_if_exists | bool
+    - _rw_port_differs | bool
+  ansible.builtin.uri:
+    url: "{{ remnawave_panel_api_base }}/hosts/bulk/set-port"
+    method: POST
+    headers: "{{ _rw_headers }}"
+    body_format: json
+    body:
+      uuids: ["{{ _rw_effective_uuid }}"]
+      port: "{{ (rw_item.port | default(443) | int) }}"
+    status_code: [200]
+    return_content: true
+  register: _rw_bulk_port
+
+- name: Output result
+  ansible.builtin.debug:
+    msg:
+      created: "{{ _rw_existing is none }}"
+      host_uuid: "{{ _rw_effective_uuid }}"
+      inbound_tag: "{{ rw_item.inbound_tag }}"
+      managed_tag: "{{ rw_host_managed_tag }}"

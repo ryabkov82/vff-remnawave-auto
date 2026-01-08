@@ -41,3 +41,14 @@ rw_host_match_by: "remark"          # remark | address_port
 rw_host_force_recreate: false
 rw_host_set_inbound_if_exists: true
 rw_host_set_port_if_exists: false
+
+# Preferred declarative list. If empty -> legacy rw_host_* is used.
+remnawave_hosts: []
+
+# Managed marker stored in Host.tag (safe; OpenAPI constraints: uppercase/digits/_/:, max 32)
+rw_host_managed_tag: "VFF:MANAGED"
+
+# Prune behaviour (managed-only)
+rw_host_prune: true
+rw_host_prune_dry_run: false
+rw_host_prune_scope: "per_node"

@@ -1,0 +1,111 @@
+---
+- name: Assert API inputs
+  ansible.builtin.assert:
+    that:
+      - remnawave_inbounds_cache_api_base | length > 0
+      - remnawave_inbounds_cache_api_token | length > 0
+    fail_msg: "Missing remnawave_inbounds_cache_api_base or remnawave_inbounds_cache_api_token"
+
+- name: Compose headers
+  ansible.builtin.set_fact:
+    _rw_inb_headers:
+      Authorization: "Bearer {{ remnawave_inbounds_cache_api_token }}"
+      Accept: "application/json"
+      Content-Type: "application/json"
+
+# If both maps already exist and non-empty — nothing to do.
+- name: Decide whether to fetch inbounds
+  ansible.builtin.set_fact:
+    _rw_inb_need_fetch: >-
+      {{
+        (remnawave_inbounds_by_tag | default({}) | length) == 0
+        or (remnawave_inbounds_full_by_tag | default({}) | length) == 0
+      }}
+
+- name: GET /api/config-profiles/inbounds
+  when: _rw_inb_need_fetch | bool
+  delegate_to: localhost
+  ansible.builtin.uri:
+    url: "{{ remnawave_inbounds_cache_api_base }}/config-profiles/inbounds"
+    method: GET
+    headers: "{{ _rw_inb_headers }}"
+    return_content: true
+    status_code: [200]
+  register: _rw_inb_resp_all
+
+- name: Set inbound list
+  when: _rw_inb_need_fetch | bool
+  ansible.builtin.set_fact:
+    _rw_inb_all: "{{ _rw_inb_resp_all.json.response.inbounds | default([]) }}"
+
+- name: Detect duplicate inbound tags (must be globally unique)
+  when: _rw_inb_need_fetch | bool
+  vars:
+    _tags: >-
+      {{
+        _rw_inb_all
+        | selectattr('tag', 'defined')
+        | map(attribute='tag')
+        | map('string')
+        | map('trim')
+        | reject('equalto', '')
+        | list
+      }}
+    _dup: "{{ _tags | difference(_tags | unique) | unique }}"
+  ansible.builtin.assert:
+    that:
+      - _dup | length == 0
+    fail_msg: "Duplicate inbound tags in panel: {{ _dup }}"
+
+# Build thin map: tag -> {inbound_uuid, profile_uuid}
+- name: Build thin inbound mapping by tag
+  when: _rw_inb_need_fetch | bool
+  vars:
+    tmp: >-
+      {% set out = {} %}
+      {% for it in _rw_inb_all %}
+        {% if it.tag is defined and (it.tag | string | length) > 0 %}
+          {% set _ = out.update({(it.tag | string): {'inbound_uuid': it.uuid, 'profile_uuid': it.profileUuid}}) %}
+        {% endif %}
+      {% endfor %}
+      {{ out | to_json }}
+  ansible.builtin.set_fact:
+    _rw_inbounds_by_tag_new: "{{ tmp | from_json }}"
+
+# Build full map: tag -> inbound object
+- name: Build full inbound mapping by tag
+  when: _rw_inb_need_fetch | bool
+  vars:
+    tmp: >-
+      {% set out = {} %}
+      {% for it in _rw_inb_all %}
+        {% if it.tag is defined and (it.tag | string | length) > 0 %}
+          {% set _ = out.update({(it.tag | string): it}) %}
+        {% endif %}
+      {% endfor %}
+      {{ out | to_json }}
+  ansible.builtin.set_fact:
+    _rw_inbounds_full_by_tag_new: "{{ tmp | from_json }}"
+
+# Export to global facts (merge-safe)
+- name: Export inbound caches to facts
+  when:
+    - _rw_inb_need_fetch | bool
+    - remnawave_inbounds_cache_export_facts | bool
+  ansible.builtin.set_fact:
+    remnawave_inbounds_by_tag: >-
+      {{
+        (remnawave_inbounds_by_tag | default({}))
+        | combine(_rw_inbounds_by_tag_new, recursive=True)
+      }}
+    remnawave_inbounds_full_by_tag: >-
+      {{
+        (remnawave_inbounds_full_by_tag | default({}))
+        | combine(_rw_inbounds_full_by_tag_new, recursive=True)
+      }}
+
+# Also provide local aliases for callers that prefer internal vars
+- name: Set local aliases
+  ansible.builtin.set_fact:
+    _rw_inbounds_by_tag: "{{ remnawave_inbounds_by_tag | default(_rw_inbounds_by_tag_new | default({})) }}"
+    _rw_inbounds_full_by_tag: "{{ remnawave_inbounds_full_by_tag | default(_rw_inbounds_full_by_tag_new | default({})) }}"

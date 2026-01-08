@@ -1,0 +1,7 @@
+---
+# API base URL for panel
+remnawave_inbounds_cache_api_base: "{{ (remnawave_panel_url | default('')) | ternary(remnawave_panel_url ~ '/api', '') }}"
+remnawave_inbounds_cache_api_token: "{{ remnawave_panel_api_token | default('') }}"
+
+# Export results to global facts for other roles
+remnawave_inbounds_cache_export_facts: true
