@@ -34,7 +34,109 @@
   tags: [nginx, node_nginx]
 
 # ------------------------------------------------------------
-# Деплой vhost
+# Авто-детект xHTTP по inbound tags ноды + inbound cache (full DTO)
+# ------------------------------------------------------------
+- name: Nginx | Normalize desired inbound tags (source of truth)
+  ansible.builtin.set_fact:
+    _rw_node_inbound_tags: "{{ remnawave_inbound_tags | default([]) | map('trim') | reject('equalto', '') | list }}"
+  tags: [nginx, node_nginx]
+
+- name: Nginx | Ensure inbound tags are set (required for xHTTP autodetect)
+  ansible.builtin.assert:
+    that:
+      - _rw_node_inbound_tags | length > 0
+    fail_msg: >-
+      remnawave_inbound_tags must be set (source of truth).
+      Example:
+      remnawave_inbound_tags:
+        - "VLESS TCP REALITY"
+        - "VLESS xHTTP (behind nginx)"
+  tags: [nginx, node_nginx]
+
+- name: Nginx | Ensure inbound caches (thin+full) are present
+  ansible.builtin.include_role:
+    name: remnawave_inbounds_cache
+  vars:
+    remnawave_inbounds_cache_api_base: "{{ remnawave_panel_url }}/api"
+    remnawave_inbounds_cache_api_token: "{{ remnawave_panel_api_token }}"
+    remnawave_inbounds_cache_export_facts: true
+  tags: [nginx, node_nginx]
+
+- name: Nginx | Assert all desired inbound tags exist in full cache
+  vars:
+    _full: "{{ remnawave_inbounds_full_by_tag | default({}) }}"
+    _missing: "{{ _rw_node_inbound_tags | reject('in', (_full.keys() | list)) | list }}"
+  ansible.builtin.assert:
+    that:
+      - _missing | length == 0
+    fail_msg: "Inbound tags not found in remnawave_inbounds_full_by_tag: {{ _missing }}"
+  tags: [nginx, node_nginx]
+
+- name: Nginx | Select xHTTP inbound candidates from desired tags (cache DTO)
+  vars:
+    _full: "{{ remnawave_inbounds_full_by_tag | default({}) }}"
+    tmp: >-
+      {% set out = [] %}
+      {% for t in _rw_node_inbound_tags %}
+        {% set ib = _full[t] %}
+        {% if (ib.network | default('') | lower) == 'xhttp' %}
+          {% set _ = out.append(t) %}
+        {% endif %}
+      {% endfor %}
+      {{ out | to_json }}
+  ansible.builtin.set_fact:
+    _rw_xhttp_inbound_tags: "{{ tmp | from_json }}"
+  tags: [nginx, node_nginx]
+
+- name: Nginx | Ensure at most one xHTTP inbound in desired list
+  ansible.builtin.assert:
+    that:
+      - _rw_xhttp_inbound_tags | length <= 1
+    fail_msg: >-
+      Multiple xHTTP inbounds found in remnawave_inbound_tags: {{ _rw_xhttp_inbound_tags }}.
+      Keep only one xHTTP inbound for nginx snippet autodetect.
+  tags: [nginx, node_nginx]
+
+- name: Nginx | Default xHTTP snippet disabled (no xHTTP inbound)
+  ansible.builtin.set_fact:
+    remnawave_node_nginx_xhttp_snippet_enabled: false
+    nginx_xhttp_upstream: ""
+    nginx_xhttp_location: ""
+  when: (_rw_xhttp_inbound_tags | length) == 0
+  tags: [nginx, node_nginx]
+
+- name: Nginx | Derive xHTTP snippet params from inbound DTO (cache DTO)
+  vars:
+    _full: "{{ remnawave_inbounds_full_by_tag }}"
+    _tag: "{{ _rw_xhttp_inbound_tags | first | default('') }}"
+    _ib: "{{ (_tag | length > 0) | ternary(_full[_tag], {}) }}"
+    _raw: "{{ _ib.rawInbound | default({}) }}"
+    _ss: "{{ _raw.streamSettings | default({}) }}"
+    _x: "{{ _ss.xhttpSettings | default({}) }}"
+  ansible.builtin.set_fact:
+    remnawave_node_nginx_xhttp_snippet_enabled: "{{ (_tag | length > 0) }}"
+    nginx_xhttp_upstream: "{{ (_raw.listen | default('127.0.0.1')) }}:{{ (_ib.port | default(_raw.port | default(''))) }}"
+    nginx_xhttp_location: "{{ _x.path | default('') }}"
+  when: (_rw_xhttp_inbound_tags | length) == 1
+  tags: [nginx, node_nginx]
+
+- name: Nginx | Validate derived xHTTP params when snippet enabled
+  ansible.builtin.assert:
+    that:
+      - (nginx_xhttp_location | default('') | length) > 0
+      - (nginx_xhttp_upstream | default('') | length) > 0
+      - (nginx_xhttp_upstream is search(":"))
+    fail_msg: >-
+      xHTTP inbound detected, but derived nginx_xhttp_* params are empty.
+      Expected strict DTO:
+      - listen/port at top level
+      - streamSettings.network = xhttp
+      - streamSettings.xhttpSettings.path is set
+  when: remnawave_node_nginx_xhttp_snippet_enabled | bool
+  tags: [nginx, node_nginx]
+
+# ------------------------------------------------------------
+# Деплой vhost (когда xHTTP snippet НЕ нужен)
 # ------------------------------------------------------------
 - name: Nginx | Deploy vhost
   ansible.builtin.template:
@@ -42,6 +144,7 @@
     dest: "{{ nginx_vhost_conf_resolved }}"
     mode: "0644"
   notify: nginx restart
+  when: not (remnawave_node_nginx_xhttp_snippet_enabled | bool)
   tags: [nginx, node_nginx]
 
 - name: Nginx | Enable vhost
@@ -51,6 +154,30 @@
     state: link
     force: true
   notify: nginx restart
+  when: not (remnawave_node_nginx_xhttp_snippet_enabled | bool)
+  tags: [nginx, node_nginx]
+
+# ------------------------------------------------------------
+# xHTTP snippet для внешнего vhost (digitalstreamers-www)
+# ------------------------------------------------------------
+- name: Nginx | Ensure ds include dirs exist (xhttp snippet)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ nginx_ds_dir }}"
+    - "{{ nginx_server_includes_dir }}"
+  when: remnawave_node_nginx_xhttp_snippet_enabled | bool
+  tags: [nginx, node_nginx]
+
+- name: Nginx | Deploy xHTTP snippet 20-xhttp.conf
+  ansible.builtin.template:
+    src: ds_server_includes_20-xhttp.conf.j2
+    dest: "{{ nginx_server_includes_dir }}/20-xhttp.conf"
+    mode: "0644"
+  notify: nginx restart
+  when: remnawave_node_nginx_xhttp_snippet_enabled | bool
   tags: [nginx, node_nginx]
 
 # ------------------------------------------------------------
@@ -64,7 +191,7 @@
   tags: [nginx, node_nginx]
 
 # ------------------------------------------------------------
-# Проверки (без wide-bind)
+# Проверки (без wide-bind) — только когда это "наш" vhost, не snippet
 # ------------------------------------------------------------
 - name: Nginx | Apply pending handlers
   ansible.builtin.meta: flush_handlers
@@ -76,6 +203,7 @@
     port: "{{ nginx_https_port }}"
     state: started
     timeout: 20
+  when: not (remnawave_node_nginx_xhttp_snippet_enabled | bool)
   tags: [nginx, node_nginx]
 
 - name: Nginx | HTTPS sanity check via loopback
@@ -89,4 +217,5 @@
   retries: 3
   delay: 3
   until: _https_local.status in [200, 301, 302]
+  when: not (remnawave_node_nginx_xhttp_snippet_enabled | bool)
   tags: [nginx, node_nginx]

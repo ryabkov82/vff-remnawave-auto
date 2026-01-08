@@ -16,3 +16,23 @@ nginx_https_port: "{{ (nginx_https_bind.split(':')[-1]) | int }}"
 # Домены, на которые отвечает nginx
 website_domains:
   - "{{ remnawave_node_domain | default('digitalstreamers.xyz') }}"
+
+# ------------------------------------------------------------
+# xHTTP snippet (используется внешним vhost из digitalstreamers-www)
+# ------------------------------------------------------------
+nginx_ds_dir: "/etc/nginx/ds"
+nginx_server_includes_dir: "/etc/nginx/ds/server-includes"
+
+# Таймауты
+nginx_xhttp_client_body_timeout: "5m"
+nginx_xhttp_grpc_read_timeout: "315s"
+nginx_xhttp_grpc_send_timeout: "5m"
+
+# Source of truth: which inbounds are enabled on this node
+# Must be set by inventory/group_vars/host_vars
+remnawave_inbound_tags: []
+
+# Derived / runtime (do not set manually)
+remnawave_node_nginx_xhttp_snippet_enabled: false
+nginx_xhttp_upstream: ""
+nginx_xhttp_location: ""

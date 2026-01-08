@@ -17,6 +17,7 @@ remnawave_node_address: >-
 remnawave_node_port: "{{ (remnawave_node_env_content | default('') | regex_search('(?m)^NODE_PORT=([0-9]+)', '\\1')) | default('2222') | int }}"
 
 # Профиль/инбаунды
+remnawave_node_inbounds_mode: "merge"   # replace|merge
 remnawave_inbound_tag: "VLESS TCP REALITY"  # какой инбаунд активировать
 remnawave_profile_uuid: ""                  # можно пусто — возьмём из inbound.profileUuid
 

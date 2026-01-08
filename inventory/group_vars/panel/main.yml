@@ -112,6 +112,23 @@ remnawave_inbounds:
         shortIds: ["{{ remnawave_reality_short_id_ds }}"]
         maxTimeDiff: 0
         fingerprint: "chrome"
+  - tag: "VLESS xHTTP (behind nginx)"
+    listen: "127.0.0.1"
+    port: 8446
+    protocol: "vless"
+    sniffing:
+      enabled: true
+      destOverride: ["http", "tls", "quic", "fakedns"]
+      metadataOnly: false
+    settings:
+      clients: []
+      decryption: "none"
+    streamSettings:
+      network: "xhttp"
+      security: "none"
+      xhttpSettings:
+        mode: "auto"
+        path: "/api/v1/sync/"
 
 marzban_api_base_url: "https://marzban-s2.vpn-for-friends.com:4443"
 marzban_admin_username: "admin"
