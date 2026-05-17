@@ -39,15 +39,16 @@ remnawave_panel_api_instances: 1
 
 
 # Optional Telegram notifications
+# For Remnawave >= 2.7 these values are rendered as TELEGRAM_NOTIFY_*.
 remnawave_panel_telegram_enabled: false
 remnawave_panel_telegram_bot_token: "change_me"
 remnawave_panel_telegram_users_chat_id: "change_me"
 remnawave_panel_telegram_nodes_chat_id: "change_me"
 remnawave_panel_telegram_crm_chat_id: "change_me"
-remnawave_panel_telegram_users_thread_id: ""
-remnawave_panel_telegram_nodes_thread_id: ""
-remnawave_panel_telegram_crm_thread_id: ""
 
+# Remnawave >= 2.7 notification targets.
+remnawave_panel_telegram_service_chat_id: "{{ remnawave_panel_telegram_nodes_chat_id }}"
+remnawave_panel_telegram_tblocker_chat_id: "{{ remnawave_panel_telegram_nodes_chat_id }}"
 
 # Arbitrary env overrides (raw key→value map merged last)
 remnawave_panel_env_overrides: {}
