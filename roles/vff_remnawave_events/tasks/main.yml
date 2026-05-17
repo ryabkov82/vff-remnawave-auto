@@ -58,6 +58,10 @@
     remove_orphans: true
   when: vff_remnawave_events_enabled | bool
 
+- name: Check vff-remnawave-events health
+  ansible.builtin.import_tasks: health.yml
+  when: vff_remnawave_events_enabled | bool
+
 - name: Disable vff-remnawave-events compose stack
   community.docker.docker_compose_v2:
     project_src: "{{ vff_remnawave_events_dir }}"
