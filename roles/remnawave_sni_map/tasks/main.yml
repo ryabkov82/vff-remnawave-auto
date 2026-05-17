@@ -24,6 +24,7 @@
   when: (_sni_node_uuid | default('') | length) == 0
   block:
     - name: GET /api/nodes
+      check_mode: false
       ansible.builtin.uri:
         url: "{{ remnawave_api_base_url }}/nodes"
         method: GET
@@ -79,6 +80,7 @@
     # 2) Load node details (active inbound UUIDs)
     # ============================================================================
     - name: GET /api/nodes/<uuid>
+      check_mode: false
       ansible.builtin.uri:
         url: "{{ remnawave_api_base_url }}/nodes/{{ _sni_node_uuid }}"
         method: GET
@@ -127,6 +129,7 @@
     # 4) Load hosts
     # ============================================================================
     - name: GET /api/hosts
+      check_mode: false
       ansible.builtin.uri:
         url: "{{ remnawave_api_base_url }}/hosts"
         method: GET

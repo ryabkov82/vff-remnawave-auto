@@ -18,8 +18,8 @@ remnawave_group_nodes: "nodes"
 remnawave_group_subscription: "subscription"
 
 remnawave_release:
-  panel: "2.3.2"
-  node:  "2.3.1"
+  panel: "2.7.4"
+  node:  "2.7.0"
 
 remnawave_panel_version: "{{ remnawave_release.panel }}"
 remnawave_node_version:  "{{ remnawave_release.node }}"

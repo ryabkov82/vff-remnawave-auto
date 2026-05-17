@@ -165,6 +165,7 @@
 # Fetch hosts list once
 # ---------------------------------------------------------
 - name: Get all hosts (once)
+  check_mode: false
   ansible.builtin.uri:
     url: "{{ remnawave_panel_api_base }}/hosts"
     method: GET

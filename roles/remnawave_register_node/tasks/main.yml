@@ -110,6 +110,7 @@
 
     - name: "List nodes"
       delegate_to: localhost
+      check_mode: false
       ansible.builtin.uri:
         url: "{{ remnawave_panel_url }}/api/nodes"
         method: GET

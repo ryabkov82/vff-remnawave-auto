@@ -62,7 +62,8 @@
 
 # Read certs from the master once
 - name: "TLS Sync | Read Cert Files From Cert-Master"
-  delegate_to: "{{ cert_master_scan_host | default(cert_master_host) }}"
+  # delegate_to: "{{ cert_master_scan_host | default(cert_master_host) }}"
+  delegate_to: "{{ cert_master_host }}"
   remote_user: "{{ cert_master_user | default('root') }}"
   vars:
     ansible_port: "{{ cert_master_scan_port | default(22) | int }}"

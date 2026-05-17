@@ -34,9 +34,17 @@ qos_upload_default: "50mbit"
 qos_download_default: "100mbit"
 
 remnawave_host_profiles:
-  "VLESS TCP REALITY":
+  "VLESS TCP REALITY (DS)":
     port: 443
     patch_reality_servernames: true
+    include_in_sni_map: true
+    fingerprint: "chrome"
+    securityLayer: "DEFAULT"
+    shuffleHost: true
+
+  "VLESS TCP REALITY":
+    port: 443
+    patch_reality_servernames: false
     include_in_sni_map: true
     fingerprint: "chrome"
     securityLayer: "DEFAULT"

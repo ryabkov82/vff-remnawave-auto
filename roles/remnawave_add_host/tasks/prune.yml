@@ -92,22 +92,20 @@
 - name: Build REALITY remove map (inbound_uuid -> servernames)
   vars:
     tmp: >-
-      {%- set m = {} -%}
-      {%- for it in _rw_to_prune -%}
-        {%- set inb = (it.inbound_uuid | default('') | string) -%}
-        {%- if (inb | length) > 0 -%}
-          {%- if m[inb] is not defined -%}
-            {%- set _ = m.update({inb: []}) -%}
-          {%- endif -%}
-          {%- for s in (it.sni_list | default([])) -%}
-            {%- set s2 = (s | string | trim) -%}
-            {%- if s2 != '' and s2 not in m[inb] -%}
-              {%- set _ = m[inb].append(s2) -%}
-            {%- endif -%}
-          {%- endfor -%}
-        {%- endif -%}
-      {%- endfor -%}
-      {{ m | to_json }}
+      {% set m = {} %} {% for it in _rw_to_prune %}
+        {% set inb = it.inbound_uuid | default('') | string %}
+        {% if inb | length > 0 %}
+          {% if m[inb] is not defined %}
+            {% set _ = m.update({inb: []}) %}
+          {% endif %}
+          {% for s in it.sni_list | default([]) %}
+            {% set s2 = s | string | trim %}
+            {% if s2 != '' and s2 not in m[inb] %}
+              {% set _ = m[inb].append(s2) %}
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+      {% endfor %} {{ m | to_json }}
   ansible.builtin.set_fact:
     _rw_reality_remove_map: "{{ tmp | from_json }}"
 
