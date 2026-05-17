@@ -7,16 +7,19 @@ remnawave_node_env_content: |
 remnawave_node_address: "77.239.127.199"
 remnawave_node_name: "{{ inventory_hostname }}"
 
-remnawave_host_address: "edge-fra-01.digitalstreamers.xyz"
 remnawave_node_country_code: "DE"
-remnawave_host_remark: "🇩🇪 1 vpn-for-friends"
-remnawave_host_sni:
-  - "edge-fra-01.digitalstreamers.xyz"
-  - "stream-fra-01.digitalstreamers.xyz"
-  - "cache-fra-01.digitalstreamers.xyz"
-  - "segment-fra-01.digitalstreamers.xyz"
 
-remnawave_inbound_tag: "VLESS TCP REALITY (DS)"
+remnawave_hosts:
+  - remark: "🇩🇪 1 vpn-for-friends"
+    address: "edge-fra-01.digitalstreamers.xyz"
+    # inbound resolution
+    inbound_tag: "VLESS TCP REALITY (DS)"
+    # SNI для Reality
+    sni:
+      - "edge-fra-01.digitalstreamers.xyz"
+      - "stream-fra-01.digitalstreamers.xyz"
+      - "cache-fra-01.digitalstreamers.xyz"
+      - "segment-fra-01.digitalstreamers.xyz"
 
 # Набор записей для этой ноды
 cf_dns_records:

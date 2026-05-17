@@ -2,6 +2,25 @@
   ansible.builtin.command: docker --version
   changed_when: false
 
+- name: Remnawave Node Plugins | Install nftables
+  ansible.builtin.apt:
+    name: nftables
+    state: present
+    update_cache: true
+  when:
+    - remnawave_node_plugins_enabled | default(true) | bool
+    - remnawave_node_install_nftables | default(true) | bool
+    - ansible_facts.pkg_mgr == 'apt'
+
+- name: Remnawave Node Plugins | Assert kernel version is supported
+  ansible.builtin.assert:
+    that:
+      - ansible_kernel is version('5.7', '>=')
+    fail_msg: >-
+      Kernel {{ ansible_kernel }} is too old for Remnawave Node Plugins.
+      Required kernel >= 5.7.
+  when: remnawave_node_plugins_enabled | default(true) | bool
+
 - name: Create project dir
   ansible.builtin.file:
     path: "{{ remnawave_node_dir }}"

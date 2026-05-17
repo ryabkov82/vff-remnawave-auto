@@ -7,6 +7,7 @@
     state: present
     update_cache: true
   when: not _cert_present or (nginx_force_issue | bool)
+  tags: [nginx, tls, cert]
 
 - name: Write Cloudflare credentials for certbot (dns-01)
   ansible.builtin.copy:
@@ -15,6 +16,7 @@
     content: |
       dns_cloudflare_api_token = {{ nginx_cf_api_token }}
   when: not _cert_present or (nginx_force_issue | bool)
+  tags: [nginx, tls, cert]
 
 - name: Obtain certificate via DNS-01 (Cloudflare)
   ansible.builtin.command:
@@ -28,3 +30,4 @@
   when: not _cert_present or (nginx_force_issue | bool)
   register: _certbot_dns
   changed_when: "_certbot_dns.rc == 0"
+  tags: [nginx, tls, cert]

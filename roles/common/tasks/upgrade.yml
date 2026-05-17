@@ -36,6 +36,20 @@
       };
   when: common_apt_noninteractive | bool
 
+- name: Install needrestart (Ubuntu/Debian)
+  ansible.builtin.apt:
+    name: needrestart
+    state: present
+    update_cache: true
+
+- name: Ensure needrestart conf.d exists
+  ansible.builtin.file:
+    path: /etc/needrestart/conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
 - name: Avoid needrestart prompts
   ansible.builtin.copy:
     dest: /etc/needrestart/conf.d/zzz-ansible.conf

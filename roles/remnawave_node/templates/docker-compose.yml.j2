@@ -5,6 +5,10 @@ services:
     image: {{ remnawave_node_image }}
     network_mode: {{ remnawave_node_network_mode }}
     restart: {{ remnawave_node_restart_policy }}
+{% if remnawave_node_cap_net_admin | default(remnawave_node_plugins_enabled | default(true)) | bool %}
+    cap_add:
+      - NET_ADMIN
+{% endif %}
     env_file:
       - .env
 {% if remnawave_node_enable_host_logs or (remnawave_node_geo_files | length > 0) %}

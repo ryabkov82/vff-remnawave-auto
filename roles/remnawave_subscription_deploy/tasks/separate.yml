@@ -22,7 +22,8 @@
         name: "{{ remnawave_sub_public_domain | regex_replace('\\.' ~ cf_dns_zone ~ '$', '') }}"
         proxied: false
         ttl: 300
-  delegate_to: localhost
+        solo: true
+#  delegate_to: localhost
   run_once: true
   tags: [dns, cf_dns]
 
@@ -35,11 +36,12 @@
         name: "{{ remnawave_sub_marzban_legacy_domain | regex_replace('\\.' ~ cf_dns_zone ~ '$', '') }}"
         proxied: false
         ttl: 300
+        solo: true
   when:
     - remnawave_legacy_marzban_enabled | bool
     - remnawave_sub_marzban_legacy_domain is defined
     - remnawave_sub_marzban_legacy_domain | length > 0
-  delegate_to: localhost
+#  delegate_to: localhost
   run_once: true
   tags: [dns, cf_dns, legacy, marzban]
 

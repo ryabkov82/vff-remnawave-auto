@@ -32,4 +32,3 @@
   when:
     - remnawave_upgrade_verify | bool
     - remnawave_upgrade_verify_api | bool
-  

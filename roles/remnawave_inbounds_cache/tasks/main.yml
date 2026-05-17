@@ -25,6 +25,7 @@
 - name: GET /api/config-profiles/inbounds
   when: _rw_inb_need_fetch | bool
   delegate_to: localhost
+  check_mode: false
   ansible.builtin.uri:
     url: "{{ remnawave_inbounds_cache_api_base }}/config-profiles/inbounds"
     method: GET

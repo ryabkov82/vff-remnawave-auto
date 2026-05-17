@@ -55,6 +55,7 @@
   loop:
     - check-panel.timer
     - check-node-api.timer
+  when: not ansible_check_mode
   tags: [health]
 
 # (опционально) Разовый прогон сервисов сейчас (oneshot)

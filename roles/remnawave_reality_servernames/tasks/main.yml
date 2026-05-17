@@ -35,6 +35,7 @@
 
 # ------------------------ 4. Load inbound list (global) -------------------
 - name: Reality | GET /config-profiles/inbounds
+  check_mode: false
   ansible.builtin.uri:
     url: "{{ remnawave_api_base_url }}/config-profiles/inbounds"
     method: GET
@@ -94,6 +95,7 @@
 
 # ------------------------ 8. Load config-profile ---------------------------
 - name: Reality | GET /config-profiles/<profileUuid>
+  check_mode: false
   ansible.builtin.uri:
     url: "{{ remnawave_api_base_url }}/config-profiles/{{ _resolved_prof_uuid }}"
     method: GET
