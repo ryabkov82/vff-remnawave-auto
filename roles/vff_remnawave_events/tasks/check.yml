@@ -1,0 +1,12 @@
+---
+- name: Check webhook secret is set
+  ansible.builtin.assert:
+    that:
+      - vff_remnawave_events_webhook_secret_header | length > 0
+    fail_msg: "vff_remnawave_events_webhook_secret_header must be set, usually from vault."
+
+- name: Check Telegram bot token is set unless dry-run is enabled
+  ansible.builtin.assert:
+    that:
+      - vff_remnawave_events_messenger_dry_run | bool or vff_remnawave_events_telegram_bot_token | length > 0
+    fail_msg: "vff_remnawave_events_telegram_bot_token must be set unless vff_remnawave_events_messenger_dry_run=true."
