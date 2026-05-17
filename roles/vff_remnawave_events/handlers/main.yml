@@ -1,0 +1,7 @@
+---
+- name: Restart vff remnawave events
+  community.docker.docker_compose_v2:
+    project_src: "{{ vff_remnawave_events_dir }}"
+    state: restarted
+    build: always
+  when: vff_remnawave_events_enabled | bool
