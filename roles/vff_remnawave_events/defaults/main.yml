@@ -1,0 +1,28 @@
+---
+vff_remnawave_events_enabled: true
+
+vff_remnawave_events_dir: /opt/vff-remnawave-events
+vff_remnawave_events_src_dir: "{{ vff_remnawave_events_dir }}/src"
+vff_remnawave_events_data_dir: "{{ vff_remnawave_events_dir }}/data"
+
+vff_remnawave_events_repo_url: "https://github.com/ryabkov82/vff-remnawave-events.git"
+vff_remnawave_events_repo_version: main
+vff_remnawave_events_image: vff-remnawave-events:local
+vff_remnawave_events_container_name: vff-remnawave-events
+vff_remnawave_events_network: remnawave-network
+
+vff_remnawave_events_listen_addr: ":8080"
+vff_remnawave_events_webhook_max_clock_skew_seconds: 300
+vff_remnawave_events_sqlite_path: /data/events.db
+vff_remnawave_events_dedup_ttl_hours: 168
+vff_remnawave_events_telegram_parse_mode: HTML
+vff_remnawave_events_messenger_dry_run: false
+vff_remnawave_events_resolver_description_login_enabled: true
+
+# Secrets. Set in vault/group_vars.
+vff_remnawave_events_webhook_secret_header: ""
+vff_remnawave_events_telegram_bot_token: ""
+
+# Container runs as uid 10001; data dir must be writable by this user.
+vff_remnawave_events_container_uid: 10001
+vff_remnawave_events_container_gid: 10001
