@@ -21,6 +21,7 @@
 
 # Базовый "smoke": контейнер существует и up
 - name: Check container is running
+  check_mode: false
   ansible.builtin.command: docker ps --format '{{ "{{.Names}}" }}' --filter "name={{ remnawave_node_container_name }}"
   register: _ps
   changed_when: false
@@ -30,3 +31,82 @@
     that:
       - _ps.stdout is search(remnawave_node_container_name)
     fail_msg: "Remnawave node container is not running. Check docker compose logs."
+
+- name: Remnawave Node Plugins | Check CAP_NET_ADMIN
+  check_mode: false
+  ansible.builtin.command: >-
+    docker inspect {{ remnawave_node_container_name }}
+    --format {{ "'{{json .HostConfig.CapAdd}}'" }}
+  register: _remnawave_node_capadd
+  changed_when: false
+  when:
+    - remnawave_node_plugins_enabled | default(true) | bool
+    - remnawave_node_plugins_verify | default(true) | bool
+
+- name: Remnawave Node Plugins | Assert CAP_NET_ADMIN is enabled
+  ansible.builtin.assert:
+    that:
+      - "'NET_ADMIN' in _remnawave_node_capadd.stdout or 'CAP_NET_ADMIN' in _remnawave_node_capadd.stdout"
+    fail_msg: >-
+      Container {{ remnawave_node_container_name }} has no NET_ADMIN capability:
+      {{ _remnawave_node_capadd.stdout }}
+  when:
+    - remnawave_node_plugins_enabled | default(true) | bool
+    - remnawave_node_plugins_verify | default(true) | bool
+
+- name: Remnawave Node Plugins | Check nftables tables
+  check_mode: false
+  ansible.builtin.shell: |
+    set -o pipefail
+    nft list tables | grep -E 'table ip remnanode|table ip6 remnanode6'
+  args:
+    executable: /bin/bash
+  register: _remnawave_node_nft_tables
+  changed_when: false
+  failed_when: false
+  retries: 10
+  delay: 3
+  until: _remnawave_node_nft_tables.rc == 0
+  when:
+    - remnawave_node_plugins_enabled | default(true) | bool
+    - remnawave_node_plugins_verify | default(true) | bool
+
+- name: Remnawave Node Plugins | Assert nftables tables exist
+  ansible.builtin.assert:
+    that:
+      - _remnawave_node_nft_tables.rc == 0
+    fail_msg: >-
+      Remnawave nftables tables were not found.
+      Check Node >= 2.7.0, CAP_NET_ADMIN and nftables.
+  when:
+    - remnawave_node_plugins_enabled | default(true) | bool
+    - remnawave_node_plugins_verify | default(true) | bool
+
+- name: Remnawave Node Plugins | Check plugin availability in logs
+  check_mode: false
+  ansible.builtin.shell: |
+    set -o pipefail
+    docker logs {{ remnawave_node_container_name }} --tail 500 2>&1 \
+      | egrep -i '\[PLUGIN\].*(Ingress Filter|Egress Filter|Torrent Blocker|Connection Drop): available'
+  args:
+    executable: /bin/bash
+  register: _remnawave_node_plugin_logs
+  changed_when: false
+  failed_when: false
+  retries: 10
+  delay: 3
+  until: _remnawave_node_plugin_logs.rc == 0
+  when:
+    - remnawave_node_plugins_enabled | default(true) | bool
+    - remnawave_node_plugins_verify | default(true) | bool
+
+- name: Remnawave Node Plugins | Assert plugin availability was logged
+  ansible.builtin.assert:
+    that:
+      - _remnawave_node_plugin_logs.rc == 0
+    fail_msg: >-
+      Remnawave Node plugin availability was not found in recent logs.
+      Check docker logs {{ remnawave_node_container_name }}.
+  when:
+    - remnawave_node_plugins_enabled | default(true) | bool
+    - remnawave_node_plugins_verify | default(true) | bool

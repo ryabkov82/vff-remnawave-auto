@@ -534,6 +534,50 @@
     ],
     "windows": [
       {
+        "id": "happ-windows",
+        "name": "Happ",
+        "isFeatured": true,
+        "urlScheme": "https://vpn-for-friends.com/redirect.html?url=happ://add/",
+        "installationStep": {
+          "buttons": [
+            {
+              "buttonLink": "https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe",
+              "buttonText": {
+                "en": "Download Happ for Windows",
+                "ru": "Скачать Happ для Windows"
+              }
+            }
+          ],
+          "description": {
+            "en": "Download and install Happ for Windows.",
+            "ru": "Скачайте и установите Happ для Windows."
+          }
+        },
+        "addSubscriptionStep": {
+          "description": {
+            "en": "Click the button below — Happ will open and the subscription will be added automatically.",
+            "ru": "Нажмите кнопку ниже — Happ откроется, и подписка добавится автоматически."
+          }
+        },
+        "connectAndUseStep": {
+          "description": {
+            "en": "Open Happ, select the added profile and connect to VPN.",
+            "ru": "Откройте Happ, выберите добавленный профиль и подключитесь к VPN."
+          }
+        },
+        "additionalAfterAddSubscriptionStep": {
+          "title": {
+            "en": "If the subscription is not added",
+            "ru": "Если подписка не добавилась"
+          },
+          "description": {
+            "en": "If nothing happens after clicking the button, copy the subscription link and add it manually in Happ.",
+            "ru": "Если после нажатия на кнопку ничего не произошло, скопируйте ссылку подписки и добавьте её в Happ вручную."
+          },
+          "buttons": []
+        }
+      },      
+      {
         "id": "new-app-windows-1762985351984",
         "name": "v2RayTun",
         "isFeatured": true,

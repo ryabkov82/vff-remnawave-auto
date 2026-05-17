@@ -214,6 +214,11 @@
       register: _rw_created
 
     - name: Remember created host uuid
+      when:
+        - _rw_created is defined
+        - _rw_created.json is defined
+        - _rw_created.json.response is defined
+        - _rw_created.json.response.uuid is defined
       ansible.builtin.set_fact:
         _rw_effective_uuid: "{{ _rw_created.json.response.uuid }}"
 

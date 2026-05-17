@@ -12,6 +12,13 @@ remnawave_node_container_name: "remnanode"
 remnawave_node_restart_policy: "always"
 remnawave_node_network_mode: "host"
 
+# Remnawave Node Plugins / nftables support.
+# Required for Torrent Blocker, Ingress/Egress Filter and Connection Drop.
+remnawave_node_plugins_enabled: true
+remnawave_node_install_nftables: true
+remnawave_node_cap_net_admin: true
+remnawave_node_plugins_verify: true
+
 # Если используем .env
 remnawave_node_write_env: false
 remnawave_node_env_content: |-
