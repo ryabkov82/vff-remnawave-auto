@@ -1,0 +1,23 @@
+services:
+  {{ vff_remnawave_events_container_name }}:
+    build:
+      context: {{ vff_remnawave_events_src_dir }}
+    image: {{ vff_remnawave_events_image }}
+    container_name: {{ vff_remnawave_events_container_name }}
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - {{ vff_remnawave_events_data_dir }}:/data
+    networks:
+      - {{ vff_remnawave_events_network }}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  {{ vff_remnawave_events_network }}:
+    external: true
