@@ -1,0 +1,66 @@
+---
+- name: Check required variables
+  ansible.builtin.import_tasks: check.yml
+  when: vff_remnawave_events_enabled | bool
+
+- name: Ensure service directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ vff_remnawave_events_dir }}"
+      owner: root
+      group: root
+      mode: "0755"
+    - path: "{{ vff_remnawave_events_data_dir }}"
+      owner: "{{ vff_remnawave_events_container_uid }}"
+      group: "{{ vff_remnawave_events_container_gid }}"
+      mode: "0750"
+  when: vff_remnawave_events_enabled | bool
+
+- name: Checkout vff-remnawave-events source
+  ansible.builtin.git:
+    repo: "{{ vff_remnawave_events_repo_url }}"
+    dest: "{{ vff_remnawave_events_src_dir }}"
+    version: "{{ vff_remnawave_events_repo_version }}"
+    force: true
+  notify: Restart vff remnawave events
+  when: vff_remnawave_events_enabled | bool
+
+- name: Render service configuration
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ vff_remnawave_events_dir }}/.env"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart vff remnawave events
+  when: vff_remnawave_events_enabled | bool
+
+- name: Render compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ vff_remnawave_events_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart vff remnawave events
+  when: vff_remnawave_events_enabled | bool
+
+- name: Ensure vff-remnawave-events is up
+  community.docker.docker_compose_v2:
+    project_src: "{{ vff_remnawave_events_dir }}"
+    state: present
+    build: always
+    remove_orphans: true
+  when: vff_remnawave_events_enabled | bool
+
+- name: Disable vff-remnawave-events compose stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ vff_remnawave_events_dir }}"
+    state: absent
+    remove_orphans: true
+  when: not (vff_remnawave_events_enabled | bool)
