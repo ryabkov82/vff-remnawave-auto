@@ -15,6 +15,9 @@
     - role: remnawave_panel  # поднимает postgres/redis/backend, ждёт /health
       tags: [panel]
 
+    - role: vff_remnawave_events # webhook consumer for torrent blocker notifications
+      tags: [events]
+
     - role: nginx
       tags: [nginx]
 
