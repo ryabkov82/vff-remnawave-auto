@@ -1,12 +1,12 @@
 ---
-- name: Wait for vff-remnawave-events healthcheck
-  ansible.builtin.uri:
-    url: "http://127.0.0.1:8080/healthz"
-    method: GET
-    status_code: 200
-    timeout: 5
+- name: Wait for vff-remnawave-events healthcheck inside container
+  ansible.builtin.command:
+    cmd: "docker exec {{ vff_remnawave_events_container_name }} wget -qO- http://127.0.0.1:8080/healthz"
   register: _vff_remnawave_events_health
+  changed_when: false
   retries: 20
   delay: 3
-  until: _vff_remnawave_events_health.status == 200
+  until:
+    - _vff_remnawave_events_health.rc == 0
+    - _vff_remnawave_events_health.stdout is search('ok')
   when: vff_remnawave_events_enabled | bool
