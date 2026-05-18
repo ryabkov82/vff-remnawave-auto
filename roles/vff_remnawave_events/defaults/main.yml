@@ -24,6 +24,7 @@ vff_remnawave_events_shm_admin_base_url: ""
 vff_remnawave_events_shm_admin_login: ""
 vff_remnawave_events_shm_admin_password: ""
 vff_remnawave_events_shm_request_timeout_seconds: 10
+vff_remnawave_events_shm_service_category_cache_ttl_hours: 24
 vff_remnawave_events_telegram_bot_tokens_by_category: {}
 
 # Secrets. Set in vault/group_vars.
