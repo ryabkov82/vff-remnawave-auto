@@ -19,6 +19,13 @@ vff_remnawave_events_telegram_parse_mode: HTML
 vff_remnawave_events_messenger_dry_run: false
 vff_remnawave_events_resolver_description_login_enabled: true
 
+# Optional SHM lookup for category-based Telegram sender routing.
+vff_remnawave_events_shm_admin_base_url: ""
+vff_remnawave_events_shm_admin_login: ""
+vff_remnawave_events_shm_admin_password: ""
+vff_remnawave_events_shm_request_timeout_seconds: 10
+vff_remnawave_events_telegram_bot_tokens_by_category: {}
+
 # Secrets. Set in vault/group_vars.
 vff_remnawave_events_webhook_secret_header: ""
 vff_remnawave_events_telegram_bot_token: ""
