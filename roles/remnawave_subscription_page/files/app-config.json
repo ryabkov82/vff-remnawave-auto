@@ -186,9 +186,69 @@
     ],
     "ios": [
       {
+        "id": "onexray",
+        "name": "OneXray",
+        "isFeatured": true,
+        "installationStep": {
+          "buttons": [
+            {
+              "buttonLink": "https://apps.apple.com/ru/app/onexray/id6745748773",
+              "buttonText": {
+                "en": "Open in App Store",
+                "ru": "Открыть в App Store"
+              }
+            }
+          ],
+          "description": {
+            "en": "1. Install OneXray from the App Store.\n2. Click \"Get link\" in the upper-right corner of this page and copy the subscription URL.\n3. Open OneXray and go to Subscriptions.\n4. Tap \"+\", paste the subscription URL and add it.",
+            "ru": "1. Установите OneXray из App Store.\n2. Нажмите «Получить ссылку» в правом верхнем углу этой страницы и скопируйте ссылку подписки.\n3. Откройте OneXray и перейдите в раздел Subscriptions.\n4. Нажмите «+», вставьте ссылку подписки и добавьте её."
+          }
+        },
+        "connectAndUseStep": {
+          "description": {
+            "en": "5. Select a server and connect.",
+            "ru": "5. Выберите сервер и подключитесь."
+          }
+        }
+      },
+      {
+        "id": "shadowrocket",
+        "name": "Shadowrocket",
+        "isFeatured": true,
+        "urlScheme": "sub://",
+        "isNeedBase64Encoding": true,
+        "installationStep": {
+          "buttons": [
+            {
+              "buttonLink": "https://apps.apple.com/ru/app/shadowrocket/id932747118",
+              "buttonText": {
+                "en": "Open in App Store",
+                "ru": "Открыть в App Store"
+              }
+            }
+          ],
+          "description": {
+            "en": "Shadowrocket is a paid app. Open the page in App Store and purchase the app. Launch it, in the VPN configuration permission window click Allow and enter your passcode.",
+            "ru": "Shadowrocket — платное приложение. Откройте страницу в App Store и приобретите приложение. Запустите его, в окне разрешения VPN-конфигурации нажмите Allow и введите свой пароль."
+          }
+        },
+        "addSubscriptionStep": {
+          "description": {
+            "en": "Click the button below — the app will open and the subscription will be added automatically",
+            "ru": "Нажмите кнопку ниже — приложение откроется, и подписка добавится автоматически."
+          }
+        },
+        "connectAndUseStep": {
+          "description": {
+            "en": "In the main section, click the large power button in the center to connect to VPN. Don't forget to select a server from the server list. If needed, choose another server from the server list.",
+            "ru": "В главном разделе нажмите большую кнопку включения в центре для подключения к VPN. Не забудьте выбрать сервер в списке серверов. При необходимости выберите другой сервер из списка серверов."
+          }
+        }
+      },
+      {
         "id": "happ",
         "name": "Happ",
-        "isFeatured": true,
+        "isFeatured": false,
         "urlScheme": "happ://add/",
         "installationStep": {
           "buttons": [
@@ -208,8 +268,8 @@
             }
           ],
           "description": {
-            "en": "Open the page in App Store and install the app. Launch it, in the VPN configuration permission window click Allow and enter your passcode.",
-            "ru": "Откройте страницу в App Store и установите приложение. Запустите его, в окне разрешения VPN-конфигурации нажмите Allow и введите свой пароль."
+            "en": "Happ is not available for new installation in the Russian App Store. Use this option only if the app is already installed. Do not uninstall the app. App Store links below are for users in other regions.",
+            "ru": "Happ недоступен для новой установки в российском App Store. Используйте этот вариант только в том случае, если приложение уже установлено. Не удаляйте приложение. Ссылки App Store ниже — для пользователей других регионов."
           }
         },
         "addSubscriptionStep": {
@@ -247,7 +307,7 @@
       {
         "id": "new-app-ios-1762983991048",
         "name": "v2RayTun",
-        "isFeatured": true,
+        "isFeatured": false,
         "urlScheme": "v2raytun://import/",
         "installationStep": {
           "buttons": [
@@ -260,8 +320,8 @@
             }
           ],
           "description": {
-            "en": "Open the page in App Store and install the app. Launch it, in the VPN configuration permission window click Allow and enter your passcode.",
-            "ru": "Откройте страницу в App Store и установите приложение. Запустите его, в окне разрешения VPN-конфигурации нажмите Allow и введите свой пароль."
+            "en": "v2RayTun is not available for new installation in the Russian App Store. Use this option only if the app is already installed. Do not uninstall the app.",
+            "ru": "v2RayTun недоступен для новой установки в российском App Store. Используйте этот вариант только в том случае, если приложение уже установлено. Не удаляйте приложение."
           }
         },
         "addSubscriptionStep": {
@@ -286,40 +346,6 @@
           "buttons": [
             {
               "buttonLink": "https://apps.apple.com/ru/app/streisand/id6450534064",
-              "buttonText": {
-                "en": "Open in App Store",
-                "ru": "Открыть в App Store"
-              }
-            }
-          ],
-          "description": {
-            "en": "Open the page in App Store and install the app. Launch it, in the VPN configuration permission window click Allow and enter your passcode.",
-            "ru": "Откройте страницу в App Store и установите приложение. Запустите его, в окне разрешения VPN-конфигурации нажмите Allow и введите свой пароль."
-          }
-        },
-        "addSubscriptionStep": {
-          "description": {
-            "en": "Click the button below — the app will open and the subscription will be added automatically",
-            "ru": "Нажмите кнопку ниже — приложение откроется, и подписка добавится автоматически."
-          }
-        },
-        "connectAndUseStep": {
-          "description": {
-            "en": "In the main section, click the large power button in the center to connect to VPN. Don't forget to select a server from the server list. If needed, choose another server from the server list.",
-            "ru": "В главном разделе нажмите большую кнопку включения в центре для подключения к VPN. Не забудьте выбрать сервер в списке серверов. При необходимости выберите другой сервер из списка серверов."
-          }
-        }
-      },
-      {
-        "id": "shadowrocket",
-        "name": "Shadowrocket",
-        "isFeatured": false,
-        "urlScheme": "sub://",
-        "isNeedBase64Encoding": true,
-        "installationStep": {
-          "buttons": [
-            {
-              "buttonLink": "https://apps.apple.com/ru/app/shadowrocket/id932747118",
               "buttonText": {
                 "en": "Open in App Store",
                 "ru": "Открыть в App Store"
