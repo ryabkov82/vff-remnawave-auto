@@ -36,6 +36,8 @@ remnawave_nginx_sites_enabled_dir: /etc/nginx/sites-enabled
 remnawave_nginx_subscription_site: subscription.conf
 remnawave_nginx_ssl_fullchain: "/etc/letsencrypt/live/{{ remnawave_sub_public_domain }}/fullchain.pem"
 remnawave_nginx_ssl_privkey: "/etc/letsencrypt/live/{{ remnawave_sub_public_domain }}/privkey.pem"
+remnawave_subscription_prod_ssl_fullchain: "/etc/letsencrypt/live/{{ remnawave_sub_public_domain }}/fullchain.pem"
+remnawave_subscription_prod_ssl_privkey: "/etc/letsencrypt/live/{{ remnawave_sub_public_domain }}/privkey.pem"
 
 remnawave_nginx_bind_address: ""
 remnawave_nginx_external_https_port: ""
@@ -65,3 +67,24 @@ remnawave_nginx_legacy_ssl_privkey: "/etc/letsencrypt/live/{{ remnawave_sub_marz
 # Внутренний словарь с legacy-переменными и «эффективный» env
 remnawave_sub_marzban_legacy_env: {}
 remnawave_sub_env_effective: "{{ remnawave_sub_env }}"
+
+# Production subscription upstream selector (preserve current vhost target by default)
+remnawave_subscription_upstream_target: preserve
+
+remnawave_subscription_legacy_upstream_host: "127.0.0.1"
+remnawave_subscription_legacy_upstream_port: "{{ remnawave_sub_app_port }}"
+remnawave_subscription_legacy_upstream_scheme: "http"
+
+remnawave_subscription_next_upstream_host: "127.0.0.1"
+remnawave_subscription_next_upstream_port: 3011
+remnawave_subscription_next_upstream_scheme: "http"
+
+remnawave_subscription_nginx_backup_dir: /etc/nginx/vff-backups
+remnawave_subscription_nginx_legacy_backup_file: >-
+  {{ remnawave_subscription_nginx_backup_dir }}/subscription-prod-legacy.conf
+remnawave_subscription_prod_healthcheck_short_uuid: ""
+remnawave_subscription_next_public_domain: "{{ remnawave_sub_next_domain | default('sub-next.example.com') }}"
+remnawave_subscription_prod_public_healthcheck_user_agent: Mozilla/5.0 Ansible-Production-Public
+remnawave_subscription_prod_rollback_healthcheck_user_agent: Mozilla/5.0 Ansible-Production-Rollback
+remnawave_subscription_prod_healthcheck_user_agent: "{{ remnawave_subscription_prod_public_healthcheck_user_agent }}"
+remnawave_subscription_cutover_preflight_user_agent: Mozilla/5.0 Ansible-Cutover-Preflight

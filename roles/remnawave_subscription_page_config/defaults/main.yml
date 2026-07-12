@@ -1,0 +1,24 @@
+---
+remnawave_subpage_config_panel_url: >-
+  {{ remnawave_panel_url | default('https://' ~ remnawave_panel_frontend_domain) }}
+remnawave_subpage_config_uuid: ""
+
+# Empty default: tasks resolve to {{ role_path }}/files/vpn-for-friends.json.
+# Override with an absolute path when needed.
+remnawave_subpage_config_source_file: ""
+
+remnawave_subpage_config_api_token: ""
+
+remnawave_subpage_config_backup_dir: /opt/remnasub-next/config-backups
+
+remnawave_subpage_config_restart_next: true
+remnawave_subpage_config_force_restart_next: false
+
+remnawave_subpage_config_compose_dir: /opt/remnasub-next
+remnawave_subpage_config_compose_service: remnawave-subscription-page-next
+
+remnawave_subpage_config_healthcheck_short_uuid: ""
+remnawave_subpage_config_healthcheck_host: sub.vpn-for-friends.com
+
+remnawave_subpage_config_uuid_regex: >-
+  ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$

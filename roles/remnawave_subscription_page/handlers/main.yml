@@ -1,8 +1,16 @@
 ---
+- name: Validate Nginx configuration before reload
+  ansible.builtin.command:
+    cmd: nginx -t
+  changed_when: false
+  listen: Reload Nginx (systemd)
+
 - name: Reload Nginx (systemd)
-  ansible.builtin.service:
+  ansible.builtin.systemd:
     name: nginx
     state: reloaded
+  when: not ansible_check_mode
+  listen: Reload Nginx (systemd)
 
 - name: Restart Panel Stack
   community.docker.docker_compose_v2:

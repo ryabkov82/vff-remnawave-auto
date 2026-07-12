@@ -1,0 +1,23 @@
+---
+- name: Assert rendered production subscription vhost contains expected production domain and TLS paths
+  ansible.builtin.assert:
+    that:
+      - remnawave_sub_public_domain in (_sub_prod_vhost_render_candidate.content | b64decode)
+      - remnawave_subscription_prod_ssl_fullchain in (_sub_prod_vhost_render_candidate.content | b64decode)
+      - remnawave_subscription_prod_ssl_privkey in (_sub_prod_vhost_render_candidate.content | b64decode)
+      - >-
+        ('server ' ~ remnawave_subscription_effective_upstream_host ~ ':'
+        ~ remnawave_subscription_effective_upstream_port ~ ';')
+        in (_sub_prod_vhost_render_candidate.content | b64decode)
+      - >-
+        ('add_header X-VFF-Subscription-Target "'
+        ~ remnawave_subscription_effective_upstream_target
+        ~ '" always;') in (_sub_prod_vhost_render_candidate.content | b64decode)
+      - >-
+        ('listen ' ~ (remnawave_nginx_bind_address | default('127.0.0.1'))
+        ~ ':' ~ remnawave_nginx_external_https_port ~ ' ssl')
+        in (_sub_prod_vhost_render_candidate.content | b64decode)
+      - _sub_prod_vhost_render_candidate.content | b64decode is not search('sub-next')
+    fail_msg: >-
+      Rendered production subscription vhost candidate failed static validation for
+      domain, TLS certificate paths, upstream target, or subscription target header.

@@ -1,0 +1,424 @@
+---
+- name: Assert production subscription domain is set
+  ansible.builtin.assert:
+    that:
+      - remnawave_sub_public_domain | default('') | trim | length > 0
+    fail_msg: remnawave_sub_public_domain must be set for cutover.
+
+- name: Assert production cutover upstream endpoints are configured
+  ansible.builtin.assert:
+    that:
+      - remnawave_subscription_next_upstream_host | default('') | trim | length > 0
+      - remnawave_subscription_next_upstream_port | int > 0
+      - remnawave_subscription_next_upstream_scheme | default('') | trim | length > 0
+      - remnawave_subscription_legacy_upstream_host | default('') | trim | length > 0
+      - remnawave_subscription_legacy_upstream_port | int > 0
+      - remnawave_subscription_prod_healthcheck_short_uuid | default('') | trim | length > 0
+      - remnawave_subscription_next_public_domain | default('') | trim | length > 0
+    fail_msg: Production cutover upstream endpoints and healthcheck short UUID must be configured.
+
+- name: Resolve production subscription upstream for cutover
+  ansible.builtin.import_tasks: set_upstream_effective.yml
+
+- name: Preflight new subscription page upstream on localhost
+  ansible.builtin.uri:
+    url: >-
+      http://{{ remnawave_subscription_next_upstream_host }}:{{
+      remnawave_subscription_next_upstream_port }}/{{ remnawave_subscription_prod_healthcheck_short_uuid }}
+    method: GET
+    headers:
+      Host: "{{ remnawave_sub_public_domain }}"
+      X-Forwarded-For: 127.0.0.1
+      X-Forwarded-Proto: https
+      Accept: text/html
+      User-Agent: "{{ remnawave_subscription_cutover_preflight_user_agent }}"
+    status_code: 200
+    return_content: false
+    timeout: 15
+  register: _sub_cutover_preflight
+  until: >-
+    (_sub_cutover_preflight.status | default(0) | int) == 200 and
+    'text/html' in (_sub_cutover_preflight.content_type | default('') | lower)
+  retries: 5
+  delay: 3
+  check_mode: false
+
+- name: Analyze current production subscription vhost upstream
+  ansible.builtin.import_tasks: analyze_vhost_upstream.yml
+
+- name: Detect whether production subscription cutover is already applied
+  ansible.builtin.set_fact:
+    remnawave_subscription_cutover_already_applied: >-
+      {{ remnawave_subscription_current_is_next | bool }}
+  check_mode: false
+
+- name: Check whether stable legacy production backup already exists
+  ansible.builtin.stat:
+    path: "{{ remnawave_subscription_nginx_legacy_backup_file }}"
+  register: _sub_cutover_legacy_backup
+  check_mode: false
+
+- name: Remember whether current production subscription vhost file exists
+  ansible.builtin.set_fact:
+    remnawave_subscription_production_vhost_exists: >-
+      {{ _sub_vhost_analysis_raw.content is defined }}
+  check_mode: false
+
+- name: Build declarative production subscription cutover plan facts
+  ansible.builtin.set_fact:
+    remnawave_subscription_cutover_plan: >-
+      {{
+        _sub_vhost_upstream_state
+        | remnawave_subscription_cutover_plan(
+            remnawave_subscription_cutover_already_applied | bool,
+            _sub_cutover_legacy_backup.stat.exists | default(false),
+            remnawave_subscription_production_vhost_exists | bool
+          )
+      }}
+  check_mode: false
+
+- name: Publish declarative production subscription cutover plan facts
+  ansible.builtin.set_fact:
+    remnawave_subscription_cutover_needed: >-
+      {{ remnawave_subscription_cutover_plan.cutover_needed | bool }}
+    remnawave_subscription_timestamp_backup_would_be_created: >-
+      {{ remnawave_subscription_cutover_plan.timestamp_backup_would_be_created | bool }}
+    remnawave_subscription_stable_backup_would_be_created: >-
+      {{ remnawave_subscription_cutover_plan.stable_legacy_backup_would_be_created | bool }}
+    remnawave_subscription_vhost_would_change: >-
+      {{ remnawave_subscription_cutover_plan.production_vhost_would_change | bool }}
+    remnawave_subscription_nginx_reload_would_be_required: >-
+      {{ remnawave_subscription_cutover_plan.nginx_reload_would_be_required | bool }}
+    remnawave_subscription_production_healthcheck_would_run: >-
+      {{ remnawave_subscription_cutover_plan.production_healthcheck_would_run | bool }}
+  check_mode: false
+
+- name: Report production subscription cutover plan
+  ansible.builtin.debug:
+    msg:
+      current_target: "{{ remnawave_subscription_cutover_plan.current_target }}"
+      planned_target: "{{ remnawave_subscription_cutover_plan.planned_target }}"
+      planned_upstream: >-
+        {{ remnawave_subscription_effective_upstream_scheme }}://{{
+        remnawave_subscription_effective_upstream_host }}:{{
+        remnawave_subscription_effective_upstream_port }}
+      cutover_already_applied: >-
+        {{ remnawave_subscription_cutover_plan.cutover_already_applied | bool }}
+      cutover_needed: >-
+        {{ remnawave_subscription_cutover_plan.cutover_needed | bool }}
+      stable_legacy_backup_exists: >-
+        {{ remnawave_subscription_cutover_plan.stable_legacy_backup_exists | bool }}
+      stable_legacy_backup_would_be_created: >-
+        {{ remnawave_subscription_cutover_plan.stable_legacy_backup_would_be_created | bool }}
+      timestamp_backup_would_be_created: >-
+        {{ remnawave_subscription_cutover_plan.timestamp_backup_would_be_created | bool }}
+      production_vhost_would_change: >-
+        {{ remnawave_subscription_cutover_plan.production_vhost_would_change | bool }}
+      nginx_reload_would_be_required: >-
+        {{ remnawave_subscription_cutover_plan.nginx_reload_would_be_required | bool }}
+      production_healthcheck_would_run: >-
+        {{ remnawave_subscription_cutover_plan.production_healthcheck_would_run | bool }}
+
+- name: Assert production subscription vhost upstream state is known before first cutover
+  ansible.builtin.assert:
+    that:
+      - remnawave_subscription_current_upstream_known | bool
+      - remnawave_subscription_current_is_legacy | bool != remnawave_subscription_current_is_next | bool
+    fail_msg: >-
+      Production vhost {{ remnawave_nginx_sites_dir }}/{{ remnawave_nginx_subscription_site }}
+      has unknown upstream state. Expected exactly one of legacy ({{
+      remnawave_subscription_legacy_upstream_marker }}) or next ({{
+      remnawave_subscription_next_upstream_marker }}).
+  when: not (remnawave_subscription_cutover_already_applied | bool)
+
+- name: Refuse unsafe stable legacy backup creation
+  ansible.builtin.assert:
+    that:
+      - remnawave_subscription_current_is_legacy | bool
+    fail_msg: >-
+      Stable legacy backup is missing and the current production vhost is not
+      confirmed to use the legacy upstream. Refusing to create an unsafe rollback
+      backup.
+  when:
+    - not (_sub_cutover_legacy_backup.stat.exists | default(false))
+    - remnawave_subscription_cutover_needed | bool
+
+- name: Validate public next subscription page is reachable from controller before cutover
+  when: remnawave_subscription_cutover_needed | bool
+  block:
+    - name: Preflight new subscription page public HTTPS from controller
+      ansible.builtin.uri:
+        url: >-
+          https://{{ remnawave_subscription_next_public_domain }}/{{ remnawave_subscription_prod_healthcheck_short_uuid }}
+        method: GET
+        headers:
+          Accept: text/html
+          User-Agent: "{{ remnawave_subscription_prod_public_healthcheck_user_agent }}"
+        status_code: 200
+        return_content: true
+        validate_certs: true
+        use_proxy: false
+        force: true
+        timeout: 15
+      delegate_to: localhost
+      become: false
+      register: _sub_cutover_public_next_preflight
+      retries: 5
+      delay: 3
+      until: >-
+        (_sub_cutover_public_next_preflight.status | default(0) | int) == 200 and
+        'text/html' in (_sub_cutover_public_next_preflight.content_type | default('') | lower) and
+        'VPN for friends' in (_sub_cutover_public_next_preflight.content | default(''))
+      changed_when: false
+      no_log: true
+      check_mode: false
+
+  rescue:
+    - name: Build sanitized public next preflight diagnostics
+      ansible.builtin.set_fact:
+        remnawave_subscription_cutover_health_diagnostics: >-
+          {{
+            _sub_cutover_public_next_preflight
+            | remnawave_subscription_uri_health_diagnostics('public_next_external')
+          }}
+
+    - name: Report sanitized public next preflight diagnostics
+      ansible.builtin.debug:
+        msg: "{{ remnawave_subscription_cutover_health_diagnostics }}"
+
+    - name: Abort production cutover before mutation due to public preflight failure
+      ansible.builtin.fail:
+        msg: >-
+          Public next-domain HTTPS preflight from Ansible controller failed.
+          Production vhost was not modified.
+
+- name: Validate public production subscription TLS from controller before cutover mutation
+  when: remnawave_subscription_cutover_needed | bool
+  block:
+    - name: Preflight production subscription public HTTPS TLS from controller
+      ansible.builtin.uri:
+        url: >-
+          https://{{ remnawave_sub_public_domain }}/{{ remnawave_subscription_prod_healthcheck_short_uuid }}
+        method: GET
+        headers:
+          Accept: text/html
+          User-Agent: "{{ remnawave_subscription_prod_public_healthcheck_user_agent }}"
+        status_code: 200
+        return_content: true
+        validate_certs: true
+        use_proxy: false
+        force: true
+        timeout: 15
+      delegate_to: localhost
+      become: false
+      register: _sub_cutover_public_prod_preflight
+      retries: 5
+      delay: 3
+      until: >-
+        (_sub_cutover_public_prod_preflight.status | default(0) | int) == 200 and
+        'text/html' in (_sub_cutover_public_prod_preflight.content_type | default('') | lower)
+      changed_when: false
+      no_log: true
+      check_mode: false
+
+  rescue:
+    - name: Build sanitized public production TLS preflight diagnostics
+      ansible.builtin.set_fact:
+        remnawave_subscription_cutover_health_diagnostics: >-
+          {{
+            _sub_cutover_public_prod_preflight
+            | remnawave_subscription_uri_health_diagnostics('public_external')
+          }}
+
+    - name: Report sanitized public production TLS preflight diagnostics
+      ansible.builtin.debug:
+        msg: "{{ remnawave_subscription_cutover_health_diagnostics }}"
+
+    - name: Abort production cutover before mutation due to production TLS preflight failure
+      ansible.builtin.fail:
+        msg: >-
+          Public production-domain HTTPS TLS preflight from Ansible controller failed.
+          Production vhost was not modified. Verify public :443 SNI routing and certificate
+          before cutover.
+
+- name: Validate production subscription TLS before cutover mutation
+  ansible.builtin.import_tasks: validate_production_subscription_tls.yml
+  when: remnawave_subscription_cutover_needed | bool
+
+- name: Perform production subscription page cutover
+  when:
+    - remnawave_subscription_cutover_needed | bool
+    - not ansible_check_mode
+  block:
+    - name: Ensure production Nginx backup directory exists
+      ansible.builtin.file:
+        path: "{{ remnawave_subscription_nginx_backup_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Create timestamp backup of current production subscription vhost
+      ansible.builtin.copy:
+        dest: >-
+          {{ remnawave_subscription_nginx_backup_dir }}/subscription-prod-before-v7-{{
+          ansible_date_time.date | replace('-', '') }}-{{ ansible_date_time.hour }}{{
+          ansible_date_time.minute }}{{ ansible_date_time.second }}.conf
+        content: "{{ _sub_vhost_analysis_raw.content | b64decode }}"
+        owner: root
+        group: root
+        mode: "0600"
+      register: _sub_cutover_timestamp_backup
+      when: _sub_vhost_analysis_raw.content is defined
+
+    - name: Create stable legacy production backup if missing
+      ansible.builtin.copy:
+        dest: "{{ remnawave_subscription_nginx_legacy_backup_file }}"
+        content: "{{ _sub_vhost_analysis_raw.content | b64decode }}"
+        owner: root
+        group: root
+        mode: "0600"
+      when:
+        - _sub_vhost_analysis_raw.content is defined
+        - not (_sub_cutover_legacy_backup.stat.exists | default(false))
+        - remnawave_subscription_current_is_legacy | bool
+
+    - name: Render production subscription vhost with next upstream
+      ansible.builtin.include_tasks: render_production_subscription_vhost.yml
+
+    - name: Apply production subscription cutover Nginx configuration
+      ansible.builtin.meta: flush_handlers
+
+    - name: Read production subscription vhost after cutover render
+      ansible.builtin.slurp:
+        path: "{{ remnawave_nginx_sites_dir }}/{{ remnawave_nginx_subscription_site }}"
+      register: _sub_cutover_post_vhost
+      check_mode: false
+
+    - name: Assert production subscription vhost contains next upstream marker after cutover
+      ansible.builtin.assert:
+        that:
+          - >-
+            remnawave_subscription_next_upstream_marker in
+            (_sub_cutover_post_vhost.content | b64decode)
+          - >-
+            remnawave_subscription_legacy_upstream_marker not in
+            (_sub_cutover_post_vhost.content | b64decode)
+        fail_msg: >-
+          Production vhost {{ remnawave_nginx_sites_dir }}/{{ remnawave_nginx_subscription_site }}
+          does not contain expected next upstream marker after cutover.
+
+    - name: Verify production HTTPS subscription page after cutover
+      ansible.builtin.uri:
+        url: >-
+          https://{{ remnawave_sub_public_domain }}/{{ remnawave_subscription_prod_healthcheck_short_uuid }}
+        method: GET
+        headers:
+          Accept: text/html
+          User-Agent: "{{ remnawave_subscription_prod_public_healthcheck_user_agent }}"
+        status_code: 200
+        return_content: true
+        validate_certs: true
+        use_proxy: false
+        force: true
+        timeout: 15
+      delegate_to: localhost
+      become: false
+      register: _sub_cutover_prod_health
+      retries: 10
+      delay: 3
+      until: >-
+        (_sub_cutover_prod_health.status | default(0) | int) == 200 and
+        'text/html' in (_sub_cutover_prod_health.content_type | default('') | lower) and
+        'VPN for friends' in (_sub_cutover_prod_health.content | default('')) and
+        (_sub_cutover_prod_health.x_vff_subscription_target | default('') | lower) == 'next'
+      changed_when: false
+      no_log: true
+
+  rescue:
+    - name: Build sanitized production cutover health check diagnostics
+      ansible.builtin.set_fact:
+        remnawave_subscription_cutover_health_diagnostics: >-
+          {{
+            _sub_cutover_prod_health
+            | remnawave_subscription_uri_health_diagnostics('public_external', 'next')
+          }}
+
+    - name: Report sanitized production cutover health check diagnostics
+      ansible.builtin.debug:
+        msg: "{{ remnawave_subscription_cutover_health_diagnostics }}"
+
+    - name: Restore production subscription vhost from timestamp backup
+      ansible.builtin.copy:
+        src: "{{ _sub_cutover_timestamp_backup.dest }}"
+        dest: "{{ remnawave_nginx_sites_dir }}/{{ remnawave_nginx_subscription_site }}"
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: true
+      when: _sub_cutover_timestamp_backup.dest is defined
+      notify: Reload Nginx (systemd)
+
+    - name: Restore production subscription vhost from stable legacy backup
+      ansible.builtin.copy:
+        src: "{{ remnawave_subscription_nginx_legacy_backup_file }}"
+        dest: "{{ remnawave_nginx_sites_dir }}/{{ remnawave_nginx_subscription_site }}"
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: true
+      when:
+        - _sub_cutover_timestamp_backup.dest is not defined
+        - _sub_cutover_legacy_backup.stat.exists | default(false)
+      notify: Reload Nginx (systemd)
+
+    - name: Apply production subscription cutover rollback Nginx configuration
+      ansible.builtin.meta: flush_handlers
+
+    - name: Fail after automatic production cutover rollback
+      ansible.builtin.fail:
+        msg: >-
+          Production subscription cutover failed and was rolled back automatically.
+          Inspect Nginx error log and upstream health on port {{
+          remnawave_subscription_next_upstream_port }}.
+
+- name: Verify production HTTPS subscription page when cutover already applied
+  ansible.builtin.uri:
+    url: >-
+      https://{{ remnawave_sub_public_domain }}/{{ remnawave_subscription_prod_healthcheck_short_uuid }}
+    method: GET
+    headers:
+      Accept: text/html
+      User-Agent: "{{ remnawave_subscription_prod_public_healthcheck_user_agent }}"
+    status_code: 200
+    return_content: true
+    validate_certs: true
+    use_proxy: false
+    force: true
+    timeout: 15
+  delegate_to: localhost
+  become: false
+  register: _sub_cutover_prod_health_existing
+  retries: 10
+  delay: 3
+  until: >-
+    (_sub_cutover_prod_health_existing.status | default(0) | int) == 200 and
+    'text/html' in (_sub_cutover_prod_health_existing.content_type | default('') | lower) and
+    'VPN for friends' in (_sub_cutover_prod_health_existing.content | default('')) and
+    (_sub_cutover_prod_health_existing.x_vff_subscription_target | default('') | lower) == 'next'
+  changed_when: false
+  when:
+    - not ansible_check_mode
+    - remnawave_subscription_cutover_already_applied | bool
+  no_log: true
+
+- name: Verify production subscription vhost marker when cutover already applied
+  ansible.builtin.assert:
+    that:
+      - remnawave_subscription_current_is_next | bool
+    fail_msg: >-
+      Production vhost {{ remnawave_nginx_sites_dir }}/{{ remnawave_nginx_subscription_site }}
+      is marked as cutover-complete but does not contain the next upstream marker.
+  when:
+    - not ansible_check_mode
+    - remnawave_subscription_cutover_already_applied | bool

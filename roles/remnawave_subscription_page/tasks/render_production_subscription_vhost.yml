@@ -1,0 +1,42 @@
+---
+- name: Validate production subscription TLS before vhost render
+  ansible.builtin.include_tasks: validate_production_subscription_tls.yml
+
+- name: Create temporary file for production subscription vhost render validation
+  ansible.builtin.tempfile:
+    state: file
+    suffix: .conf
+  register: _sub_prod_vhost_render_temp
+  check_mode: false
+
+- name: Render production subscription vhost candidate to temporary file
+  ansible.builtin.template:
+    src: nginx-subscription.conf.j2
+    dest: "{{ _sub_prod_vhost_render_temp.path }}"
+    mode: "0644"
+  check_mode: false
+
+- name: Read rendered production subscription vhost candidate
+  ansible.builtin.slurp:
+    path: "{{ _sub_prod_vhost_render_temp.path }}"
+  register: _sub_prod_vhost_render_candidate
+  check_mode: false
+
+- name: Assert rendered production subscription vhost candidate
+  ansible.builtin.include_tasks: assert_rendered_production_subscription_vhost.yml
+
+- name: Install validated production subscription vhost
+  ansible.builtin.copy:
+    src: "{{ _sub_prod_vhost_render_temp.path }}"
+    dest: "{{ remnawave_nginx_sites_dir }}/{{ remnawave_nginx_subscription_site }}"
+    owner: root
+    group: root
+    mode: "0644"
+    remote_src: true
+  notify: Reload Nginx (systemd)
+
+- name: Remove temporary production subscription vhost render file
+  ansible.builtin.file:
+    path: "{{ _sub_prod_vhost_render_temp.path }}"
+    state: absent
+  check_mode: false

@@ -1,0 +1,90 @@
+---
+- name: Assert production subscription public domain is configured
+  ansible.builtin.assert:
+    that:
+      - remnawave_sub_public_domain | default('') | trim | length > 0
+    fail_msg: remnawave_sub_public_domain must be set for production subscription TLS validation.
+
+- name: Assert production subscription TLS certificate paths match public domain
+  ansible.builtin.assert:
+    that:
+      - remnawave_subscription_prod_ssl_fullchain | default('') | trim | length > 0
+      - remnawave_subscription_prod_ssl_privkey | default('') | trim | length > 0
+      - >-
+        remnawave_subscription_prod_ssl_fullchain ==
+        ('/etc/letsencrypt/live/' ~ remnawave_sub_public_domain ~ '/fullchain.pem')
+      - >-
+        remnawave_subscription_prod_ssl_privkey ==
+        ('/etc/letsencrypt/live/' ~ remnawave_sub_public_domain ~ '/privkey.pem')
+      - remnawave_subscription_prod_ssl_fullchain is not search('sub-next')
+      - remnawave_subscription_prod_ssl_privkey is not search('sub-next')
+    fail_msg: >-
+      Production subscription TLS certificate paths must reference
+      /etc/letsencrypt/live/{{ remnawave_sub_public_domain }}/ and must not
+      use sub-next, panel, or other vhost certificates.
+
+- name: Check production subscription TLS certificate files exist
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: true
+    get_checksum: false
+  loop:
+    - "{{ remnawave_subscription_prod_ssl_fullchain }}"
+    - "{{ remnawave_subscription_prod_ssl_privkey }}"
+  register: _sub_prod_tls_cert_stats
+  check_mode: false
+
+- name: Assert production subscription TLS certificate files are present
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists | default(false)
+      - item.stat.isreg | default(false)
+    fail_msg: >-
+      Production subscription TLS certificate file is missing:
+      {{ item.item }}
+  loop: "{{ _sub_prod_tls_cert_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Validate production subscription TLS certificate matches public domain
+  ansible.builtin.command:
+    cmd: >-
+      openssl x509
+      -in {{ remnawave_subscription_prod_ssl_fullchain }}
+      -noout
+      -checkhost {{ remnawave_sub_public_domain }}
+  register: _sub_prod_tls_checkhost
+  changed_when: false
+  failed_when: _sub_prod_tls_checkhost.rc != 0
+  check_mode: false
+
+- name: Detect conflicting production subscription HTTPS server blocks on same listen port
+  ansible.builtin.shell: |
+    set -euo pipefail
+    domain="{{ remnawave_sub_public_domain }}"
+    port="{{ remnawave_nginx_external_https_port | default(4443) }}"
+    expected="{{ remnawave_subscription_prod_ssl_fullchain }}"
+    target="{{ remnawave_nginx_sites_dir }}/{{ remnawave_nginx_subscription_site }}"
+    conflicts=""
+    for f in {{ remnawave_nginx_sites_enabled_dir }}/*; do
+      [ -f "$f" ] || continue
+      if [ "$f" = "$target" ] || [ "$(readlink -f "$f" 2>/dev/null || true)" = "$target" ]; then
+        continue
+      fi
+      if grep -q "server_name ${domain}" "$f" && grep -Eq "listen .*:${port}( |;)" "$f"; then
+        cert=$(grep -m1 'ssl_certificate[[:space:]]' "$f" | sed -n 's/.*"\([^"]*\)".*/\1/p')
+        if [ -n "$cert" ] && [ "$cert" != "$expected" ]; then
+          conflicts="${conflicts}${f};"
+        fi
+      fi
+    done
+    if [ -n "$conflicts" ]; then
+      echo "Conflicting enabled vhost(s) for ${domain} on port ${port}: ${conflicts}"
+      exit 1
+    fi
+  args:
+    executable: /bin/bash
+  register: _sub_prod_tls_conflicting_vhosts
+  changed_when: false
+  failed_when: _sub_prod_tls_conflicting_vhosts.rc != 0
+  check_mode: false
