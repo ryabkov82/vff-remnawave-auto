@@ -1,0 +1,215 @@
+---
+- name: Assert subscription-next nginx domain is set
+  ansible.builtin.assert:
+    that:
+      - remnawave_sub_next_domain | default('') | trim | length > 0
+    fail_msg: remnawave_sub_next_domain must be set when nginx is enabled.
+
+- name: Ensure Nginx and certbot packages are installed
+  ansible.builtin.apt:
+    name:
+      - nginx
+      - certbot
+    state: present
+    update_cache: true
+
+- name: Ensure ACME webroot directory exists
+  ansible.builtin.file:
+    path: "{{ remnawave_sub_next_nginx_webroot }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0755"
+
+- name: Ensure ACME challenge subdirectory exists
+  ansible.builtin.file:
+    path: "{{ remnawave_sub_next_nginx_webroot }}/.well-known/acme-challenge"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0755"
+
+- name: Ensure Nginx sites directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ remnawave_sub_next_nginx_sites_dir }}"
+    - "{{ remnawave_sub_next_nginx_sites_enabled_dir }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Check subscription-next certificate fullchain before issuance
+  ansible.builtin.stat:
+    path: "{{ remnawave_sub_next_ssl_fullchain }}"
+    follow: true
+    get_checksum: false
+  register: remnawave_sub_next_certificate_before_fullchain
+
+- name: Check subscription-next certificate privkey before issuance
+  ansible.builtin.stat:
+    path: "{{ remnawave_sub_next_ssl_privkey }}"
+    follow: true
+    get_checksum: false
+  register: remnawave_sub_next_certificate_before_privkey
+
+- name: Set subscription-next TLS readiness fact
+  ansible.builtin.set_fact:
+    remnawave_sub_next_ssl_ready: >-
+      {{
+        remnawave_sub_next_certificate_before_fullchain.stat.exists | default(false)
+        and remnawave_sub_next_certificate_before_fullchain.stat.isreg | default(false)
+        and remnawave_sub_next_certificate_before_privkey.stat.exists | default(false)
+        and remnawave_sub_next_certificate_before_privkey.stat.isreg | default(false)
+      }}
+
+- name: Remember whether subscription-next certificate was missing
+  ansible.builtin.set_fact:
+    remnawave_sub_next_certificate_was_missing: >-
+      {{ not (remnawave_sub_next_ssl_ready | bool) }}
+
+- name: Render subscription-next Nginx vhost
+  ansible.builtin.template:
+    src: nginx-sub-next.conf.j2
+    dest: "{{ remnawave_sub_next_nginx_sites_dir }}/{{ remnawave_sub_next_nginx_site }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload subscription-next Nginx
+
+- name: Enable subscription-next Nginx vhost
+  ansible.builtin.file:
+    src: "{{ remnawave_sub_next_nginx_sites_dir }}/{{ remnawave_sub_next_nginx_site }}"
+    dest: "{{ remnawave_sub_next_nginx_sites_enabled_dir }}/{{ remnawave_sub_next_nginx_site }}"
+    state: link
+    owner: root
+    group: root
+  notify: Reload subscription-next Nginx
+  when: not ansible_check_mode
+
+- name: Apply subscription-next HTTP bootstrap before certificate issuance
+  ansible.builtin.meta: flush_handlers
+  when:
+    - not ansible_check_mode
+    - remnawave_sub_next_certificate_was_missing | bool
+
+- name: Obtain subscription-next certificate via certbot webroot
+  ansible.builtin.command:
+    cmd: >-
+      certbot certonly --agree-tos --non-interactive --expand
+      --email {{ remnawave_sub_next_letsencrypt_email }}
+      --webroot -w {{ remnawave_sub_next_nginx_webroot }}
+      -d {{ remnawave_sub_next_domain }}
+  register: _sub_next_certbot
+  changed_when: _sub_next_certbot.rc == 0
+  when:
+    - not ansible_check_mode
+    - remnawave_sub_next_certificate_was_missing | bool
+
+- name: Check subscription-next certificate fullchain after issuance
+  ansible.builtin.stat:
+    path: "{{ remnawave_sub_next_ssl_fullchain }}"
+    follow: true
+    get_checksum: false
+  register: remnawave_sub_next_certificate_after_fullchain
+  when:
+    - not ansible_check_mode
+    - remnawave_sub_next_certificate_was_missing | bool
+
+- name: Check subscription-next certificate privkey after issuance
+  ansible.builtin.stat:
+    path: "{{ remnawave_sub_next_ssl_privkey }}"
+    follow: true
+    get_checksum: false
+  register: remnawave_sub_next_certificate_after_privkey
+  when:
+    - not ansible_check_mode
+    - remnawave_sub_next_certificate_was_missing | bool
+
+- name: Refresh subscription-next SSL readiness after certificate issuance
+  ansible.builtin.set_fact:
+    remnawave_sub_next_ssl_ready: >-
+      {{
+        remnawave_sub_next_certificate_after_fullchain.stat.exists | default(false)
+        and remnawave_sub_next_certificate_after_fullchain.stat.isreg | default(false)
+        and remnawave_sub_next_certificate_after_privkey.stat.exists | default(false)
+        and remnawave_sub_next_certificate_after_privkey.stat.isreg | default(false)
+      }}
+  when:
+    - not ansible_check_mode
+    - remnawave_sub_next_certificate_was_missing | bool
+
+- name: Assert subscription-next certificate was issued
+  ansible.builtin.assert:
+    that:
+      - remnawave_sub_next_ssl_ready | bool
+    fail_msg: >-
+      Let's Encrypt certificate for
+      {{ remnawave_sub_next_domain }}
+      was not found after certbot execution.
+  when:
+    - not ansible_check_mode
+    - remnawave_sub_next_certificate_was_missing | bool
+
+- name: Render subscription-next HTTPS Nginx vhost after certificate issuance
+  ansible.builtin.template:
+    src: nginx-sub-next.conf.j2
+    dest: "{{ remnawave_sub_next_nginx_sites_dir }}/{{ remnawave_sub_next_nginx_site }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload subscription-next Nginx
+  when:
+    - not ansible_check_mode
+    - remnawave_sub_next_certificate_was_missing | bool
+    - remnawave_sub_next_ssl_ready | bool
+
+- name: Apply subscription-next HTTPS Nginx configuration after certificate issuance
+  ansible.builtin.meta: flush_handlers
+  when:
+    - not ansible_check_mode
+    - remnawave_sub_next_ssl_ready | bool
+
+- name: Wait for subscription-next public HTTPS port
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: 443
+    delay: 2
+    timeout: 60
+    state: started
+  when:
+    - not ansible_check_mode
+    - remnawave_sub_next_ssl_ready | bool
+
+- name: Public HTTPS health check via subscription-next reverse proxy
+  ansible.builtin.uri:
+    url: >-
+      https://{{ remnawave_sub_next_domain }}/{{ remnawave_sub_next_healthcheck_short_uuid }}
+    method: GET
+    headers:
+      Accept: text/html
+      User-Agent: Mozilla/5.0 Ansible-Healthcheck
+    status_code: 200
+    return_content: false
+    timeout: 15
+    validate_certs: true
+  register: _sub_next_public_https_health
+  retries: 10
+  delay: 3
+  until: >-
+    _sub_next_public_https_health.status == 200 and
+    'text/html' in (_sub_next_public_https_health.content_type | default(''))
+  when:
+    - not ansible_check_mode
+    - remnawave_sub_next_ssl_ready | bool
+    - remnawave_sub_next_healthcheck_short_uuid | trim | length > 0
+
+- name: Explain subscription-next nginx checks skipped in check mode
+  ansible.builtin.debug:
+    msg: >-
+      Check mode: certbot, nginx reload, TCP/HTTPS health checks were skipped.
+      Run make sub-next-nginx to issue certificate and validate public HTTPS.
+  when: ansible_check_mode

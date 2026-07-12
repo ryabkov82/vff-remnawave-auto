@@ -1,45 +1,46 @@
-upstream remnawave-subscription-page {
-    server {{ remnawave_subscription_effective_upstream_host }}:{{ remnawave_subscription_effective_upstream_port }};
+upstream remnawave-subscription-page-next {
+    server {{ remnawave_sub_next_upstream_host }}:{{ remnawave_sub_next_upstream_port }};
 }
 
-# HTTP -> HTTPS + ACME (public 80)
+# HTTP: ACME challenge + redirect to HTTPS after certificate is available
 server {
     listen 80;
     listen [::]:80;
-    server_name {{ remnawave_sub_public_domain }};
+    server_name {{ remnawave_sub_next_domain }};
 
-    # ACME http-01 через webroot
     location ^~ /.well-known/acme-challenge/ {
-        root {{ nginx_webroot | default('/var/www/letsencrypt') }};
+        root {{ remnawave_sub_next_nginx_webroot }};
         default_type "text/plain";
         try_files $uri =404;
         access_log off;
     }
 
-    # Остальное — редирект на https (public TLS port from remnawave_nginx_external_https_port)
+{% if remnawave_sub_next_ssl_ready | bool %}
     location / {
         return 301 https://$host$request_uri;
     }
+{% else %}
+    location / {
+        return 503 "TLS certificate not ready\n";
+        default_type "text/plain";
+    }
+{% endif %}
 }
 
+{% if remnawave_sub_next_ssl_ready | bool %}
 server {
-    server_name {{ remnawave_sub_public_domain }};
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name {{ remnawave_sub_next_domain }};
 
-    listen {{ remnawave_nginx_bind_address | default('127.0.0.1') }}:{{ remnawave_nginx_external_https_port }} ssl http2;
-    {% if nginx_bind_ipv6 | default(false) %}
-    listen [::1]:{{ remnawave_nginx_external_https_port }} ssl http2;
-    {% endif %}
-
-    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_protocols TLSv1.2 TLSv1.3;
     ssl_session_timeout 1d;
-    ssl_session_cache   shared:SSL:10m;
+    ssl_session_cache shared:SSL:10m;
     ssl_session_tickets off;
-    ssl_certificate     "{{ remnawave_subscription_prod_ssl_fullchain }}";
-    ssl_certificate_key "{{ remnawave_subscription_prod_ssl_privkey }}";
-    ssl_stapling        on;
+    ssl_certificate "{{ remnawave_sub_next_ssl_fullchain }}";
+    ssl_certificate_key "{{ remnawave_sub_next_ssl_privkey }}";
+    ssl_stapling on;
     ssl_stapling_verify on;
-
-    add_header X-VFF-Subscription-Target "{{ remnawave_subscription_effective_upstream_target }}" always;
 
     gzip on;
     gzip_vary on;
@@ -64,7 +65,6 @@ server {
       image/svg+xml
       text/css text/javascript text/plain text/xml;
 
-    # Lightweight health endpoint that does NOT touch upstream
     location = /healthz {
         access_log off;
         add_header Content-Type text/plain;
@@ -74,7 +74,7 @@ server {
     location / {
         proxy_http_version 1.1;
         proxy_redirect off;
-        proxy_pass {{ remnawave_subscription_effective_upstream_scheme }}://remnawave-subscription-page;
+        proxy_pass http://remnawave-subscription-page-next;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -84,3 +84,4 @@ server {
         proxy_read_timeout 60s;
     }
 }
+{% endif %}

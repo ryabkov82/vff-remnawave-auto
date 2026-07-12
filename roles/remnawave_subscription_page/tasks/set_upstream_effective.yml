@@ -1,0 +1,78 @@
+---
+- name: Assert production subscription upstream target selector is valid
+  ansible.builtin.assert:
+    that:
+      - remnawave_subscription_upstream_target in ['preserve', 'legacy', 'next']
+    fail_msg: >-
+      remnawave_subscription_upstream_target must be preserve, legacy, or next, got
+      {{ remnawave_subscription_upstream_target | default('unset') }}.
+
+- name: Remember requested production subscription upstream target
+  ansible.builtin.set_fact:
+    remnawave_subscription_requested_upstream_target: "{{ remnawave_subscription_upstream_target }}"
+
+- name: Build production subscription upstream markers
+  ansible.builtin.set_fact:
+    remnawave_subscription_legacy_upstream_marker: >-
+      {{
+        remnawave_subscription_legacy_upstream_host
+        | remnawave_subscription_upstream_marker(remnawave_subscription_legacy_upstream_port)
+      }}
+    remnawave_subscription_next_upstream_marker: >-
+      {{
+        remnawave_subscription_next_upstream_host
+        | remnawave_subscription_upstream_marker(remnawave_subscription_next_upstream_port)
+      }}
+
+- name: Analyze production vhost for preserve upstream resolution
+  ansible.builtin.import_tasks: analyze_vhost_upstream.yml
+  when: remnawave_subscription_upstream_target == 'preserve'
+
+- name: Remember whether current production subscription vhost file exists
+  ansible.builtin.set_fact:
+    remnawave_subscription_production_vhost_exists: >-
+      {{ _sub_vhost_analysis_raw.content is defined }}
+  when: remnawave_subscription_upstream_target == 'preserve'
+  check_mode: false
+
+- name: Resolve preserved production subscription upstream target
+  ansible.builtin.set_fact:
+    remnawave_subscription_resolved_upstream_target: >-
+      {{
+        _sub_vhost_upstream_state
+        | remnawave_subscription_resolve_preserve_target(
+            remnawave_subscription_production_vhost_exists | bool
+          )
+      }}
+  when: remnawave_subscription_upstream_target == 'preserve'
+
+- name: Resolve explicit production subscription upstream target
+  ansible.builtin.set_fact:
+    remnawave_subscription_resolved_upstream_target: "{{ remnawave_subscription_upstream_target }}"
+  when: remnawave_subscription_upstream_target in ['legacy', 'next']
+
+- name: Resolve effective production subscription upstream from resolved target
+  ansible.builtin.set_fact:
+    remnawave_subscription_effective_upstream: >-
+      {{
+        remnawave_subscription_resolved_upstream_target
+        | remnawave_subscription_effective_upstream(
+            remnawave_subscription_legacy_upstream_host,
+            remnawave_subscription_legacy_upstream_port,
+            remnawave_subscription_legacy_upstream_scheme,
+            remnawave_subscription_next_upstream_host,
+            remnawave_subscription_next_upstream_port,
+            remnawave_subscription_next_upstream_scheme
+          )
+      }}
+
+- name: Publish effective production subscription upstream facts
+  ansible.builtin.set_fact:
+    remnawave_subscription_effective_upstream_target: >-
+      {{ remnawave_subscription_effective_upstream.target }}
+    remnawave_subscription_effective_upstream_host: >-
+      {{ remnawave_subscription_effective_upstream.host }}
+    remnawave_subscription_effective_upstream_port: >-
+      {{ remnawave_subscription_effective_upstream.port }}
+    remnawave_subscription_effective_upstream_scheme: >-
+      {{ remnawave_subscription_effective_upstream.scheme }}

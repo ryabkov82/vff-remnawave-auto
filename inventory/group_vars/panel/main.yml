@@ -8,9 +8,9 @@ remnawave_panel_telegram_nodes_chat_id: "-1003288172821"     # для нод
 remnawave_panel_telegram_crm_chat_id:   "-1003288172821"     # для CRM/платежей
 
 # Вебхук (опционально, если у тебя есть внешний приёмник событий)
-remnawave_panel_webhook_enabled: false
-# remnawave_panel_webhook_url: "https://your-endpoint.example.com/remnawave"
-# remnawave_panel_webhook_secret_header: "{{ vault_remnawave_panel_webhook_secret_header }}"  # 64 символа
+remnawave_panel_webhook_enabled: true
+remnawave_panel_webhook_url: "http://vff-remnawave-events:8080/remnawave"
+remnawave_panel_webhook_secret_header: "{{ vault_remnawave_webhook_secret_header }}"
 
 # метрики
 remnawave_panel_metrics_user: admin
@@ -57,6 +57,9 @@ remnawave_reality_short_id_ds: "{{ vault_reality_short_id_ds }}"
 
 remnawave_nginx_bind_address: "0.0.0.0"
 remnawave_nginx_external_https_port: "4443"
+
+# Separate topology: production subscription Nginx vhost lives on subscription host only.
+remnawave_sub_manage_nginx: false
 
 # Какими инбаундами мы реально управляем через Ansible
 # Если пусто/не задано — по умолчанию все, для обратной совместимости.
@@ -146,3 +149,17 @@ remnawave_sub_marzban_custom_sub_prefix: "sub"
 
 # включаем nginx vhost для marzban-ссылок
 remnawave_sub_marzban_legacy_domain: "marzban-s2.vpn-for-friends.com"
+
+# vff-remnawave-events: Remnawave webhook consumer
+vff_remnawave_events_enabled: true
+vff_remnawave_events_messenger_dry_run: false
+vff_remnawave_events_webhook_secret_header: "{{ vault_remnawave_webhook_secret_header }}"
+vff_remnawave_events_telegram_bot_token: "{{ vault_vff_telegram_bot_token }}"
+
+vff_remnawave_events_shm_admin_base_url: "https://admin.vpn-for-friends.com"
+vff_remnawave_events_shm_admin_login: "{{ vault_shm_admin_login }}"
+vff_remnawave_events_shm_admin_password: "{{ vault_shm_admin_password }}"
+
+vff_remnawave_events_telegram_bot_tokens_by_category:
+  vpn-mz-test: "{{ vault_vff_telegram_bot_token_standard }}"
+  vpn-mz-fc: "{{ vault_vff_telegram_bot_token_fc }}"

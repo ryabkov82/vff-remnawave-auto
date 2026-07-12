@@ -1,0 +1,13 @@
+---
+- name: Validate subscription-next Nginx configuration
+  ansible.builtin.command:
+    cmd: nginx -t
+  changed_when: false
+  listen: Reload subscription-next Nginx
+
+- name: Reload subscription-next Nginx
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
+  when: not ansible_check_mode
+  listen: Reload subscription-next Nginx

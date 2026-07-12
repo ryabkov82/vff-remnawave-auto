@@ -1,5 +1,5 @@
 ---
-# Автодеплой страницы подписки (bundled/separate автодетектом внутри роли)
+# Subscription Page subsystem — единый entry point (см. Make targets и docs).
 - name: Deploy Subscription Page
   hosts: panel:subscription
   become: true
@@ -8,10 +8,108 @@
     - role: remnawave_subscription_deploy
       tags: [subpage]
 
-   # Точечный апдейт только app-config.json + рестарт контейнера:
   tasks:
     - name: Apply subscription app-config (config-only include)
       ansible.builtin.include_role:
         name: remnawave_subscription_page
         tasks_from: config.yml
-      tags: [never, sub_config]
+        apply:
+          tags:
+            - sub_config
+      tags:
+        - never
+        - sub_config
+
+    - name: Configure production subscription Nginx vhost only
+      ansible.builtin.include_role:
+        name: remnawave_subscription_page
+        tasks_from: nginx.yml
+        apply:
+          tags:
+            - nginx
+      when: remnawave_sub_manage_nginx | default(true) | bool
+      tags:
+        - never
+        - nginx
+
+- name: Manage Subscription Page staging and production target
+  hosts: subscription
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Refuse simultaneous production cutover and rollback tag selection
+      ansible.builtin.fail:
+        msg: >-
+          Cannot run sub_cutover and sub_rollback in the same playbook invocation.
+          Use make sub-cutover or make sub-rollback separately.
+      when:
+        - "'all' not in ansible_run_tags"
+        - "'sub_cutover' in ansible_run_tags"
+        - "'sub_rollback' in ansible_run_tags"
+      tags:
+        - sub_cutover
+        - sub_rollback
+
+    - name: Deploy subscription-next container
+      ansible.builtin.include_role:
+        name: remnawave_subscription_page_next
+        apply:
+          tags:
+            - sub_next
+            - sub_next_full
+      tags:
+        - never
+        - sub_next
+        - sub_next_full
+
+    - name: Deploy subscription-next Nginx reverse proxy
+      ansible.builtin.include_role:
+        name: remnawave_subscription_page_next
+        tasks_from: nginx
+        apply:
+          tags:
+            - sub_next_nginx
+            - sub_next_full
+      when: remnawave_sub_next_nginx_enabled | bool
+      tags:
+        - never
+        - sub_next_nginx
+        - sub_next_full
+
+    - name: Manage subscription page config via Remnawave API
+      ansible.builtin.include_role:
+        name: remnawave_subscription_page_config
+        apply:
+          tags:
+            - sub_next_config
+            - sub_next_full
+      tags:
+        - never
+        - sub_next_config
+        - sub_next_full
+
+    - name: Cutover production subscription page upstream
+      ansible.builtin.include_role:
+        name: remnawave_subscription_page
+        tasks_from: cutover
+        apply:
+          tags:
+            - sub_cutover
+      vars:
+        remnawave_subscription_upstream_target: next
+      tags:
+        - never
+        - sub_cutover
+
+    - name: Rollback production subscription page upstream
+      ansible.builtin.include_role:
+        name: remnawave_subscription_page
+        tasks_from: rollback
+        apply:
+          tags:
+            - sub_rollback
+      vars:
+        remnawave_subscription_upstream_target: legacy
+      tags:
+        - never
+        - sub_rollback

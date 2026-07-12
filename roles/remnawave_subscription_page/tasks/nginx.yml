@@ -14,16 +14,23 @@
   loop_control:
     label: "{{ item }}"
 
+- name: Resolve production subscription upstream for Nginx render
+  ansible.builtin.import_tasks: set_upstream_effective.yml
+
+- name: Report production subscription upstream render plan
+  ansible.builtin.debug:
+    msg:
+      requested_target: "{{ remnawave_subscription_requested_upstream_target }}"
+      effective_target: "{{ remnawave_subscription_effective_upstream_target }}"
+      effective_upstream: >-
+        {{ remnawave_subscription_effective_upstream_scheme }}://{{
+        remnawave_subscription_effective_upstream_host }}:{{
+        remnawave_subscription_effective_upstream_port }}
+
 # --- Основной vhost для домена субстраницы ---
 
-- name: Render Subscription Nginx vhost
-  ansible.builtin.template:
-    src: nginx-subscription.conf.j2
-    dest: "{{ remnawave_nginx_sites_dir }}/{{ remnawave_nginx_subscription_site }}"
-    owner: root
-    group: root
-    mode: "0644"
-  notify: Reload Nginx (systemd)
+- name: Render validated production subscription vhost
+  ansible.builtin.import_tasks: render_production_subscription_vhost.yml
 
 - name: Enable Subscription Nginx vhost (symlink)
   ansible.builtin.file:

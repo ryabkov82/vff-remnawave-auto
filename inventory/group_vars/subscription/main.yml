@@ -35,4 +35,41 @@ remnawave_sub_legacy_domain: "marzban-s2.vpn-for-friends.com"
 
 
 remnawave_nginx_bind_address: "0.0.0.0"
-remnawave_nginx_external_https_port: 4443
+# Nginx owns public :443 on separate subscription hosts (no HAProxy TCP passthrough).
+remnawave_nginx_external_https_port: 443
+
+# Production subscription Nginx vhost is managed on this dedicated host.
+remnawave_sub_manage_nginx: true
+
+# Subscription Page Next 7.2.1
+remnawave_sub_next_api_token: "{{ remnawave_panel_api_token }}"
+
+remnawave_sub_next_marzban_legacy_secret_key: >-
+  {{ vault_marzban_secret_key }}
+
+# HTTPS reverse proxy: sub-next.vpn-for-friends.com -> 127.0.0.1:3011
+remnawave_sub_next_domain: "sub-next.vpn-for-friends.com"
+remnawave_sub_next_upstream_host: "127.0.0.1"
+remnawave_sub_next_upstream_port: 3011
+remnawave_sub_next_nginx_enabled: true
+
+# shortUuid для health check (локальный и публичный HTTPS через Nginx)
+remnawave_sub_next_healthcheck_short_uuid: "VZLHkrKwsj0Qs82e"
+
+# Subscription Page config upload (Remnawave API)
+remnawave_subpage_config_uuid: "f24bc0b1-2386-4473-9bde-9cd7b384641c"
+remnawave_subpage_config_api_token: "{{ remnawave_panel_api_token }}"
+remnawave_subpage_config_healthcheck_short_uuid: "VZLHkrKwsj0Qs82e"
+
+# Привязка next-контейнера (3011) к тестовой конфигурации в Remnawave
+remnawave_sub_next_config_uuid: "{{ remnawave_subpage_config_uuid }}"
+
+# Production cutover upstream endpoints (selector remains legacy until make sub-cutover)
+remnawave_subscription_next_upstream_host: "127.0.0.1"
+remnawave_subscription_next_upstream_port: 3011
+remnawave_subscription_next_upstream_scheme: "http"
+remnawave_subscription_legacy_upstream_host: "127.0.0.1"
+remnawave_subscription_legacy_upstream_port: 3010
+remnawave_subscription_legacy_upstream_scheme: "http"
+remnawave_subscription_prod_healthcheck_short_uuid: "VZLHkrKwsj0Qs82e"
+remnawave_subscription_next_public_domain: "{{ remnawave_sub_next_domain }}"

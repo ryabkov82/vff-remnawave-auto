@@ -27,7 +27,11 @@ PLAY_INBOUNDS  ?= playbooks/inbounds.yml
 # === Плейбуки для отключения/удаления нод ===
 PLAY_DISABLE_NODE ?= playbooks/disable_node.yml
 PLAY_DELETE_NODE  ?= playbooks/delete_node.yml
-# === Subscription Page ===
+# === Subscription Page (единый entry point: playbooks/subscription.yml) ===
+# Make target → tag: sub=subpage; subpage-config=sub_config; sub-next=sub_next;
+# sub-next-nginx=sub_next_nginx; sub-next-config-*=sub_next_config;
+# sub-next-full=sub_next_full; sub-cutover=sub_cutover; sub-rollback=sub_rollback
+# sub TAGS=nginx → production Nginx-only (never, nginx wrapper in play 1)
 PLAY_SUB ?= playbooks/subscription.yml
 
 # === Плейбуки миграции Marzban -> Remnawave
@@ -54,7 +58,7 @@ include .env
 export $(shell sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' .env)
 endif
 
-.PHONY: help bootstrap dns dns-plan dns-absent panel nodes haproxy up smoke smoke-docker site lint vault ping facts destroy upgrade upgrade-remnawave
+.PHONY: help bootstrap dns dns-plan dns-absent panel nodes haproxy up smoke smoke-docker site lint vault ping facts destroy upgrade upgrade-remnawave sub-next sub-next-check sub-next-nginx sub-next-nginx-check sub-next-config-check sub-next-config-plan sub-next-config-apply sub-next-full sub-cutover-check sub-cutover sub-rollback-check sub-rollback
 
 help: ## Показать справку по целям
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*##/: /' | sort
@@ -174,6 +178,100 @@ sub: ## Deploy subscription page (auto detect bundled/separate)
 	@# Только перегенерация vhost-а и reload Nginx:
 	@# make sub TAGS=nginx
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
+
+sub-next: ## Deploy parallel test subscription page 7.2.1 (port 3011)
+	@# Примеры:
+	@#   make sub-next LIMIT=subscription
+	@#   make sub-next LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) \
+	  $(LIMIT_FLAG) --tags sub_next $(TAGS_FLAG) \
+	  $(ANSIBLE_FLAGS) $(EXTRA)
+
+sub-next-check: ## Dry-run subscription-next (Ansible --check --diff only; no Docker/runtime checks)
+	@# Примеры:
+	@#   make sub-next-check LIMIT=subscription
+	@#   make sub-next-check LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) \
+	  $(LIMIT_FLAG) --tags sub_next $(TAGS_FLAG) --check --diff \
+	  $(ANSIBLE_FLAGS) $(EXTRA)
+
+sub-next-nginx-check: ## Dry-run subscription-next nginx (syntax-check + Ansible check; no certbot/reload)
+	@# Примеры:
+	@#   make sub-next-nginx-check LIMIT=subscription
+	@#   make sub-next-nginx-check LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) --syntax-check
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) \
+	  $(LIMIT_FLAG) --tags sub_next_nginx $(TAGS_FLAG) --check --diff \
+	  $(ANSIBLE_FLAGS) $(EXTRA)
+
+sub-next-nginx: ## Deploy subscription-next HTTPS reverse proxy (cert + nginx + public health check)
+	@# Примеры:
+	@#   make sub-next-nginx LIMIT=subscription
+	@#   make sub-next-nginx LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) \
+	  $(LIMIT_FLAG) --tags sub_next_nginx $(TAGS_FLAG) \
+	  $(ANSIBLE_FLAGS) $(EXTRA)
+
+sub-next-config-check: ## Validate vpn-for-friends subscription page JSON
+	@# Пример:
+	@#   make sub-next-config-check
+	.venv/bin/python scripts/validate_subpage_config.py
+
+sub-next-config-plan: ## Plan subscription page config upload (validate + Ansible check)
+	@# Пример:
+	@#   make sub-next-config-plan LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
+	$(MAKE) sub-next-config-check
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) \
+	  $(LIMIT_FLAG) --tags sub_next_config $(TAGS_FLAG) --check --diff \
+	  $(ANSIBLE_FLAGS) $(EXTRA)
+
+sub-next-config-apply: ## Apply subscription page config upload via Remnawave API
+	@# Пример:
+	@#   make sub-next-config-apply LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
+	$(MAKE) sub-next-config-check
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) \
+	  $(LIMIT_FLAG) --tags sub_next_config $(TAGS_FLAG) \
+	  $(ANSIBLE_FLAGS) $(EXTRA)
+
+sub-next-full: ## Deploy next container, nginx and apply subscription page config
+	@# Пример:
+	@#   make sub-next-full LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) \
+	  $(LIMIT_FLAG) --tags sub_next_full $(TAGS_FLAG) \
+	  $(ANSIBLE_FLAGS) $(EXTRA)
+
+sub-cutover-check: ## Plan production cutover to subscription page v7 (preflight + check mode)
+	@# Примеры:
+	@#   make sub-cutover-check LIMIT=subscription
+	@#   make sub-cutover-check LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) --syntax-check
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) \
+	  $(LIMIT_FLAG) --tags sub_cutover $(TAGS_FLAG) --check --diff \
+	  $(ANSIBLE_FLAGS) $(EXTRA)
+
+sub-cutover: ## Cutover production sub.vpn-for-friends.com to upstream 3011 with auto-rollback
+	@# Примеры:
+	@#   make sub-cutover LIMIT=subscription
+	@#   make sub-cutover LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) \
+	  $(LIMIT_FLAG) --tags sub_cutover $(TAGS_FLAG) \
+	  $(ANSIBLE_FLAGS) $(EXTRA)
+
+sub-rollback-check: ## Verify legacy production vhost backup exists (check mode)
+	@# Примеры:
+	@#   make sub-rollback-check LIMIT=subscription
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) --syntax-check
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) \
+	  $(LIMIT_FLAG) --tags sub_rollback $(TAGS_FLAG) --check --diff \
+	  $(ANSIBLE_FLAGS) $(EXTRA)
+
+sub-rollback: ## Restore production subscription vhost from legacy backup
+	@# Примеры:
+	@#   make sub-rollback LIMIT=subscription
+	@#   make sub-rollback LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) \
+	  $(LIMIT_FLAG) --tags sub_rollback $(TAGS_FLAG) \
+	  $(ANSIBLE_FLAGS) $(EXTRA)
 
 subpage-config: ## Update subscription app-config.json and restart container
 	@# Примеры:

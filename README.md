@@ -20,6 +20,11 @@
 - Автодеплой **панели Remnawave**
 - Автодеплой **нод** + автоматическая регистрация в панели
 - Автодеплой **страницы подписки** (bundled / separate)
+- **Subscription Page v7 (blue-green)**:
+  - параллельный next-контур на отдельном порту;
+  - декларативная конфигурация через Remnawave API;
+  - безопасный cutover/rollback production upstream;
+  - TLS и health checks
 - Управление сертификатами (HTTP‑01 / DNS‑01)
 - Интеграция с HAProxy (TLS passthrough, SNI‑routing)
 - Полная **миграция данных Marzban → Remnawave**
@@ -86,28 +91,42 @@ Inbound будет создан или обновлён идемпотентно
 ---
 
 ### Развернуть страницу подписки
-Разворачивает отдельный контейнер **Remnawave Subscription Page**, проксируемый через Nginx (порт 443 или 4443).
+Разворачивает production-контейнер **Remnawave Subscription Page** (legacy, порт 3010) и Nginx-vhost.
 
 ```bash
-make sub
+make sub LIMIT=subscription
 ```
 
 Примеры:
 ```bash
-# если страница подписки на том же хосте, что и панель
+# bundled: страница подписки на том же хосте, что и панель
 make sub LIMIT=panel
 
-# если на отдельном сервере
-make sub LIMIT=sub-host
+# separate: отдельный subscription-хост
+make sub LIMIT=subscription
 ```
 
-После развёртывания:
-- Сертификат для `sub.vpn-for-friends.com` будет автоматически получен (DNS‑01 или HTTP‑01);
-- Контейнер `remnawave-subscription-page` будет запущен и доступен по HTTPS;
-- Для режима «bundled» (на том же хосте) страница подписки обращается к панели через локальный alias `remnawave`;
-- Для режима «separate» — через публичный API `https://remna.vpn-for-friends.com/api`.
+**Subscription Page v7** — next-контур, API-конфигурация и cutover:
 
-> Подробности см. в [docs/remnawave_subscription_deploy.md](docs/remnawave_subscription_deploy.md)
+```bash
+make sub-next-check LIMIT=subscription
+make sub-next-full LIMIT=subscription
+
+make sub-next-config-check
+make sub-next-config-plan LIMIT=subscription
+make sub-next-config-apply LIMIT=subscription
+
+make sub-cutover-check LIMIT=subscription
+make sub-cutover LIMIT=subscription
+
+make sub-rollback-check LIMIT=subscription
+make sub-rollback LIMIT=subscription
+```
+
+> Подробности v7: [docs/remnawave_subscription_page_next.md](docs/remnawave_subscription_page_next.md)
+> Legacy deploy: [docs/remnawave_subscription_deploy.md](docs/remnawave_subscription_deploy.md)
+>
+> Declarative JSON v7: `roles/remnawave_subscription_page_config/files/vpn-for-friends.json`
 
 ### Развернуть ноду
 Перед развёртыванием ноды необходимо:
@@ -294,6 +313,7 @@ make migrate-users LIMIT=panel EXTRA='-e remnawave_migrate_users_dry_run=false -
 | Регистрация Host | [docs/remnawave_add_host.md](docs/remnawave_add_host.md) | Добавление Host через API |
 | Subscription Deploy | [docs/remnawave_subscription_deploy.md](docs/remnawave_subscription_deploy.md) | Развёртывание страницы подписки |
 | Subscription Page | [docs/remnawave_subscription_page.md](docs/remnawave_subscription_page.md) | Конфигурация Nginx и Docker контейнера |
+| Subscription Page v7 | [docs/remnawave_subscription_page_next.md](docs/remnawave_subscription_page_next.md) | Blue-green deploy, API-конфигурация, cutover и rollback |
 | Проверки | [docs/smoke_tests.md](docs/smoke_tests.md) | Smoke-тесты панели и нод |
 | Отключение ноды | [docs/remnawave_disable_node.md](docs/remnawave_disable_node.md) | Временное отключение ноды и хостов |
 | Удаление ноды | [docs/remnawave_delete_node.md](docs/remnawave_delete_node.md) | Полное удаление ноды и связанных хостов |
@@ -319,17 +339,17 @@ flowchart TB
     Nginx4443[Nginx 4443 loopback]
     Xray8444[Xray 8444 loopback]
     Panel3000[Panel app port 3000]
-    Sub3100[Subscription page port 3100 docker]
+    Sub3010[Subscription page port 3010 docker]
     Certbot[Certbot ACME]
 
     HAProxy443 -->|SNI remna.* , sub.*| Nginx4443
     HAProxy443 -->|non-TLS/иное SNI| Xray8444
 
-    Sub3100 -->|HTTP /api| Nginx4443
+    Sub3010 -->|HTTP /api| Nginx4443
     Nginx4443 -->|proxy /api| Panel3000
 
     Nginx4443 -->|proxy| Panel3000
-    Nginx4443 -->|proxy| Sub3100
+    Nginx4443 -->|proxy| Sub3010
 
     Nginx4443 -. validation .-> Certbot
   end
@@ -365,14 +385,17 @@ flowchart TB
 
   PublicIP_Sub --> Nginx2
 
-  subgraph Host2 [Host2: subpage only]
-    Nginx2[Nginx 443]
-    Sub3100[Subscription page port 3100 docker]
+  subgraph Host2 [Host2: subscription]
+    Nginx2[Nginx 443 upstream legacy/next]
+    Sub3010[Legacy Subscription Page :3010]
+    Sub3011[Subscription Page v7 :3011]
     Certbot2[Certbot ACME]
-    Nginx2 -->|proxy| Sub3100
+    Nginx2 -->|production upstream| Sub3010
+    Nginx2 -->|production upstream| Sub3011
   end
 
-  Sub3100 -->|HTTPS remna-domain /api| PublicIP_Panel
+  Sub3010 -->|HTTPS remna-domain /api| PublicIP_Panel
+  Sub3011 -->|HTTPS remna-domain /api| PublicIP_Panel
 
   Certbot1 -. DNS-01 или HTTP-01 .-> CloudflareDNS
   Certbot2 -. DNS-01 или HTTP-01 .-> CloudflareDNS

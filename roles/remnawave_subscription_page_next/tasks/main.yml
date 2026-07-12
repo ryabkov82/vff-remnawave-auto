@@ -1,0 +1,172 @@
+---
+- name: Assert remnawave_sub_next_api_token is set
+  ansible.builtin.assert:
+    that:
+      - remnawave_sub_next_api_token | default('') | trim | length > 0
+    fail_msg: remnawave_sub_next_api_token не задан.
+  no_log: true
+
+- name: Assert remnawave_sub_next_marzban_legacy_secret_key is set when legacy enabled
+  ansible.builtin.assert:
+    that:
+      - remnawave_sub_next_marzban_legacy_secret_key | default('') | trim | length > 0
+    fail_msg: >-
+      remnawave_sub_next_marzban_legacy_enabled=true,
+      но remnawave_sub_next_marzban_legacy_secret_key не задан.
+  when: remnawave_sub_next_marzban_legacy_enabled | bool
+  no_log: true
+
+- name: Ensure subscription-next root directory exists
+  ansible.builtin.file:
+    path: "{{ remnawave_sub_next_root_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Render docker-compose.yml for subscription-next
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ remnawave_sub_next_root_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Render .env for subscription-next
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ remnawave_sub_next_root_dir }}/.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Explain runtime checks skipped in check mode
+  ansible.builtin.debug:
+    msg: >-
+      Check mode: Docker pull/up and runtime health checks were skipped.
+      Run make sub-next to apply and validate the deployment.
+  when: ansible_check_mode
+
+- name: Validate docker compose configuration
+  ansible.builtin.command:
+    cmd: docker compose config --quiet
+    chdir: "{{ remnawave_sub_next_root_dir }}"
+  changed_when: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Pull subscription-next image
+  ansible.builtin.command:
+    cmd: docker compose pull
+    chdir: "{{ remnawave_sub_next_root_dir }}"
+  register: _sub_next_pull
+  changed_when: "'Pull complete' in _sub_next_pull.stdout or 'Downloaded' in _sub_next_pull.stdout"
+  when: not ansible_check_mode
+
+- name: Start subscription-next stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ remnawave_sub_next_root_dir }}"
+  register: _sub_next_up
+  changed_when: >-
+    'Creating' in _sub_next_up.stdout or 'Recreating' in _sub_next_up.stdout
+    or 'Starting' in _sub_next_up.stdout or 'Pulling' in _sub_next_up.stdout
+  when: not ansible_check_mode
+
+- name: Wait for subscription-next TCP port
+  ansible.builtin.wait_for:
+    host: "{{ remnawave_sub_next_bind_address }}"
+    port: "{{ remnawave_sub_next_external_port }}"
+    delay: 2
+    timeout: 60
+    state: started
+  when: not ansible_check_mode
+
+- name: Inspect subscription-next container state
+  ansible.builtin.command:
+    cmd: >-
+      docker inspect {{ remnawave_sub_next_container_name }}
+      --format {{ "'{{json .State}}'" }}
+  register: _sub_next_state_raw
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Parse subscription-next container state
+  ansible.builtin.set_fact:
+    _sub_next_state: "{{ _sub_next_state_raw.stdout | from_json }}"
+  when: not ansible_check_mode
+
+- name: Assert subscription-next container is running and not restarting
+  ansible.builtin.assert:
+    that:
+      - _sub_next_state.Running | bool
+      - not (_sub_next_state.Restarting | default(false) | bool)
+      - _sub_next_state.Status == 'running'
+    fail_msg: >-
+      Container {{ remnawave_sub_next_container_name }} is not healthy:
+      Status={{ _sub_next_state.Status | default('unknown') }},
+      Running={{ _sub_next_state.Running | default(false) }},
+      Restarting={{ _sub_next_state.Restarting | default(false) }}.
+  when: not ansible_check_mode
+
+- name: Read subscription-next container restart count (initial)
+  ansible.builtin.command:
+    cmd: >-
+      docker inspect {{ remnawave_sub_next_container_name }}
+      --format {{ "'{{.RestartCount}}'" }}
+  register: _sub_next_restart_count_before
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Wait before restart-stability check
+  ansible.builtin.pause:
+    seconds: "{{ remnawave_sub_next_restart_stabilize_seconds }}"
+  when: not ansible_check_mode
+
+- name: Read subscription-next container restart count (after pause)
+  ansible.builtin.command:
+    cmd: >-
+      docker inspect {{ remnawave_sub_next_container_name }}
+      --format {{ "'{{.RestartCount}}'" }}
+  register: _sub_next_restart_count_after
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Assert subscription-next container is not in restart loop
+  ansible.builtin.assert:
+    that:
+      - _sub_next_restart_count_after.stdout | int == _sub_next_restart_count_before.stdout | int
+    fail_msg: >-
+      Container {{ remnawave_sub_next_container_name }} restart count increased
+      ({{ _sub_next_restart_count_before.stdout }} ->
+      {{ _sub_next_restart_count_after.stdout }}).
+  when: not ansible_check_mode
+
+- name: HTTP check subscription-next page URL
+  ansible.builtin.uri:
+    url: >-
+      http://{{ remnawave_sub_next_bind_address }}:{{ remnawave_sub_next_external_port }}/{{ remnawave_sub_next_healthcheck_short_uuid }}
+    method: GET
+    status_code: 200
+    timeout: 10
+  register: _sub_next_http
+  retries: 10
+  delay: 3
+  until: _sub_next_http.status == 200
+  when:
+    - not ansible_check_mode
+    - remnawave_sub_next_healthcheck_short_uuid | trim | length > 0
+
+- name: Show subscription-next container status
+  ansible.builtin.command:
+    cmd: docker compose ps
+    chdir: "{{ remnawave_sub_next_root_dir }}"
+  register: _sub_next_ps
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Display subscription-next container status
+  ansible.builtin.debug:
+    var: _sub_next_ps.stdout_lines
+  when: not ansible_check_mode

@@ -1,0 +1,39 @@
+---
+- name: Read production subscription Nginx vhost for upstream analysis
+  ansible.builtin.slurp:
+    path: "{{ remnawave_nginx_sites_dir }}/{{ remnawave_nginx_subscription_site }}"
+  register: _sub_vhost_analysis_raw
+  failed_when: false
+  check_mode: false
+
+- name: Detect production subscription vhost upstream state
+  ansible.builtin.set_fact:
+    _sub_vhost_upstream_state: >-
+      {{
+        (
+          _sub_vhost_analysis_raw.content | default('') | b64decode
+        )
+        | remnawave_subscription_vhost_upstream_state(
+            remnawave_subscription_legacy_upstream_marker,
+            remnawave_subscription_next_upstream_marker
+          )
+      }}
+  when: _sub_vhost_analysis_raw.content is defined
+  check_mode: false
+
+- name: Default production subscription vhost upstream state when file is missing
+  ansible.builtin.set_fact:
+    _sub_vhost_upstream_state:
+      current_is_legacy: false
+      current_is_next: false
+      known: false
+  when: _sub_vhost_analysis_raw.content is not defined
+
+- name: Publish production subscription current upstream state facts
+  ansible.builtin.set_fact:
+    remnawave_subscription_current_is_legacy: >-
+      {{ _sub_vhost_upstream_state.current_is_legacy | default(false) }}
+    remnawave_subscription_current_is_next: >-
+      {{ _sub_vhost_upstream_state.current_is_next | default(false) }}
+    remnawave_subscription_current_upstream_known: >-
+      {{ _sub_vhost_upstream_state.known | default(false) }}

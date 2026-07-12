@@ -1,0 +1,10 @@
+services:
+  {{ remnawave_sub_next_service_name }}:
+    image: "{{ remnawave_sub_next_image }}"
+    container_name: "{{ remnawave_sub_next_container_name }}"
+    hostname: "{{ remnawave_sub_next_container_name }}"
+    restart: {{ remnawave_sub_next_restart_policy }}
+    env_file:
+      - .env
+    ports:
+      - "{{ remnawave_sub_next_bind_address }}:{{ remnawave_sub_next_external_port }}:{{ remnawave_sub_next_internal_port }}"
