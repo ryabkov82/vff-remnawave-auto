@@ -1,0 +1,87 @@
+upstream remnawave-subscription-page-portalbase {
+    server {{ remnawave_sub_portalbase_upstream_host }}:{{ remnawave_sub_portalbase_upstream_port }};
+}
+
+# HTTP: ACME challenge + redirect to HTTPS after certificate is available
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{ remnawave_sub_portalbase_domain }};
+
+    location ^~ /.well-known/acme-challenge/ {
+        root {{ remnawave_sub_portalbase_nginx_webroot }};
+        default_type "text/plain";
+        try_files $uri =404;
+        access_log off;
+    }
+
+{% if remnawave_sub_portalbase_ssl_ready | bool %}
+    location / {
+        return 301 https://$host$request_uri;
+    }
+{% else %}
+    location / {
+        return 503 "TLS certificate not ready\n";
+        default_type "text/plain";
+    }
+{% endif %}
+}
+
+{% if remnawave_sub_portalbase_ssl_ready | bool %}
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name {{ remnawave_sub_portalbase_domain }};
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_tickets off;
+    ssl_certificate "{{ remnawave_sub_portalbase_ssl_fullchain }}";
+    ssl_certificate_key "{{ remnawave_sub_portalbase_ssl_privkey }}";
+    ssl_stapling on;
+    ssl_stapling_verify on;
+
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_buffers 16 8k;
+    gzip_http_version 1.1;
+    gzip_min_length 256;
+    gzip_types
+      application/atom+xml
+      application/geo+json
+      application/javascript
+      application/x-javascript
+      application/json
+      application/ld+json
+      application/manifest+json
+      application/rdf+xml
+      application/rss+xml
+      application/xhtml+xml
+      application/xml
+      font/eot font/otf font/ttf
+      image/svg+xml
+      text/css text/javascript text/plain text/xml;
+
+    location = /healthz {
+        access_log off;
+        add_header Content-Type text/plain;
+        return 200 "ok\n";
+    }
+
+    location / {
+        proxy_http_version 1.1;
+        proxy_redirect off;
+        proxy_pass http://remnawave-subscription-page-portalbase;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+}
+{% endif %}

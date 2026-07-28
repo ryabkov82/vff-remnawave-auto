@@ -41,6 +41,23 @@ remnawave_sub_next_ssl_privkey: >-
 remnawave_sub_next_letsencrypt_email: >-
   admin@{{ cf_dns_zone | default(remnawave_sub_next_domain | regex_replace('^[^.]+\\.', '')) }}
 
+# Dedicated public domain for existing runtime on 127.0.0.1:3011
+# (sub.portalbase.link). Not an alias list — fixed single-domain vhost.
+remnawave_sub_portalbase_domain: "sub.portalbase.link"
+remnawave_sub_portalbase_upstream_host: "127.0.0.1"
+remnawave_sub_portalbase_upstream_port: 3011
+remnawave_sub_portalbase_nginx_enabled: false
+remnawave_sub_portalbase_nginx_site: subscription-portalbase.conf
+remnawave_sub_portalbase_nginx_sites_dir: /etc/nginx/sites-available
+remnawave_sub_portalbase_nginx_sites_enabled_dir: /etc/nginx/sites-enabled
+remnawave_sub_portalbase_nginx_webroot: /var/www/letsencrypt
+remnawave_sub_portalbase_ssl_fullchain: >-
+  /etc/letsencrypt/live/{{ remnawave_sub_portalbase_domain }}/fullchain.pem
+remnawave_sub_portalbase_ssl_privkey: >-
+  /etc/letsencrypt/live/{{ remnawave_sub_portalbase_domain }}/privkey.pem
+remnawave_sub_portalbase_letsencrypt_email: "admin@portalbase.link"
+remnawave_sub_portalbase_healthcheck_short_uuid: "VZLHkrKwsj0Qs82e"
+
 # Секреты — задавать через Ansible Vault или inventory secrets
 remnawave_sub_next_api_token: ""
 remnawave_sub_next_marzban_legacy_secret_key: ""

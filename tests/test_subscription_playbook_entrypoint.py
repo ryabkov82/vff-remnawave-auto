@@ -38,6 +38,8 @@ SUBSCRIPTION_MAKE_TARGETS = (
     ("sub-next-check:", "PLAY_SUB)"),
     ("sub-next-nginx:", "PLAY_SUB)"),
     ("sub-next-nginx-check:", "PLAY_SUB)"),
+    ("sub-portalbase:", "PLAY_SUB)"),
+    ("sub-portalbase-check:", "PLAY_SUB)"),
     ("sub-next-config-plan:", "PLAY_SUB)"),
     ("sub-next-config-apply:", "PLAY_SUB)"),
     ("sub-cutover:", "PLAY_SUB)"),
@@ -50,6 +52,7 @@ SUBSCRIPTION_MAKE_TARGETS = (
 TARGET_TAG_EXPECTATIONS = (
     ("sub-next:", "--tags sub_next"),
     ("sub-next-nginx:", "--tags sub_next_nginx"),
+    ("sub-portalbase:", "--tags sub_portalbase"),
     ("sub-next-config-plan:", "--tags sub_next_config"),
     ("sub-next-config-apply:", "--tags sub_next_config"),
     ("sub-next-full:", "--tags sub_next_full"),
@@ -83,6 +86,20 @@ SPECIAL_INCLUDE_OPERATIONS = (
         "forbidden_wrapper_tags": {"nginx", "subpage_next", "subpage_config", "cutover", "rollback"},
     },
     {
+        "marker": "Deploy subscription portalbase Nginx reverse proxy",
+        "wrapper_tags": {"never", "sub_portalbase"},
+        "apply_tags": {"sub_portalbase"},
+        "tasks_from": "nginx_portalbase",
+        "role": "remnawave_subscription_page_next",
+        "forbidden_wrapper_tags": {
+            "nginx",
+            "sub_next_nginx",
+            "sub_next_full",
+            "sub_cutover",
+            "sub_rollback",
+        },
+    },
+    {
         "marker": "Manage subscription page config via Remnawave API",
         "wrapper_tags": {"never", "sub_next_config", "sub_next_full"},
         "apply_tags": {"sub_next_config", "sub_next_full"},
@@ -110,6 +127,7 @@ LEGACY_WRAPPER_TAGS = ("subpage_next", "subpage_config", "cutover", "rollback")
 STAGING_PLAY_MARKERS = (
     "Deploy subscription-next container",
     "Deploy subscription-next Nginx reverse proxy",
+    "Deploy subscription portalbase Nginx reverse proxy",
     "Manage subscription page config via Remnawave API",
     "Cutover production subscription page upstream",
     "Rollback production subscription page upstream",

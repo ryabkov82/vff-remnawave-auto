@@ -76,6 +76,18 @@
         - sub_next_nginx
         - sub_next_full
 
+    - name: Deploy subscription portalbase Nginx reverse proxy
+      ansible.builtin.include_role:
+        name: remnawave_subscription_page_next
+        tasks_from: nginx_portalbase
+        apply:
+          tags:
+            - sub_portalbase
+      when: remnawave_sub_portalbase_nginx_enabled | bool
+      tags:
+        - never
+        - sub_portalbase
+
     - name: Manage subscription page config via Remnawave API
       ansible.builtin.include_role:
         name: remnawave_subscription_page_config

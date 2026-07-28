@@ -11,3 +11,16 @@
     state: reloaded
   when: not ansible_check_mode
   listen: Reload subscription-next Nginx
+
+- name: Validate subscription portalbase Nginx configuration
+  ansible.builtin.command:
+    cmd: nginx -t
+  changed_when: false
+  listen: Reload subscription portalbase Nginx
+
+- name: Reload subscription portalbase Nginx
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
+  when: not ansible_check_mode
+  listen: Reload subscription portalbase Nginx
