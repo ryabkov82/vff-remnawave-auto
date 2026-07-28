@@ -30,7 +30,8 @@ PLAY_DELETE_NODE  ?= playbooks/delete_node.yml
 # === Subscription Page (единый entry point: playbooks/subscription.yml) ===
 # Make target → tag: sub=subpage; subpage-config=sub_config; sub-next=sub_next;
 # sub-next-nginx=sub_next_nginx; sub-next-config-*=sub_next_config;
-# sub-next-full=sub_next_full; sub-cutover=sub_cutover; sub-rollback=sub_rollback
+# sub-next-full=sub_next_full; sub-cutover=sub_cutover; sub-rollback=sub_rollback;
+# sub-portalbase=sub_portalbase (sub.portalbase.link -> 127.0.0.1:3011)
 # sub TAGS=nginx → production Nginx-only (never, nginx wrapper in play 1)
 PLAY_SUB ?= playbooks/subscription.yml
 
@@ -58,7 +59,7 @@ include .env
 export $(shell sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' .env)
 endif
 
-.PHONY: help bootstrap dns dns-plan dns-absent panel nodes haproxy up smoke smoke-docker site lint vault ping facts destroy upgrade upgrade-remnawave sub-next sub-next-check sub-next-nginx sub-next-nginx-check sub-next-config-check sub-next-config-plan sub-next-config-apply sub-next-full sub-cutover-check sub-cutover sub-rollback-check sub-rollback
+.PHONY: help bootstrap dns dns-plan dns-absent panel nodes haproxy up smoke smoke-docker site lint vault ping facts destroy upgrade upgrade-remnawave sub-next sub-next-check sub-next-nginx sub-next-nginx-check sub-next-config-check sub-next-config-plan sub-next-config-apply sub-next-full sub-portalbase sub-portalbase-check sub-cutover-check sub-cutover sub-rollback-check sub-rollback
 
 help: ## Показать справку по целям
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*##/: /' | sort
@@ -210,6 +211,23 @@ sub-next-nginx: ## Deploy subscription-next HTTPS reverse proxy (cert + nginx + 
 	@#   make sub-next-nginx LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) \
 	  $(LIMIT_FLAG) --tags sub_next_nginx $(TAGS_FLAG) \
+	  $(ANSIBLE_FLAGS) $(EXTRA)
+
+sub-portalbase-check: ## Dry-run sub.portalbase.link nginx (syntax-check + Ansible check; no certbot/reload)
+	@# Примеры:
+	@#   make sub-portalbase-check LIMIT=subscription
+	@#   make sub-portalbase-check LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) --syntax-check
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) \
+	  $(LIMIT_FLAG) --tags sub_portalbase $(TAGS_FLAG) --check --diff \
+	  $(ANSIBLE_FLAGS) $(EXTRA)
+
+sub-portalbase: ## Deploy sub.portalbase.link HTTPS reverse proxy to 127.0.0.1:3011
+	@# Примеры:
+	@#   make sub-portalbase LIMIT=subscription
+	@#   make sub-portalbase LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) \
+	  $(LIMIT_FLAG) --tags sub_portalbase $(TAGS_FLAG) \
 	  $(ANSIBLE_FLAGS) $(EXTRA)
 
 sub-next-config-check: ## Validate vpn-for-friends subscription page JSON

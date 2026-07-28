@@ -56,6 +56,14 @@ remnawave_sub_next_nginx_enabled: true
 # shortUuid для health check (локальный и публичный HTTPS через Nginx)
 remnawave_sub_next_healthcheck_short_uuid: "VZLHkrKwsj0Qs82e"
 
+# Dedicated Nginx vhost: sub.portalbase.link -> 127.0.0.1:3011
+# Does not change sub.vpn-for-friends.com / sub-next.vpn-for-friends.com / cutover.
+remnawave_sub_portalbase_nginx_enabled: true
+remnawave_sub_portalbase_domain: "sub.portalbase.link"
+remnawave_sub_portalbase_upstream_host: "127.0.0.1"
+remnawave_sub_portalbase_upstream_port: 3011
+remnawave_sub_portalbase_healthcheck_short_uuid: "VZLHkrKwsj0Qs82e"
+
 # Subscription Page config upload (Remnawave API)
 remnawave_subpage_config_uuid: "f24bc0b1-2386-4473-9bde-9cd7b384641c"
 remnawave_subpage_config_api_token: "{{ remnawave_panel_api_token }}"

@@ -147,6 +147,30 @@ ansible-playbook -i inventory/hosts.ini playbooks/subscription.yml \
   --limit subscription --tags sub_next_nginx
 ```
 
+## Dedicated domain: sub.portalbase.link
+
+Отдельный Nginx-vhost для существующего runtime на `127.0.0.1:3011`.
+Это **не** alias-механизм и не список доменов — фиксированный vhost для одного домена.
+
+| Параметр | Значение |
+|----------|----------|
+| Домен | `sub.portalbase.link` |
+| Upstream | `http://127.0.0.1:3011` |
+| Site file | `/etc/nginx/sites-available/subscription-portalbase.conf` |
+| Certificate | `/etc/letsencrypt/live/sub.portalbase.link/` |
+| Health check | `https://sub.portalbase.link/VZLHkrKwsj0Qs82e` |
+
+Не изменяет `sub.vpn-for-friends.com`, `sub-next.vpn-for-friends.com`, `SUB_PUBLIC_DOMAIN`,
+контейнеры Subscription Page и production cutover.
+
+```bash
+make sub-portalbase-check LIMIT=subscription
+make sub-portalbase LIMIT=subscription
+```
+
+Первый apply без сертификата: HTTP bootstrap → `nginx -t` + reload → certbot webroot →
+HTTPS vhost → `nginx -t` + reload → public health check.
+
 ## API-конфигурация (роль `remnawave_subscription_page_config`)
 
 Идемпотентная загрузка JSON-конфигурации страницы подписки v7 из Git в Remnawave Panel через API.
@@ -330,6 +354,7 @@ make sub-next-config-apply LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
 | `make subpage-config` | `sub_config` | Legacy app-config update |
 | `make sub-next` | `sub_next` | Next container (3011) |
 | `make sub-next-nginx` | `sub_next_nginx` | Next HTTPS reverse proxy |
+| `make sub-portalbase` | `sub_portalbase` | `sub.portalbase.link` → 3011 |
 | `make sub-next-config-check` | *(локальный скрипт)* | Validate declarative JSON |
 | `make sub-next-config-plan` | `sub_next_config` + `--check` | Plan API config upload |
 | `make sub-next-config-apply` | `sub_next_config` | Apply API config upload |
@@ -351,6 +376,12 @@ Nginx (syntax-check + Ansible check, без certbot/reload):
 
 ```bash
 make sub-next-nginx-check LIMIT=subscription
+```
+
+Portalbase Nginx (syntax-check + Ansible check, без certbot/reload):
+
+```bash
+make sub-portalbase-check LIMIT=subscription
 ```
 
 API config (GET + сравнение, без PATCH/backup/restart):

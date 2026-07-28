@@ -121,6 +121,9 @@ make sub-cutover LIMIT=subscription
 
 make sub-rollback-check LIMIT=subscription
 make sub-rollback LIMIT=subscription
+
+make sub-portalbase-check LIMIT=subscription
+make sub-portalbase LIMIT=subscription
 ```
 
 > Подробности v7: [docs/remnawave_subscription_page_next.md](docs/remnawave_subscription_page_next.md)
