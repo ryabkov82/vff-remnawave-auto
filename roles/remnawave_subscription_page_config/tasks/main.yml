@@ -1,11 +1,4 @@
 ---
-- name: Assert subscription page config UUID is set
-  ansible.builtin.assert:
-    that:
-      - remnawave_subpage_config_uuid | default('') | trim | length > 0
-      - remnawave_subpage_config_uuid is match(remnawave_subpage_config_uuid_regex)
-    fail_msg: remnawave_subpage_config_uuid must be a valid UUID.
-
 - name: Assert subscription page config API token is set
   ansible.builtin.assert:
     that:
@@ -13,30 +6,31 @@
     fail_msg: remnawave_subpage_config_api_token is not set.
   no_log: true
 
-- name: Resolve subscription page config effective source file path
+- name: Normalize declarative Subpage Config list
   ansible.builtin.set_fact:
-    remnawave_subpage_config_effective_source_file: >-
+    remnawave_subpage_configs_effective: >-
       {{
-        remnawave_subpage_config_source_file | trim
-        if (remnawave_subpage_config_source_file | default('') | trim | length > 0)
-        else (role_path ~ '/files/vpn-for-friends.json')
+        remnawave_subpage_configs
+        if (remnawave_subpage_configs | default([]) | length > 0)
+        else ([
+          {
+            'key': 'legacy',
+            'name': remnawave_subpage_config_name | default('VPN for friends'),
+            'uuid': remnawave_subpage_config_uuid | default(''),
+            'source_file': remnawave_subpage_config_source_file | default(''),
+            'base_file': '',
+            'patch_file': ''
+          }
+        ])
       }}
   delegate_to: localhost
   run_once: true
 
-- name: Assert subscription page config source file exists
-  ansible.builtin.stat:
-    path: "{{ remnawave_subpage_config_effective_source_file }}"
-  register: _subpage_config_source_stat
-  delegate_to: localhost
-  run_once: true
-
-- name: Fail when subscription page config source file is missing
+- name: Assert at least one Subpage Config is declared
   ansible.builtin.assert:
     that:
-      - _subpage_config_source_stat.stat.exists
-      - _subpage_config_source_stat.stat.isreg
-    fail_msg: "Source config file not found: {{ remnawave_subpage_config_effective_source_file }}"
+      - remnawave_subpage_configs_effective | length > 0
+    fail_msg: No Subpage Config entries configured.
   delegate_to: localhost
   run_once: true
 
@@ -49,28 +43,17 @@
       remnawave_subpage_config_restart_next=true.
   when: remnawave_subpage_config_restart_next | bool
 
-- name: Load desired subscription page config from Git source
+- name: Reset Subpage Config apply state
   ansible.builtin.set_fact:
-    remnawave_subpage_config_desired: >-
-      {{ lookup('file', remnawave_subpage_config_effective_source_file) | from_json }}
+    remnawave_subpage_config_resolved: {}
+    remnawave_subpage_config_any_updated: false
+    remnawave_subpage_config_should_restart_next: false
   delegate_to: localhost
   run_once: true
 
-- name: Validate desired subscription page config locally
-  ansible.builtin.command:
-    cmd: >-
-      {{ playbook_dir }}/../.venv/bin/python
-      {{ playbook_dir }}/../scripts/validate_subpage_config.py
-      {{ remnawave_subpage_config_effective_source_file }}
-  delegate_to: localhost
-  run_once: true
-  changed_when: false
-  check_mode: false
-
-- name: Get current subscription page config from Remnawave API
+- name: List Subscription Page configs from Remnawave API
   ansible.builtin.uri:
-    url: >-
-      {{ remnawave_subpage_config_panel_url }}/api/subscription-page-configs/{{ remnawave_subpage_config_uuid }}
+    url: "{{ remnawave_subpage_config_panel_url }}/api/subscription-page-configs"
     method: GET
     headers:
       Authorization: "Bearer {{ remnawave_subpage_config_api_token }}"
@@ -78,31 +61,28 @@
     return_content: true
     status_code: 200
     validate_certs: true
-  register: _subpage_config_current
+  register: _subpage_configs_list
   check_mode: false
   no_log: true
+  delegate_to: localhost
+  run_once: true
 
-- name: Parse current subscription page config
+- name: Parse Subscription Page configs list
   ansible.builtin.set_fact:
-    remnawave_subpage_config_current: "{{ _subpage_config_current.json.response.config }}"
+    remnawave_subpage_configs_remote: >-
+      {{
+        (_subpage_configs_list.json.response.configs | default([]))
+      }}
   no_log: true
+  delegate_to: localhost
+  run_once: true
 
-- name: Build canonical desired subscription page config
-  ansible.builtin.set_fact:
-    remnawave_subpage_config_desired_canonical: >-
-      {{ remnawave_subpage_config_desired | remnawave_subpage_config_canonicalize }}
-
-- name: Build canonical current subscription page config
-  ansible.builtin.set_fact:
-    remnawave_subpage_config_current_canonical: >-
-      {{ remnawave_subpage_config_current | remnawave_subpage_config_canonicalize }}
-
-- name: Determine whether subscription page config needs update
-  ansible.builtin.set_fact:
-    remnawave_subpage_config_raw_differs: >-
-      {{ remnawave_subpage_config_current != remnawave_subpage_config_desired }}
-    remnawave_subpage_config_needs_update: >-
-      {{ remnawave_subpage_config_current_canonical != remnawave_subpage_config_desired_canonical }}
+- name: Manage each declarative Subpage Config
+  ansible.builtin.include_tasks: manage_one.yml
+  loop: "{{ remnawave_subpage_configs_effective }}"
+  loop_control:
+    label: "{{ subpage_config_item.key | default(subpage_config_item.name) }}"
+    loop_var: subpage_config_item
 
 - name: Determine whether subscription-next should restart
   ansible.builtin.set_fact:
@@ -110,144 +90,19 @@
       {{
         (remnawave_subpage_config_restart_next | bool) and
         (
-          (remnawave_subpage_config_needs_update | bool) or
+          (remnawave_subpage_config_any_updated | bool) or
           (remnawave_subpage_config_force_restart_next | bool)
         )
       }}
+  delegate_to: localhost
+  run_once: true
 
-- name: Report subscription page config plan
+- name: Report Subpage Config resolved UUID map
   ansible.builtin.debug:
-    msg: "{{ _subpage_config_plan_message }}"
-  vars:
-    _subpage_config_plan_message: >-
-      {{
-        (
-          'Subscription Page config differs and would be updated.'
-          if remnawave_subpage_config_needs_update | bool
-          else (
-            'Subscription Page config is already up to date after Remnawave normalization.'
-            if remnawave_subpage_config_raw_differs | bool
-            else 'Subscription Page config is already up to date.'
-          )
-        )
-        ~ (
-          ' Subscription Page config is up to date; subscription-next would be restarted.'
-          if (
-            not (remnawave_subpage_config_needs_update | bool)
-            and (remnawave_subpage_config_force_restart_next | bool)
-            and (remnawave_subpage_config_restart_next | bool)
-          )
-          else ''
-        )
-      }}
-
-- name: Ensure subscription page config backup directory exists
-  ansible.builtin.file:
-    path: "{{ remnawave_subpage_config_backup_dir }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0700"
-  when:
-    - remnawave_subpage_config_needs_update | bool
-    - not ansible_check_mode
-
-- name: Backup current subscription page config before update
-  ansible.builtin.copy:
-    dest: >-
-      {{ remnawave_subpage_config_backup_dir }}/{{ remnawave_subpage_config_uuid }}-{{
-      ansible_date_time.date | replace('-', '') }}-{{ ansible_date_time.hour }}{{
-      ansible_date_time.minute }}{{ ansible_date_time.second }}.json
-    content: "{{ remnawave_subpage_config_current | to_json(indent=2) }}\n"
-    owner: root
-    group: root
-    mode: "0600"
-  when:
-    - remnawave_subpage_config_needs_update | bool
-    - not ansible_check_mode
-  no_log: true
-
-- name: Update subscription page config via Remnawave API
-  ansible.builtin.uri:
-    url: "{{ remnawave_subpage_config_panel_url }}/api/subscription-page-configs"
-    method: PATCH
-    headers:
-      Authorization: "Bearer {{ remnawave_subpage_config_api_token }}"
-      Accept: "application/json"
-    body_format: json
-    body:
-      uuid: "{{ remnawave_subpage_config_uuid }}"
-      config: "{{ remnawave_subpage_config_desired }}"
-    return_content: true
-    status_code: 200
-    validate_certs: true
-    timeout: 30
-  register: remnawave_subpage_config_update_result
-  no_log: true
-  failed_when: false
-  changed_when:
-    - remnawave_subpage_config_update_result.status | default(0) == 200
-  when:
-    - not ansible_check_mode
-    - remnawave_subpage_config_needs_update | bool
-
-- name: Fail with sanitized Remnawave API update error
-  ansible.builtin.assert:
-    that:
-      - remnawave_subpage_config_update_result.status | default(0) == 200
-    fail_msg: >-
-      Remnawave Subscription Page PATCH failed:
-      HTTP {{ remnawave_subpage_config_update_result.status | default('unknown') }},
-      errorCode={{
-        (remnawave_subpage_config_update_result.json | default({})).get(
-          'errorCode',
-          'unknown'
-        )
-      }},
-      message={{
-        (remnawave_subpage_config_update_result.json | default({})).get(
-          'message',
-          'No API error message'
-        )
-      }}
-  when:
-    - not ansible_check_mode
-    - remnawave_subpage_config_needs_update | bool
-
-- name: Verify updated subscription page config via Remnawave API
-  ansible.builtin.uri:
-    url: >-
-      {{ remnawave_subpage_config_panel_url }}/api/subscription-page-configs/{{ remnawave_subpage_config_uuid }}
-    method: GET
-    headers:
-      Authorization: "Bearer {{ remnawave_subpage_config_api_token }}"
-      Accept: application/json
-    return_content: true
-    status_code: 200
-    validate_certs: true
-  register: _subpage_config_verify
-  when:
-    - remnawave_subpage_config_needs_update | bool
-    - not ansible_check_mode
-  no_log: true
-
-- name: Assert updated subscription page config matches desired state
-  ansible.builtin.assert:
-    that:
-      - >-
-        (_subpage_config_verify.json.response.config | remnawave_subpage_config_canonicalize)
-        == remnawave_subpage_config_desired_canonical
-    fail_msg: >-
-      Canonical Subscription Page config mismatch.
-      Differing paths: {{
-        remnawave_subpage_config_desired
-        | remnawave_subpage_config_diff_paths(_subpage_config_verify.json.response.config)
-        | join(', ')
-      }}
-  when:
-    - remnawave_subpage_config_needs_update | bool
-    - not ansible_check_mode
-  no_log: true
+    msg:
+      resolved: "{{ remnawave_subpage_config_resolved }}"
+      any_updated: "{{ remnawave_subpage_config_any_updated }}"
+      restart_next: "{{ remnawave_subpage_config_should_restart_next }}"
 
 - name: Restart subscription-next container after config update
   ansible.builtin.command:

@@ -7,23 +7,31 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ROLE = ROOT / "roles/remnawave_subscription_page_config"
 ROLE_FILES = ROLE / "files"
-DESIRED_JSON = ROLE_FILES / "vpn-for-friends.json"
+BASE_JSON = ROLE_FILES / "base.json"
+VFF_PATCH = ROLE_FILES / "brands/vpn-for-friends.patch.json"
+FC_PATCH = ROLE_FILES / "brands/friends-connect.patch.json"
+GOLDEN_JSON = ROOT / "tests/fixtures/vpn-for-friends.golden.json"
 UPSTREAM_JSON = ROLE_FILES / "source/default-7.2.1.json"
 LEGACY_CONFIGS_DIR = ROOT / "configs/subscription-page/v7"
 DEFAULTS = ROLE / "defaults/main.yml"
 TASKS = ROLE / "tasks/main.yml"
-BUILD_SCRIPT = ROOT / "scripts/build_vpn_for_friends_subpage_config.py"
+MANAGE_ONE = ROLE / "tasks/manage_one.yml"
+BUILD_LEGACY_SCRIPT = ROOT / "scripts/build_vpn_for_friends_subpage_config.py"
+BUILD_BRAND_SCRIPT = ROOT / "scripts/build_subpage_config.py"
 VALIDATE_SCRIPT = ROOT / "scripts/validate_subpage_config.py"
 MAKEFILE = ROOT / "Makefile"
 
 sys.path.insert(0, str(ROLE / "filter_plugins"))
+sys.path.insert(0, str(ROOT / "scripts"))
 from remnawave_subpage_config import FilterModule  # noqa: E402
+from subpage_branding import configs_equal, deep_merge  # noqa: E402
 
 
 def canonicalize(config: dict) -> dict:
@@ -31,9 +39,12 @@ def canonicalize(config: dict) -> dict:
 
 
 class RemnawaveSubpageConfigRoleFilesTest(unittest.TestCase):
-    def test_desired_json_inside_role_files(self) -> None:
-        self.assertTrue(DESIRED_JSON.is_file())
-        self.assertEqual(DESIRED_JSON.parent, ROLE_FILES)
+    def test_base_and_brand_patches_inside_role_files(self) -> None:
+        self.assertTrue(BASE_JSON.is_file())
+        self.assertTrue(VFF_PATCH.is_file())
+        self.assertTrue(FC_PATCH.is_file())
+        self.assertEqual(BASE_JSON.parent, ROLE_FILES)
+        self.assertFalse((ROLE_FILES / "vpn-for-friends.json").exists())
 
     def test_upstream_source_inside_role_files_source(self) -> None:
         self.assertTrue(UPSTREAM_JSON.is_file())
@@ -44,101 +55,76 @@ class RemnawaveSubpageConfigRoleFilesTest(unittest.TestCase):
 
     def test_defaults_and_tasks_do_not_reference_legacy_configs_path(self) -> None:
         legacy_pattern = re.compile(r"configs/subscription-page/v7")
-        for path in (DEFAULTS, TASKS):
+        for path in (DEFAULTS, TASKS, MANAGE_ONE):
             content = path.read_text(encoding="utf-8")
             self.assertIsNone(
                 legacy_pattern.search(content),
                 f"{path} still references legacy configs path",
             )
 
-    def test_build_script_default_source_path(self) -> None:
-        content = BUILD_SCRIPT.read_text(encoding="utf-8")
+    def test_build_legacy_script_default_source_path(self) -> None:
+        content = BUILD_LEGACY_SCRIPT.read_text(encoding="utf-8")
         self.assertIn(
             'ROLE_FILES / "source/default-7.2.1.json"',
             content,
         )
         self.assertNotIn("configs/subscription-page/v7", content)
 
-    def test_build_script_default_output_path(self) -> None:
-        content = BUILD_SCRIPT.read_text(encoding="utf-8")
-        self.assertIn(
-            'ROLE_FILES / "vpn-for-friends.json"',
-            content,
-        )
-        self.assertIn("DEFAULT_OUTPUT = ROLE_FILES", content)
+    def test_brand_build_script_defaults(self) -> None:
+        content = BUILD_BRAND_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("base.json", content)
+        self.assertIn("vpn-for-friends.patch.json", content)
+        self.assertIn("friends-connect.patch.json", content)
 
-    def test_validator_default_path(self) -> None:
+    def test_validator_default_path_is_base(self) -> None:
         content = VALIDATE_SCRIPT.read_text(encoding="utf-8")
-        self.assertIn("roles/remnawave_subscription_page_config/files/vpn-for-friends.json", content)
+        self.assertIn("roles/remnawave_subscription_page_config/files/base.json", content)
         self.assertNotIn("configs/subscription-page/v7", content)
 
-    def test_role_allows_external_override_config_path(self) -> None:
-        tasks = TASKS.read_text(encoding="utf-8")
-        self.assertIn("remnawave_subpage_config_source_file | trim", tasks)
-        self.assertIn("remnawave_subpage_config_source_file | default('') | trim | length > 0", tasks)
-        self.assertNotIn(
-            "remnawave_subpage_config_source_file: >-",
-            tasks,
-            "input variable must not be overwritten by set_fact",
-        )
-
+    def test_role_supports_multi_config_and_legacy_fallback(self) -> None:
         defaults = DEFAULTS.read_text(encoding="utf-8")
-        self.assertIn('remnawave_subpage_config_source_file: ""', defaults)
-
-    def test_effective_variable_computed_via_role_path(self) -> None:
         tasks = TASKS.read_text(encoding="utf-8")
-        self.assertIn("remnawave_subpage_config_effective_source_file", tasks)
-        self.assertIn("role_path ~ '/files/vpn-for-friends.json'", tasks)
-        self.assertIn("Resolve subscription page config effective source file path", tasks)
+        manage = MANAGE_ONE.read_text(encoding="utf-8")
+        self.assertIn("remnawave_subpage_configs:", defaults)
+        self.assertIn("build_subpage_config.py", defaults)
+        self.assertIn("remnawave_subpage_configs_effective", tasks)
+        self.assertIn("manage_one.yml", tasks)
+        self.assertIn("remnawave_subpage_config_build_script", manage)
+        self.assertIn("method: POST", manage)
+        self.assertIn("method: PATCH", manage)
 
-    def test_external_override_used_in_effective_variable(self) -> None:
-        tasks = TASKS.read_text(encoding="utf-8")
-        self.assertRegex(
-            tasks,
-            r"remnawave_subpage_config_effective_source_file: >-\s*\n\s*\{\{",
+    def test_built_vff_matches_golden_canonical(self) -> None:
+        golden = json.loads(GOLDEN_JSON.read_text(encoding="utf-8"))
+        built = deep_merge(
+            json.loads(BASE_JSON.read_text(encoding="utf-8")),
+            json.loads(VFF_PATCH.read_text(encoding="utf-8")),
         )
-        self.assertIn("remnawave_subpage_config_source_file | trim", tasks)
-        self.assertIn("lookup('file', remnawave_subpage_config_effective_source_file)", tasks)
-        self.assertNotIn("lookup('file', remnawave_subpage_config_source_file)", tasks)
+        self.assertTrue(configs_equal(canonicalize(built), canonicalize(golden)))
 
-    def test_runtime_tasks_use_effective_source_file_path(self) -> None:
-        tasks = TASKS.read_text(encoding="utf-8")
-        path_usages = re.findall(
-            r"path: \"\{\{ (remnawave_subpage_config_[^}]+) \}\}\"",
-            tasks,
-        )
-        self.assertIn("remnawave_subpage_config_effective_source_file", path_usages)
-        self.assertNotIn("remnawave_subpage_config_source_file", path_usages)
-
-    def test_moved_json_content_unchanged_semantically_via_build(self) -> None:
-        desired = json.loads(DESIRED_JSON.read_text(encoding="utf-8"))
-        desired_canonical = canonicalize(desired)
-
-        with self.subTest("upstream source readable"):
-            upstream = json.loads(UPSTREAM_JSON.read_text(encoding="utf-8"))
-            self.assertIn("platforms", upstream)
-
-        with self.subTest("build output matches desired canonical JSON"):
-            generated = Path("/tmp/vpn-for-friends.generated.json")
+        with tempfile.TemporaryDirectory() as tmp:
+            generated = Path(tmp) / "vff.json"
             subprocess.run(
                 [
                     sys.executable,
-                    str(BUILD_SCRIPT),
+                    str(BUILD_BRAND_SCRIPT),
+                    "--brand",
+                    "vff",
                     "--output",
                     str(generated),
                 ],
                 check=True,
                 cwd=ROOT,
             )
-            built = json.loads(generated.read_text(encoding="utf-8"))
-            self.assertEqual(canonicalize(built), desired_canonical)
+            from_cli = json.loads(generated.read_text(encoding="utf-8"))
+            self.assertTrue(configs_equal(canonicalize(from_cli), canonicalize(golden)))
 
-    def test_makefile_uses_role_files_path(self) -> None:
+    def test_makefile_validates_both_brands(self) -> None:
         makefile = MAKEFILE.read_text(encoding="utf-8")
         self.assertNotIn("configs/subscription-page/v7", makefile)
         block = makefile.split("sub-next-config-check:", 1)[1].split("\n\n", 1)[0]
-        self.assertIn("validate_subpage_config.py", block)
-        self.assertNotIn("configs/subscription-page", block)
+        self.assertIn("build_subpage_config.py", block)
+        self.assertIn("--brand vff", block)
+        self.assertIn("--brand fc", block)
 
 
 if __name__ == "__main__":

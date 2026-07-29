@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ROLE_FILES = ROOT / "roles/remnawave_subscription_page_config/files"
 DEFAULT_JSON = ROLE_FILES / "source/default-7.2.1.json"
-DESIRED_JSON = ROLE_FILES / "vpn-for-friends.json"
+DESIRED_JSON = ROOT / "tests/fixtures/vpn-for-friends.golden.json"
 BUILD_SCRIPT = ROOT / "scripts/build_vpn_for_friends_subpage_config.py"
 VALIDATE_SCRIPT = ROOT / "scripts/validate_subpage_config.py"
 

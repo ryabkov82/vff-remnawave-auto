@@ -1,0 +1,70 @@
+---
+- name: Assert External Squads API token is set
+  ansible.builtin.assert:
+    that:
+      - remnawave_external_squads_api_token | default('') | trim | length > 0
+    fail_msg: remnawave_external_squads_api_token is not set.
+  no_log: true
+
+- name: Assert External Squads list is configured
+  ansible.builtin.assert:
+    that:
+      - remnawave_external_squads | default([]) | length > 0
+    fail_msg: remnawave_external_squads must declare at least one squad.
+  delegate_to: localhost
+  run_once: true
+
+- name: List External Squads from Remnawave API
+  ansible.builtin.uri:
+    url: "{{ remnawave_external_squads_panel_url }}/api/external-squads"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ remnawave_external_squads_api_token }}"
+      Accept: application/json
+    return_content: true
+    status_code: 200
+    validate_certs: true
+  register: _external_squads_list
+  check_mode: false
+  no_log: true
+  delegate_to: localhost
+  run_once: true
+
+- name: Parse External Squads list
+  ansible.builtin.set_fact:
+    remnawave_external_squads_remote: >-
+      {{ _external_squads_list.json.response.externalSquads | default([]) }}
+  no_log: true
+  delegate_to: localhost
+  run_once: true
+
+- name: List Subscription Page configs for External Squad binding
+  ansible.builtin.uri:
+    url: "{{ remnawave_external_squads_panel_url }}/api/subscription-page-configs"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ remnawave_external_squads_api_token }}"
+      Accept: application/json
+    return_content: true
+    status_code: 200
+    validate_certs: true
+  register: _external_squads_subpage_list
+  check_mode: false
+  no_log: true
+  delegate_to: localhost
+  run_once: true
+
+- name: Parse Subscription Page configs for External Squad binding
+  ansible.builtin.set_fact:
+    remnawave_external_squads_subpage_configs: >-
+      {{ _external_squads_subpage_list.json.response.configs | default([]) }}
+  no_log: true
+  delegate_to: localhost
+  run_once: true
+
+- name: Manage each declarative External Squad
+  ansible.builtin.include_tasks: manage_one.yml
+  loop: "{{ remnawave_external_squads }}"
+  loop_control:
+    label: "{{ external_squad_item.name }}"
+    loop_var: external_squad_item

@@ -1,0 +1,18 @@
+---
+remnawave_external_squads_panel_url: >-
+  {{ remnawave_panel_url | default('https://' ~ remnawave_panel_frontend_domain) }}
+remnawave_external_squads_api_token: "{{ remnawave_panel_api_token | default('') }}"
+
+# Declarative External Squads. Only name + Subpage Config binding are managed.
+remnawave_external_squads: []
+
+# Never create/update/delete these squads (exact name match).
+remnawave_external_squads_protected_names:
+  - AntiBlock-Premium
+
+# Optional map name -> uuid from prior Subpage Config role run.
+# Falls back to GET /api/subscription-page-configs and exact name match.
+remnawave_external_squads_subpage_uuid_map: {}
+
+remnawave_external_squads_uuid_regex: >-
+  ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$

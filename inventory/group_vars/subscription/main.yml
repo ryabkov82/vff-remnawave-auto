@@ -65,11 +65,35 @@ remnawave_sub_portalbase_upstream_port: 3011
 remnawave_sub_portalbase_healthcheck_short_uuid: "VZLHkrKwsj0Qs82e"
 
 # Subscription Page config upload (Remnawave API)
-remnawave_subpage_config_uuid: "f24bc0b1-2386-4473-9bde-9cd7b384641c"
 remnawave_subpage_config_api_token: "{{ remnawave_panel_api_token }}"
 remnawave_subpage_config_healthcheck_short_uuid: "VZLHkrKwsj0Qs82e"
+remnawave_subpage_config_healthcheck_host: sub.portalbase.link
 
-# Привязка next-контейнера (3011) к тестовой конфигурации в Remnawave
+# Legacy single-config UUID (kept for remnawave_sub_next_config_uuid and fallback mode).
+remnawave_subpage_config_uuid: "00000000-0000-0000-0000-000000000000"
+
+# Declarative multi-brand Subpage Configs (base.json + brand patches).
+remnawave_subpage_configs:
+  - key: vff
+    name: "VPN for friends"
+    uuid: "f24bc0b1-2386-4473-9bde-9cd7b384641c"
+    base_file: base.json
+    patch_file: brands/vpn-for-friends.patch.json
+  - key: fc
+    name: "Friends Connect"
+    uuid: ""
+    base_file: base.json
+    patch_file: brands/friends-connect.patch.json
+
+# External Squads → Subpage Config binding (members are not managed).
+remnawave_external_squads_api_token: "{{ remnawave_panel_api_token }}"
+remnawave_external_squads:
+  - name: "VPN-for-Friends"
+    subpage_config_name: "VPN for friends"
+  - name: "Friends-Connect"
+    subpage_config_name: "Friends Connect"
+
+# Привязка next-контейнера (3011) к VFF-конфигурации в Remnawave
 remnawave_sub_next_config_uuid: "{{ remnawave_subpage_config_uuid }}"
 
 # Production cutover upstream endpoints (selector remains legacy until make sub-cutover)

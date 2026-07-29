@@ -32,6 +32,8 @@ PLAY_DELETE_NODE  ?= playbooks/delete_node.yml
 # sub-next-nginx=sub_next_nginx; sub-next-config-*=sub_next_config;
 # sub-next-full=sub_next_full; sub-cutover=sub_cutover; sub-rollback=sub_rollback;
 # sub-portalbase=sub_portalbase (sub.portalbase.link -> 127.0.0.1:3011)
+# subpage-brands-*=sub_next_config; external-squads-*=external_squads;
+# subscription-branding-*=subscription_branding
 # sub TAGS=nginx → production Nginx-only (never, nginx wrapper in play 1)
 PLAY_SUB ?= playbooks/subscription.yml
 
@@ -59,7 +61,7 @@ include .env
 export $(shell sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' .env)
 endif
 
-.PHONY: help bootstrap dns dns-plan dns-absent panel nodes haproxy up smoke smoke-docker site lint vault ping facts destroy upgrade upgrade-remnawave sub-next sub-next-check sub-next-nginx sub-next-nginx-check sub-next-config-check sub-next-config-plan sub-next-config-apply sub-next-full sub-portalbase sub-portalbase-check sub-cutover-check sub-cutover sub-rollback-check sub-rollback
+.PHONY: help bootstrap dns dns-plan dns-absent panel nodes haproxy up smoke smoke-docker site lint vault ping facts destroy upgrade upgrade-remnawave sub-next sub-next-check sub-next-nginx sub-next-nginx-check sub-next-config-check sub-next-config-plan sub-next-config-apply sub-next-full sub-portalbase sub-portalbase-check sub-cutover-check sub-cutover sub-rollback-check sub-rollback subpage-brands-check subpage-brands external-squads-check external-squads subscription-branding-check subscription-branding
 
 help: ## Показать справку по целям
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*##/: /' | sort
@@ -230,10 +232,13 @@ sub-portalbase: ## Deploy sub.portalbase.link HTTPS reverse proxy to 127.0.0.1:3
 	  $(LIMIT_FLAG) --tags sub_portalbase $(TAGS_FLAG) \
 	  $(ANSIBLE_FLAGS) $(EXTRA)
 
-sub-next-config-check: ## Validate vpn-for-friends subscription page JSON
+sub-next-config-check: ## Validate brand Subpage Configs (base + VFF/FC patches)
 	@# Пример:
 	@#   make sub-next-config-check
-	.venv/bin/python scripts/validate_subpage_config.py
+	.venv/bin/python scripts/build_subpage_config.py --brand vff --output /tmp/subpage-vff.json
+	.venv/bin/python scripts/build_subpage_config.py --brand fc --output /tmp/subpage-fc.json
+	.venv/bin/python scripts/validate_subpage_config.py /tmp/subpage-vff.json
+	.venv/bin/python scripts/validate_subpage_config.py /tmp/subpage-fc.json
 
 sub-next-config-plan: ## Plan subscription page config upload (validate + Ansible check)
 	@# Пример:
@@ -249,6 +254,48 @@ sub-next-config-apply: ## Apply subscription page config upload via Remnawave AP
 	$(MAKE) sub-next-config-check
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) \
 	  $(LIMIT_FLAG) --tags sub_next_config $(TAGS_FLAG) \
+	  $(ANSIBLE_FLAGS) $(EXTRA)
+
+subpage-brands-check: ## Alias: plan multi-brand Subpage Configs (check mode)
+	@# Пример:
+	@#   make subpage-brands-check LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
+	$(MAKE) sub-next-config-plan
+
+subpage-brands: ## Alias: apply multi-brand Subpage Configs
+	@# Пример:
+	@#   make subpage-brands LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
+	$(MAKE) sub-next-config-apply
+
+external-squads-check: ## Plan External Squad ↔ Subpage Config bindings (check mode)
+	@# Пример:
+	@#   make external-squads-check LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) --syntax-check
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) \
+	  $(LIMIT_FLAG) --tags external_squads $(TAGS_FLAG) --check --diff \
+	  $(ANSIBLE_FLAGS) $(EXTRA)
+
+external-squads: ## Apply External Squad ↔ Subpage Config bindings
+	@# Пример:
+	@#   make external-squads LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) \
+	  $(LIMIT_FLAG) --tags external_squads $(TAGS_FLAG) \
+	  $(ANSIBLE_FLAGS) $(EXTRA)
+
+subscription-branding-check: ## Plan Subpage Configs + External Squads (check mode)
+	@# Пример:
+	@#   make subscription-branding-check LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
+	$(MAKE) sub-next-config-check
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) --syntax-check
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) \
+	  $(LIMIT_FLAG) --tags subscription_branding $(TAGS_FLAG) --check --diff \
+	  $(ANSIBLE_FLAGS) $(EXTRA)
+
+subscription-branding: ## Apply Subpage Configs + External Squads
+	@# Пример:
+	@#   make subscription-branding LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
+	$(MAKE) sub-next-config-check
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SUB) \
+	  $(LIMIT_FLAG) --tags subscription_branding $(TAGS_FLAG) \
 	  $(ANSIBLE_FLAGS) $(EXTRA)
 
 sub-next-full: ## Deploy next container, nginx and apply subscription page config

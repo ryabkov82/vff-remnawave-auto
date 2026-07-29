@@ -106,7 +106,7 @@ make sub LIMIT=panel
 make sub LIMIT=subscription
 ```
 
-**Subscription Page v7** — next-контур, API-конфигурация и cutover:
+**Subscription Page v7** — next-контур, API-конфигурация, бренды и cutover:
 
 ```bash
 make sub-next-check LIMIT=subscription
@@ -115,6 +115,10 @@ make sub-next-full LIMIT=subscription
 make sub-next-config-check
 make sub-next-config-plan LIMIT=subscription
 make sub-next-config-apply LIMIT=subscription
+
+# multi-brand Subpage Configs + External Squads
+make subscription-branding-check LIMIT=subscription
+# make subscription-branding LIMIT=subscription   # apply только после явного подтверждения
 
 make sub-cutover-check LIMIT=subscription
 make sub-cutover LIMIT=subscription
@@ -127,9 +131,10 @@ make sub-portalbase LIMIT=subscription
 ```
 
 > Подробности v7: [docs/remnawave_subscription_page_next.md](docs/remnawave_subscription_page_next.md)
+> Multi-brand / External Squads: [docs/remnawave_subscription_branding.md](docs/remnawave_subscription_branding.md)
 > Legacy deploy: [docs/remnawave_subscription_deploy.md](docs/remnawave_subscription_deploy.md)
 >
-> Declarative JSON v7: `roles/remnawave_subscription_page_config/files/vpn-for-friends.json`
+> Declarative JSON v7: `roles/remnawave_subscription_page_config/files/base.json` + `files/brands/*.patch.json`
 
 ### Развернуть ноду
 Перед развёртыванием ноды необходимо:
