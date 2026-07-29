@@ -85,13 +85,16 @@ remnawave_subpage_configs:
     base_file: base.json
     patch_file: brands/friends-connect.patch.json
 
-# External Squads → Subpage Config binding (members are not managed).
+# External Squads → Subpage Config binding + Happ profileTitle
+# (members / templates / hosts / headers / HWID are not managed).
 remnawave_external_squads_api_token: "{{ remnawave_panel_api_token }}"
 remnawave_external_squads:
   - name: "VPN-for-Friends"
     subpage_config_name: "VPN for friends"
+    profile_title: "VPN for friends"
   - name: "Friends-Connect"
     subpage_config_name: "Friends Connect"
+    profile_title: "Friends Connect"
 
 # Привязка next-контейнера (3011) к VFF-конфигурации в Remnawave
 remnawave_sub_next_config_uuid: "{{ remnawave_subpage_config_uuid }}"

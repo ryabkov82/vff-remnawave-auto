@@ -103,8 +103,10 @@ Scopes: `subscription-page-configs: get, create, update`.
 remnawave_external_squads:
   - name: "VPN-for-Friends"
     subpage_config_name: "VPN for friends"
+    profile_title: "VPN for friends"
   - name: "Friends-Connect"
     subpage_config_name: "Friends Connect"
+    profile_title: "Friends Connect"
 
 remnawave_external_squads_protected_names:
   - AntiBlock-Premium
@@ -115,14 +117,42 @@ remnawave_external_squads_protected_names:
 - получает список External Squads;
 - находит по **точному** имени;
 - создаёт отсутствующий (`POST {name}`);
-- назначает `subpageConfigUuid` только при расхождении (`PATCH {uuid, subpageConfigUuid}`);
+- назначает `subpageConfigUuid` только при расхождении;
+- при заданном `profile_title` обновляет только
+  `subscriptionSettings.profileTitle`, **сохраняя** остальные поля
+  (`supportLink`, `happAnnounce`, `happRouting`, …) через merge текущего JSON;
+- **не** отправляет `subscriptionSettings: null`;
 - **не** меняет members / templates / hosts / headers / HWID / customRemarks;
 - **не** трогает `AntiBlock-Premium`;
 - неизвестное имя Subpage Config → понятная ошибка;
 - в **check mode**, если Subpage Config декларативно объявлен в `remnawave_subpage_configs`,
-  но ещё не существует в API: не требует UUID и печатает deferred-план
-  («would be created after Subpage Config … is created, then linked…»);
-- check mode без POST/PATCH.
+  но ещё не существует в API: не требует UUID и печатает deferred-план;
+- check mode без POST/PATCH; повторный apply при совпадении `profileTitle` → `changed=0`.
+
+### Subpage Config vs Happ profileTitle
+
+Это **независимые** настройки:
+
+| Настройка | Где задаётся | Что видит пользователь |
+|-----------|--------------|------------------------|
+| Subpage Config | `remnawave_subpage_configs` + brand patches | веб-страница подписки |
+| `subscriptionSettings.profileTitle` | `remnawave_external_squads[].profile_title` | название профиля в Happ и совместимых клиентах |
+
+Без `profile_title` у External Squad клиент показывает глобальный Remnawave profile title.
+
+### PATCH payload (концептуально)
+
+```json
+{
+  "uuid": "<external-squad-uuid>",
+  "subscriptionSettings": {
+    "...все текущие поля...": "...",
+    "profileTitle": "Friends Connect"
+  }
+}
+```
+
+При необходимости в тот же PATCH добавляется `subpageConfigUuid`.
 
 ### Подтверждённые API endpoints (Backend 2.7.4)
 
@@ -130,7 +160,7 @@ remnawave_external_squads_protected_names:
 |--------|------|------------|
 | GET | `/api/external-squads` | список |
 | POST | `/api/external-squads` | create `{name}` |
-| PATCH | `/api/external-squads` | update, в т.ч. `subpageConfigUuid` |
+| PATCH | `/api/external-squads` | update: `subpageConfigUuid`, `subscriptionSettings`, … |
 
 Scopes: `external-squads: get, create, update` (+ `subscription-page-configs: get` для резолва имени).
 
@@ -174,14 +204,18 @@ make subscription-branding LIMIT=subscription
 1. Создать `roles/.../files/brands/<brand>.patch.json` только с брендовыми path.
 2. Добавить preset в `scripts/build_subpage_config.py` (`BRAND_PRESETS`), при необходимости.
 3. Добавить запись в `remnawave_subpage_configs`.
-4. Добавить External Squad в `remnawave_external_squads` с `subpage_config_name`.
+4. Добавить External Squad в `remnawave_external_squads` с `subpage_config_name`
+   и `profile_title` (название профиля в Happ).
 5. Расширить `ALLOWED_BRAND_DIFF_PATHS` / тесты, если появились новые брендовые path.
 6. `make sub-next-config-check` и check-mode plan до apply.
 
 ## Ограничения Remnawave API 2.7.4
 
 - Create Subpage Config принимает **только** `name` (не полный config) — config заливается отдельным PATCH.
-- Create External Squad принимает **только** `name` — привязка Subpage через PATCH `subpageConfigUuid`.
+- Create External Squad принимает **только** `name` — привязка Subpage и
+  `subscriptionSettings.profileTitle` задаются отдельным PATCH.
+- `subscriptionSettings` — единый JSON-объект: PATCH должен мержить текущие поля,
+  иначе можно стереть supportLink / happRouting / и т.д.
 - Поиска «по имени» отдельным endpoint нет — используется list + exact match.
 - Имена: 2–30 символов, `^[A-Za-z0-9_\s-]+$`.
 - Роль **не** назначает пользователей External Squads и не вызывает bulk-actions add/remove users.

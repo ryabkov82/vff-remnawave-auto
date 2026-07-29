@@ -336,6 +336,104 @@ def resolve_external_squad_subpage_binding(
     return result
 
 
+def merge_external_squad_subscription_settings(
+    current: Any,
+    *,
+    profile_title: str,
+) -> dict[str, Any]:
+    """Merge profileTitle into existing subscriptionSettings without dropping keys.
+
+    ``null`` / non-dict current is treated as an empty object.
+    """
+    base: dict[str, Any]
+    if isinstance(current, dict):
+        base = copy.deepcopy(current)
+    else:
+        base = {}
+    base["profileTitle"] = profile_title
+    return base
+
+
+def profile_title_needs_update(current: Any, desired_profile_title: str) -> bool:
+    """True when profileTitle is missing or differs from desired."""
+    desired = desired_profile_title.strip()
+    if not desired:
+        return False
+    if not isinstance(current, dict):
+        return True
+    current_title = current.get("profileTitle")
+    if current_title is None:
+        return True
+    return str(current_title).strip() != desired
+
+
+def build_external_squad_patch_body(
+    *,
+    uuid: str,
+    desired_subpage_config_uuid: str | None = None,
+    current_subpage_config_uuid: Any = None,
+    current_subscription_settings: Any = None,
+    desired_profile_title: str | None = None,
+) -> dict[str, Any]:
+    """Build a minimal PATCH body for External Squad updates.
+
+    Only includes fields that actually need changing. Never sends
+    ``subscriptionSettings: null``.
+    """
+    body: dict[str, Any] = {"uuid": uuid}
+    if desired_subpage_config_uuid is not None:
+        if current_subpage_config_uuid != desired_subpage_config_uuid:
+            body["subpageConfigUuid"] = desired_subpage_config_uuid
+
+    title = (desired_profile_title or "").strip()
+    if title and profile_title_needs_update(current_subscription_settings, title):
+        body["subscriptionSettings"] = merge_external_squad_subscription_settings(
+            current_subscription_settings,
+            profile_title=title,
+        )
+    return body
+
+
+def verify_external_squad_patch_response(
+    before: dict[str, Any],
+    after: dict[str, Any],
+    *,
+    desired_profile_title: str,
+    desired_subpage_config_uuid: str | None = None,
+) -> list[str]:
+    """Return human-readable verification errors (empty means OK)."""
+    errors: list[str] = []
+    if before.get("uuid") != after.get("uuid"):
+        errors.append("uuid changed")
+    if before.get("name") != after.get("name"):
+        errors.append("name changed")
+
+    desired_subpage = (
+        desired_subpage_config_uuid
+        if desired_subpage_config_uuid is not None
+        else before.get("subpageConfigUuid")
+    )
+    if after.get("subpageConfigUuid") != desired_subpage:
+        errors.append("subpageConfigUuid mismatch")
+
+    after_settings = after.get("subscriptionSettings")
+    if not isinstance(after_settings, dict):
+        errors.append("subscriptionSettings missing after patch")
+        return errors
+
+    if str(after_settings.get("profileTitle", "")).strip() != desired_profile_title.strip():
+        errors.append("profileTitle mismatch")
+
+    before_settings = before.get("subscriptionSettings")
+    if isinstance(before_settings, dict):
+        for key, value in before_settings.items():
+            if key == "profileTitle":
+                continue
+            if key not in after_settings or after_settings[key] != value:
+                errors.append(f"subscriptionSettings.{key} was lost or changed")
+    return errors
+
+
 def plan_external_squad_action(
     existing: list[dict[str, Any]],
     *,
@@ -345,18 +443,21 @@ def plan_external_squad_action(
     check_mode: bool = False,
     subpage_deferred: bool = False,
     subpage_name: str | None = None,
+    desired_profile_title: str | None = None,
 ) -> dict[str, Any]:
-    """Plan create/update for one External Squad (subpage link only)."""
+    """Plan create/update for one External Squad (subpage link + profileTitle)."""
     protected = set(protected_names or [])
     plan: dict[str, Any] = {
         "name": name,
         "protected": name in protected,
         "create": False,
         "patch_subpage": False,
+        "patch_profile_title": False,
         "skip": False,
         "deferred": False,
         "http_methods": [],
         "resolved_uuid": None,
+        "merged_subscription_settings": None,
         "message": "",
         "error": None,
     }
@@ -367,11 +468,13 @@ def plan_external_squad_action(
         return plan
 
     display_subpage = (subpage_name or "").strip() or "desired Subpage Config"
+    title = (desired_profile_title or "").strip()
 
     if check_mode and subpage_deferred and not (desired_subpage_config_uuid or "").strip():
         plan["deferred"] = True
         plan["create"] = find_by_uuid_or_name(existing, uuid=None, name=name) is None
         plan["patch_subpage"] = True
+        plan["patch_profile_title"] = bool(title)
         plan["http_methods"] = []
         if plan["create"]:
             plan["message"] = (
@@ -398,6 +501,12 @@ def plan_external_squad_action(
     if found is None:
         plan["create"] = True
         plan["patch_subpage"] = True
+        plan["patch_profile_title"] = bool(title)
+        if title:
+            plan["merged_subscription_settings"] = merge_external_squad_subscription_settings(
+                None,
+                profile_title=title,
+            )
         if check_mode:
             plan["http_methods"] = []
             plan["message"] = (
@@ -406,25 +515,50 @@ def plan_external_squad_action(
         else:
             plan["http_methods"] = ["POST", "PATCH"]
             plan["message"] = (
-                f"Create External Squad {name!r}, then PATCH subpageConfigUuid."
+                f"Create External Squad {name!r}, then PATCH subpageConfigUuid"
+                + (" and profileTitle." if title else ".")
             )
         return plan
 
     plan["resolved_uuid"] = found.get("uuid")
-    current = found.get("subpageConfigUuid")
-    plan["patch_subpage"] = current != desired_subpage_config_uuid
+    current_subpage = found.get("subpageConfigUuid")
+    current_settings = found.get("subscriptionSettings")
+    plan["patch_subpage"] = current_subpage != desired_subpage_config_uuid
+    plan["patch_profile_title"] = bool(title) and profile_title_needs_update(
+        current_settings,
+        title,
+    )
+    if plan["patch_profile_title"]:
+        plan["merged_subscription_settings"] = merge_external_squad_subscription_settings(
+            current_settings,
+            profile_title=title,
+        )
+
+    needs_patch = plan["patch_subpage"] or plan["patch_profile_title"]
     if check_mode:
         plan["http_methods"] = []
-        if plan["patch_subpage"]:
+        if needs_patch:
+            parts = []
+            if plan["patch_subpage"]:
+                parts.append("subpageConfigUuid")
+            if plan["patch_profile_title"]:
+                parts.append("profileTitle")
             plan["message"] = (
-                f"Would update External Squad {name!r} subpageConfigUuid."
+                f"Would update External Squad {name!r} ({', '.join(parts)})."
             )
         else:
             plan["message"] = f"External Squad {name!r} is already up to date."
     else:
-        plan["http_methods"] = ["PATCH"] if plan["patch_subpage"] else []
-        if plan["patch_subpage"]:
-            plan["message"] = f"Update External Squad {name!r} subpageConfigUuid."
+        plan["http_methods"] = ["PATCH"] if needs_patch else []
+        if needs_patch:
+            parts = []
+            if plan["patch_subpage"]:
+                parts.append("subpageConfigUuid")
+            if plan["patch_profile_title"]:
+                parts.append("profileTitle")
+            plan["message"] = (
+                f"Update External Squad {name!r} ({', '.join(parts)})."
+            )
         else:
             plan["message"] = f"External Squad {name!r} is already up to date."
     return plan

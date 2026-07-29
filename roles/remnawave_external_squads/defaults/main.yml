@@ -3,7 +3,9 @@ remnawave_external_squads_panel_url: >-
   {{ remnawave_panel_url | default('https://' ~ remnawave_panel_frontend_domain) }}
 remnawave_external_squads_api_token: "{{ remnawave_panel_api_token | default('') }}"
 
-# Declarative External Squads. Only name + Subpage Config binding are managed.
+# Declarative External Squads.
+# Managed fields: name, subpage_config_name, optional profile_title
+# (maps to subscriptionSettings.profileTitle; other settings are preserved).
 remnawave_external_squads: []
 
 # Never create/update/delete these squads (exact name match).
