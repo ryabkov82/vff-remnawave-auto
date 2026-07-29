@@ -1,0 +1,469 @@
+---
+# Expects loop var: subpage_config_item (key, name, uuid?, base_file?, patch_file?, source_file?)
+- name: Assert Subpage Config item has a name
+  ansible.builtin.assert:
+    that:
+      - subpage_config_item.name | default('') | trim | length > 0
+    fail_msg: "Subpage Config entry is missing name: {{ subpage_config_item.key | default('?') }}"
+  delegate_to: localhost
+  run_once: true
+
+- name: Resolve Subpage Config item working facts
+  ansible.builtin.set_fact:
+    _spc_key: "{{ subpage_config_item.key | default(subpage_config_item.name) | trim }}"
+    _spc_name: "{{ subpage_config_item.name | trim }}"
+    _spc_uuid_hint: "{{ subpage_config_item.uuid | default('') | trim }}"
+    _spc_built_path: >-
+      /tmp/remnawave-subpage-{{
+        (subpage_config_item.key | default(subpage_config_item.name) | trim)
+        | regex_replace('[^A-Za-z0-9_-]', '_')
+      }}.json
+    _spc_base_file: >-
+      {{
+        subpage_config_item.base_file
+        if (subpage_config_item.base_file | default('') | trim | length > 0
+            and (subpage_config_item.base_file | trim)[0] == '/')
+        else (
+          (role_path ~ '/files/' ~ (subpage_config_item.base_file | trim))
+          if (subpage_config_item.base_file | default('') | trim | length > 0)
+          else ''
+        )
+      }}
+    _spc_patch_file: >-
+      {{
+        subpage_config_item.patch_file
+        if (subpage_config_item.patch_file | default('') | trim | length > 0
+            and (subpage_config_item.patch_file | trim)[0] == '/')
+        else (
+          (role_path ~ '/files/' ~ (subpage_config_item.patch_file | trim))
+          if (subpage_config_item.patch_file | default('') | trim | length > 0)
+          else ''
+        )
+      }}
+    _spc_source_file: >-
+      {{
+        subpage_config_item.source_file
+        if (subpage_config_item.source_file | default('') | trim | length > 0
+            and (subpage_config_item.source_file | trim)[0] == '/')
+        else (
+          (role_path ~ '/files/' ~ (subpage_config_item.source_file | trim))
+          if (subpage_config_item.source_file | default('') | trim | length > 0)
+          else ''
+        )
+      }}
+  delegate_to: localhost
+  run_once: true
+
+- name: Build desired Subpage Config from base + brand patch
+  ansible.builtin.command:
+    cmd: >-
+      {{ remnawave_subpage_config_python }}
+      {{ remnawave_subpage_config_build_script }}
+      --base {{ _spc_base_file }}
+      --patch {{ _spc_patch_file }}
+      --output {{ _spc_built_path }}
+  delegate_to: localhost
+  run_once: true
+  changed_when: false
+  check_mode: false
+  when:
+    - _spc_base_file | length > 0
+    - _spc_patch_file | length > 0
+
+- name: Resolve desired Subpage Config path
+  ansible.builtin.set_fact:
+    _spc_desired_path: >-
+      {{
+        _spc_built_path
+        if (_spc_base_file | length > 0 and _spc_patch_file | length > 0)
+        else (
+          _spc_source_file
+          if (_spc_source_file | length > 0)
+          else ''
+        )
+      }}
+  delegate_to: localhost
+  run_once: true
+
+- name: Assert desired Subpage Config path is set
+  ansible.builtin.assert:
+    that:
+      - _spc_desired_path | length > 0
+    fail_msg: >-
+      Subpage Config {{ _spc_name | quote }} needs base_file+patch_file or source_file.
+  delegate_to: localhost
+  run_once: true
+
+- name: Assert desired Subpage Config file exists
+  ansible.builtin.stat:
+    path: "{{ _spc_desired_path }}"
+  register: _spc_desired_stat
+  delegate_to: localhost
+  run_once: true
+
+- name: Fail when desired Subpage Config file is missing
+  ansible.builtin.assert:
+    that:
+      - _spc_desired_stat.stat.exists
+      - _spc_desired_stat.stat.isreg
+    fail_msg: "Desired Subpage Config file not found: {{ _spc_desired_path }}"
+  delegate_to: localhost
+  run_once: true
+
+- name: Validate desired Subpage Config locally
+  ansible.builtin.command:
+    cmd: >-
+      {{ remnawave_subpage_config_python }}
+      {{ remnawave_subpage_config_validate_script }}
+      {{ _spc_desired_path }}
+  delegate_to: localhost
+  run_once: true
+  changed_when: false
+  check_mode: false
+
+- name: Load desired Subpage Config JSON
+  ansible.builtin.set_fact:
+    _spc_desired: "{{ lookup('file', _spc_desired_path) | from_json }}"
+  delegate_to: localhost
+  run_once: true
+
+- name: Find existing Subpage Config by UUID or exact name
+  ansible.builtin.set_fact:
+    _spc_matches_by_uuid: >-
+      {{
+        remnawave_subpage_configs_remote
+        | selectattr('uuid', 'defined')
+        | selectattr('uuid', 'equalto', _spc_uuid_hint)
+        | list
+        if (_spc_uuid_hint | length > 0)
+        else []
+      }}
+    _spc_matches_by_name: >-
+      {{
+        remnawave_subpage_configs_remote
+        | selectattr('name', 'defined')
+        | selectattr('name', 'equalto', _spc_name)
+        | list
+      }}
+  no_log: true
+  delegate_to: localhost
+  run_once: true
+
+- name: Select matched Subpage Config object
+  ansible.builtin.set_fact:
+    _spc_existing: >-
+      {{
+        (_spc_matches_by_uuid | first)
+        if (_spc_matches_by_uuid | length > 0)
+        else (
+          (_spc_matches_by_name | first)
+          if (_spc_matches_by_name | length > 0)
+          else {}
+        )
+      }}
+    _spc_needs_create: >-
+      {{
+        (_spc_matches_by_uuid | length == 0) and (_spc_matches_by_name | length == 0)
+      }}
+  no_log: true
+  delegate_to: localhost
+  run_once: true
+
+- name: Report Subpage Config create plan in check mode
+  ansible.builtin.debug:
+    msg: >-
+      Subpage Config {{ _spc_name | quote }} is missing and would be created
+      via POST /api/subscription-page-configs, then updated via PATCH.
+  when:
+    - _spc_needs_create | bool
+    - ansible_check_mode
+
+- name: Record planned Subpage Config create in check mode
+  ansible.builtin.set_fact:
+    remnawave_subpage_config_resolved: >-
+      {{
+        remnawave_subpage_config_resolved
+        | combine({
+            _spc_key: {
+              'name': _spc_name,
+              'uuid': '',
+              'planned_create': true
+            }
+          })
+      }}
+  when:
+    - _spc_needs_create | bool
+    - ansible_check_mode
+  delegate_to: localhost
+  run_once: true
+
+- name: Create missing Subpage Config via Remnawave API
+  ansible.builtin.uri:
+    url: "{{ remnawave_subpage_config_panel_url }}/api/subscription-page-configs"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ remnawave_subpage_config_api_token }}"
+      Accept: application/json
+    body_format: json
+    body:
+      name: "{{ _spc_name }}"
+    return_content: true
+    status_code: [200, 201]
+    validate_certs: true
+    timeout: 30
+  register: _spc_create_result
+  no_log: true
+  failed_when: false
+  changed_when: _spc_create_result.status | default(0) in [200, 201]
+  when:
+    - _spc_needs_create | bool
+    - not ansible_check_mode
+  delegate_to: localhost
+  run_once: true
+
+- name: Fail with sanitized Subpage Config create error
+  ansible.builtin.assert:
+    that:
+      - _spc_create_result.status | default(0) in [200, 201]
+    fail_msg: >-
+      Remnawave Subpage Config POST failed for {{ _spc_name | quote }}:
+      HTTP {{ _spc_create_result.status | default('unknown') }},
+      errorCode={{ (_spc_create_result.json | default({})).get('errorCode', 'unknown') }},
+      message={{ (_spc_create_result.json | default({})).get('message', 'No API error message') }}
+  when:
+    - _spc_needs_create | bool
+    - not ansible_check_mode
+  delegate_to: localhost
+  run_once: true
+
+- name: Capture UUID from Subpage Config create response
+  ansible.builtin.set_fact:
+    _spc_existing:
+      uuid: "{{ _spc_create_result.json.response.uuid }}"
+      name: "{{ _spc_create_result.json.response.name | default(_spc_name) }}"
+      config: "{{ _spc_create_result.json.response.config | default(None) }}"
+    remnawave_subpage_configs_remote: >-
+      {{
+        remnawave_subpage_configs_remote
+        + [ _spc_create_result.json.response ]
+      }}
+  no_log: true
+  when:
+    - _spc_needs_create | bool
+    - not ansible_check_mode
+  delegate_to: localhost
+  run_once: true
+
+- name: Apply Subpage Config content when object exists
+  when: not (_spc_needs_create | bool and ansible_check_mode)
+  block:
+    - name: Resolve working UUID for Subpage Config
+      ansible.builtin.set_fact:
+        _spc_uuid: "{{ _spc_existing.uuid }}"
+      no_log: true
+      delegate_to: localhost
+      run_once: true
+
+    - name: Assert resolved Subpage Config UUID
+      ansible.builtin.assert:
+        that:
+          - _spc_uuid | default('') | trim | length > 0
+          - _spc_uuid is match(remnawave_subpage_config_uuid_regex)
+        fail_msg: >-
+          Could not resolve UUID for Subpage Config {{ _spc_name | quote }}.
+      delegate_to: localhost
+      run_once: true
+
+    - name: Get current Subpage Config body from Remnawave API
+      ansible.builtin.uri:
+        url: >-
+          {{ remnawave_subpage_config_panel_url }}/api/subscription-page-configs/{{ _spc_uuid }}
+        method: GET
+        headers:
+          Authorization: "Bearer {{ remnawave_subpage_config_api_token }}"
+          Accept: application/json
+        return_content: true
+        status_code: 200
+        validate_certs: true
+      register: _spc_current_resp
+      check_mode: false
+      no_log: true
+      delegate_to: localhost
+      run_once: true
+
+    - name: Parse current Subpage Config body
+      ansible.builtin.set_fact:
+        _spc_current: "{{ _spc_current_resp.json.response.config }}"
+        _spc_current_name: "{{ _spc_current_resp.json.response.name | default('') }}"
+      no_log: true
+      delegate_to: localhost
+      run_once: true
+
+    - name: Build canonical desired and current Subpage Config
+      ansible.builtin.set_fact:
+        _spc_desired_canonical: "{{ _spc_desired | remnawave_subpage_config_canonicalize }}"
+        _spc_current_canonical: "{{ _spc_current | remnawave_subpage_config_canonicalize }}"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Determine Subpage Config update necessity
+      ansible.builtin.set_fact:
+        _spc_raw_differs: "{{ _spc_current != _spc_desired }}"
+        _spc_needs_update: "{{ _spc_desired_canonical != _spc_current_canonical }}"
+        _spc_needs_rename: "{{ _spc_current_name != _spc_name }}"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Report Subpage Config plan
+      ansible.builtin.debug:
+        msg: >-
+          {{
+            (
+              'Subpage Config ' ~ (_spc_name | quote) ~ ' differs and would be updated.'
+              if (_spc_needs_update | bool or _spc_needs_rename | bool)
+              else (
+                'Subpage Config ' ~ (_spc_name | quote)
+                ~ ' is already up to date after Remnawave normalization.'
+                if (_spc_raw_differs | bool)
+                else 'Subpage Config ' ~ (_spc_name | quote) ~ ' is already up to date.'
+              )
+            )
+          }}
+
+    - name: Ensure Subpage Config backup directory exists
+      ansible.builtin.file:
+        path: "{{ remnawave_subpage_config_backup_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      when:
+        - _spc_needs_update | bool
+        - not ansible_check_mode
+
+    - name: Backup current Subpage Config before update
+      ansible.builtin.copy:
+        dest: >-
+          {{ remnawave_subpage_config_backup_dir }}/{{ _spc_uuid }}-{{
+          ansible_date_time.date | replace('-', '') }}-{{ ansible_date_time.hour }}{{
+          ansible_date_time.minute }}{{ ansible_date_time.second }}.json
+        content: "{{ _spc_current | to_json(indent=2) }}\n"
+        owner: root
+        group: root
+        mode: "0600"
+      when:
+        - _spc_needs_update | bool
+        - not ansible_check_mode
+      no_log: true
+
+    - name: Update Subpage Config via Remnawave API
+      ansible.builtin.uri:
+        url: "{{ remnawave_subpage_config_panel_url }}/api/subscription-page-configs"
+        method: PATCH
+        headers:
+          Authorization: "Bearer {{ remnawave_subpage_config_api_token }}"
+          Accept: application/json
+        body_format: json
+        body: >-
+          {{
+            {
+              'uuid': _spc_uuid,
+              'config': _spc_desired
+            }
+            | combine({'name': _spc_name} if (_spc_needs_rename | bool) else {})
+          }}
+        return_content: true
+        status_code: 200
+        validate_certs: true
+        timeout: 30
+      register: _spc_update_result
+      no_log: true
+      failed_when: false
+      changed_when: _spc_update_result.status | default(0) == 200
+      when:
+        - not ansible_check_mode
+        - (_spc_needs_update | bool) or (_spc_needs_rename | bool)
+      delegate_to: localhost
+      run_once: true
+
+    - name: Fail with sanitized Subpage Config update error
+      ansible.builtin.assert:
+        that:
+          - _spc_update_result.status | default(0) == 200
+        fail_msg: >-
+          Remnawave Subpage Config PATCH failed for {{ _spc_name | quote }}:
+          HTTP {{ _spc_update_result.status | default('unknown') }},
+          errorCode={{ (_spc_update_result.json | default({})).get('errorCode', 'unknown') }},
+          message={{ (_spc_update_result.json | default({})).get('message', 'No API error message') }}
+      when:
+        - not ansible_check_mode
+        - (_spc_needs_update | bool) or (_spc_needs_rename | bool)
+      delegate_to: localhost
+      run_once: true
+
+    - name: Verify updated Subpage Config via Remnawave API
+      ansible.builtin.uri:
+        url: >-
+          {{ remnawave_subpage_config_panel_url }}/api/subscription-page-configs/{{ _spc_uuid }}
+        method: GET
+        headers:
+          Authorization: "Bearer {{ remnawave_subpage_config_api_token }}"
+          Accept: application/json
+        return_content: true
+        status_code: 200
+        validate_certs: true
+      register: _spc_verify
+      when:
+        - _spc_needs_update | bool
+        - not ansible_check_mode
+      no_log: true
+      delegate_to: localhost
+      run_once: true
+
+    - name: Assert updated Subpage Config matches desired state
+      ansible.builtin.assert:
+        that:
+          - >-
+            (_spc_verify.json.response.config | remnawave_subpage_config_canonicalize)
+            == _spc_desired_canonical
+        fail_msg: >-
+          Canonical Subpage Config mismatch for {{ _spc_name | quote }}.
+          Differing paths: {{
+            _spc_desired
+            | remnawave_subpage_config_diff_paths(_spc_verify.json.response.config)
+            | join(', ')
+          }}
+      when:
+        - _spc_needs_update | bool
+        - not ansible_check_mode
+      no_log: true
+      delegate_to: localhost
+      run_once: true
+
+    - name: Record resolved Subpage Config UUID and update flag
+      ansible.builtin.set_fact:
+        remnawave_subpage_config_resolved: >-
+          {{
+            remnawave_subpage_config_resolved
+            | combine({
+                _spc_key: {
+                  'name': _spc_name,
+                  'uuid': _spc_uuid,
+                  'planned_create': false
+                }
+              })
+          }}
+        remnawave_subpage_config_any_updated: >-
+          {{
+            (remnawave_subpage_config_any_updated | bool)
+            or (
+              (not ansible_check_mode)
+              and (
+                (_spc_needs_create | bool)
+                or (_spc_needs_update | bool)
+                or (_spc_needs_rename | bool)
+              )
+            )
+          }}
+      delegate_to: localhost
+      run_once: true

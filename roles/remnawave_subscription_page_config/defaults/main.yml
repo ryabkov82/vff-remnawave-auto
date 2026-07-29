@@ -1,12 +1,7 @@
 ---
+# Shared API / panel settings (used by multi-config and legacy single-config modes).
 remnawave_subpage_config_panel_url: >-
   {{ remnawave_panel_url | default('https://' ~ remnawave_panel_frontend_domain) }}
-remnawave_subpage_config_uuid: ""
-
-# Empty default: tasks resolve to {{ role_path }}/files/vpn-for-friends.json.
-# Override with an absolute path when needed.
-remnawave_subpage_config_source_file: ""
-
 remnawave_subpage_config_api_token: ""
 
 remnawave_subpage_config_backup_dir: /opt/remnasub-next/config-backups
@@ -18,7 +13,21 @@ remnawave_subpage_config_compose_dir: /opt/remnasub-next
 remnawave_subpage_config_compose_service: remnawave-subscription-page-next
 
 remnawave_subpage_config_healthcheck_short_uuid: ""
-remnawave_subpage_config_healthcheck_host: sub.vpn-for-friends.com
+remnawave_subpage_config_healthcheck_host: sub.portalbase.link
 
 remnawave_subpage_config_uuid_regex: >-
   ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+
+# Legacy single-config mode (used only when remnawave_subpage_configs is empty).
+remnawave_subpage_config_uuid: ""
+remnawave_subpage_config_source_file: ""
+remnawave_subpage_config_name: "VPN for friends"
+
+# Declarative multi-brand configs. Relative file paths resolve under role files/.
+# uuid may be empty: role finds by exact name or creates via POST (API 2.7.4).
+remnawave_subpage_configs: []
+
+# Python interpreter for local build/validate (controller).
+remnawave_subpage_config_python: "{{ playbook_dir }}/../.venv/bin/python"
+remnawave_subpage_config_build_script: "{{ playbook_dir }}/../scripts/build_subpage_config.py"
+remnawave_subpage_config_validate_script: "{{ playbook_dir }}/../scripts/validate_subpage_config.py"

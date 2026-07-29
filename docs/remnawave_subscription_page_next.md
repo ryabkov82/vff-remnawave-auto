@@ -113,6 +113,13 @@ remnawave_sub_next_healthcheck_short_uuid: ""
 remnawave_sub_next_restart_stabilize_seconds: 5
 ```
 
+Локальный HTTP health-check (`HTTP check subscription-next page URL`) ходит на
+`http://127.0.0.1:3011/<shortUuid>`, но передаёт reverse-proxy headers
+(`Host` / `X-Forwarded-Host` = `remnawave_sub_portalbase_domain`,
+`X-Forwarded-Proto=https`, `X-Forwarded-Port=443`, `X-Real-IP`, `X-Forwarded-For`).
+Subscription Page требует HTTPS proxy context (`ProxyCheckMiddleware`) и иначе
+закрывает соединение без ответа.
+
 ### Секретные (Ansible Vault / inventory secrets)
 
 ```yaml
@@ -192,7 +199,7 @@ Production-контур (порт 3010, default UUID) не затрагивае�
 
 | Параметр | Значение |
 |----------|----------|
-| Git-источник (default) | `roles/remnawave_subscription_page_config/files/vpn-for-friends.json` |
+| Git-источник | `roles/remnawave_subscription_page_config/files/base.json` + `files/brands/*.patch.json` (см. [remnawave_subscription_branding.md](remnawave_subscription_branding.md)) |
 | Базовый шаблон upstream | `roles/remnawave_subscription_page_config/files/source/default-7.2.1.json` |
 | Сборка кастомного JSON | `scripts/build_vpn_for_friends_subpage_config.py` |
 
@@ -200,10 +207,10 @@ Production-контур (порт 3010, default UUID) не затрагивае�
 (`files/source/default-7.2.1.json`); локальные настройки существующих платформ и приложений
 имеют приоритет; итоговый desired JSON формируется build script через merge.
 
-Переменная `remnawave_subpage_config_source_file` — пользовательский override desired config на controller.
-Если пустая, роль вычисляет `remnawave_subpage_config_effective_source_file` как
-`{{ role_path }}/files/vpn-for-friends.json`. Effective path — внутренняя runtime-переменная;
-обычно пользователем не задаётся.
+Переменная `remnawave_subpage_configs` задаёт список брендовых конфигураций
+(`base_file` + `patch_file`). Legacy fallback: если список пуст, используется
+`remnawave_subpage_config_uuid` / `remnawave_subpage_config_source_file`.
+Подробности multi-brand: [remnawave_subscription_branding.md](remnawave_subscription_branding.md).
 
 ### Config check
 
@@ -213,8 +220,7 @@ Production-контур (порт 3010, default UUID) не затрагивае�
 make sub-next-config-check
 ```
 
-Вызывает `scripts/validate_subpage_config.py` для
-`roles/remnawave_subscription_page_config/files/vpn-for-friends.json` (default без аргументов).
+Собирает и валидирует VFF и Friends Connect через `scripts/build_subpage_config.py`.
 `sub-next-config-plan` и `sub-next-config-apply` всегда выполняют config check первым шагом.
 
 ### Config plan
@@ -309,7 +315,7 @@ Remnawave backend перед сохранением нормализует ло�
 | `remnawave_subpage_config_panel_url` | `https://{{ remnawave_panel_frontend_domain }}` | Base URL панели |
 | `remnawave_subpage_config_uuid` | `""` | UUID конфигурации в Remnawave |
 | `remnawave_subpage_config_source_file` | `""` | Пользовательский override пути к desired JSON |
-| `remnawave_subpage_config_effective_source_file` | *(вычисляется в tasks)* | Effective path: override или `{{ role_path }}/files/vpn-for-friends.json` |
+| `remnawave_subpage_configs` | `[]` | Declarative multi-brand list (`key`, `name`, `uuid`, `base_file`, `patch_file`) |
 | `remnawave_subpage_config_api_token` | `""` | Bearer token (vault) |
 | `remnawave_subpage_config_backup_dir` | `/opt/remnasub-next/config-backups` | Каталог backup |
 | `remnawave_subpage_config_restart_next` | `true` | Restart next-контейнера после PATCH или force restart |
@@ -394,8 +400,14 @@ make sub-next-config-plan LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
 
 ```bash
 docker compose -f /opt/remnasub-next/docker-compose.yml ps
-curl -v http://127.0.0.1:3011/VZLHkrKwsj0Qs82e
-curl -v https://sub-next.vpn-for-friends.com/VZLHkrKwsj0Qs82e
+curl -v http://127.0.0.1:3011/VZLHkrKwsj0Qs82e \
+  -H 'Host: sub.portalbase.link' \
+  -H 'X-Forwarded-Host: sub.portalbase.link' \
+  -H 'X-Forwarded-Proto: https' \
+  -H 'X-Forwarded-Port: 443' \
+  -H 'X-Real-IP: 127.0.0.1' \
+  -H 'X-Forwarded-For: 127.0.0.1'
+curl -v https://sub.portalbase.link/VZLHkrKwsj0Qs82e
 nginx -t
 ss -tlnp | grep ':443'
 ```

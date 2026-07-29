@@ -563,7 +563,7 @@
         "id": "happ-windows",
         "name": "Happ",
         "isFeatured": true,
-        "urlScheme": "https://vpn-for-friends.com/redirect.html?url=happ://add/",
+        "urlScheme": "https://vff.portalbase.link/redirect.html?url=happ://add/",
         "installationStep": {
           "buttons": [
             {

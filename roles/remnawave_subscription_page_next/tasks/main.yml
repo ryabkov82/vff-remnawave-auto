@@ -148,6 +148,13 @@
     url: >-
       http://{{ remnawave_sub_next_bind_address }}:{{ remnawave_sub_next_external_port }}/{{ remnawave_sub_next_healthcheck_short_uuid }}
     method: GET
+    headers:
+      Host: "{{ remnawave_sub_portalbase_domain }}"
+      X-Forwarded-Host: "{{ remnawave_sub_portalbase_domain }}"
+      X-Forwarded-Proto: "https"
+      X-Forwarded-Port: "443"
+      X-Real-IP: "127.0.0.1"
+      X-Forwarded-For: "127.0.0.1"
     status_code: 200
     timeout: 10
   register: _sub_next_http

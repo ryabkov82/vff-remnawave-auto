@@ -1,0 +1,372 @@
+---
+- name: Assert External Squad item shape
+  ansible.builtin.assert:
+    that:
+      - external_squad_item.name | default('') | trim | length > 0
+      - external_squad_item.subpage_config_name | default('') | trim | length > 0
+    fail_msg: >-
+      External Squad entries require name and subpage_config_name.
+  delegate_to: localhost
+  run_once: true
+
+- name: Resolve External Squad working names
+  ansible.builtin.set_fact:
+    _es_name: "{{ external_squad_item.name | trim }}"
+    _es_subpage_name: "{{ external_squad_item.subpage_config_name | trim }}"
+  delegate_to: localhost
+  run_once: true
+
+- name: Refuse to manage protected External Squad names
+  ansible.builtin.assert:
+    that:
+      - _es_name not in (remnawave_external_squads_protected_names | default([]))
+    fail_msg: >-
+      Refusing to manage protected External Squad {{ _es_name | quote }}.
+  delegate_to: localhost
+  run_once: true
+
+- name: Resolve Subpage Config matches by exact name
+  ansible.builtin.set_fact:
+    _es_subpage_matches: >-
+      {{
+        remnawave_external_squads_subpage_configs
+        | selectattr('name', 'equalto', _es_subpage_name)
+        | list
+      }}
+  no_log: true
+  delegate_to: localhost
+  run_once: true
+
+- name: Detect whether Subpage Config name is declaratively declared
+  ansible.builtin.set_fact:
+    _es_subpage_is_declared: >-
+      {{
+        (
+          remnawave_subpage_configs
+          | default([])
+          | selectattr('name', 'defined')
+          | selectattr('name', 'equalto', _es_subpage_name)
+          | list
+          | length
+        ) > 0
+        or
+        (
+          remnawave_subpage_config_resolved
+          | default({})
+          | dict2items
+          | map(attribute='value')
+          | selectattr('name', 'defined')
+          | selectattr('name', 'equalto', _es_subpage_name)
+          | list
+          | length
+        ) > 0
+      }}
+  delegate_to: localhost
+  run_once: true
+
+- name: Resolve Subpage Config UUID from override map / resolved map / remote list
+  ansible.builtin.set_fact:
+    _es_resolved_entries: >-
+      {{
+        remnawave_subpage_config_resolved
+        | default({})
+        | dict2items
+        | map(attribute='value')
+        | selectattr('name', 'defined')
+        | selectattr('name', 'equalto', _es_subpage_name)
+        | list
+      }}
+  no_log: true
+  delegate_to: localhost
+  run_once: true
+
+- name: Choose Subpage Config UUID and planned_create flags
+  ansible.builtin.set_fact:
+    _es_subpage_uuid: >-
+      {{
+        (
+          remnawave_external_squads_subpage_uuid_map[_es_subpage_name]
+          | default('')
+          | trim
+        )
+        if (
+          (_es_subpage_name in (remnawave_external_squads_subpage_uuid_map | default({})))
+          and (
+            (remnawave_external_squads_subpage_uuid_map[_es_subpage_name] | default('') | trim | length) > 0
+          )
+        )
+        else (
+          (
+            _es_resolved_entries
+            | selectattr('uuid', 'defined')
+            | rejectattr('uuid', 'equalto', '')
+            | map(attribute='uuid')
+            | list
+            | first
+            | default('')
+          )
+          if (
+            (
+              _es_resolved_entries
+              | selectattr('uuid', 'defined')
+              | rejectattr('uuid', 'equalto', '')
+              | list
+              | length
+            ) > 0
+          )
+          else (
+            (_es_subpage_matches | first).uuid
+            if (_es_subpage_matches | length == 1)
+            else ''
+          )
+        )
+      }}
+    _es_subpage_planned_create: >-
+      {{
+        (
+          (
+            _es_resolved_entries
+            | map(attribute='planned_create')
+            | map('default', false)
+            | map('bool')
+            | select
+            | list
+            | length
+          ) > 0
+        )
+        or
+        (
+          (_es_subpage_is_declared | bool)
+          and ((_es_subpage_matches | length) == 0)
+        )
+      }}
+  no_log: true
+  delegate_to: localhost
+  run_once: true
+
+- name: Determine whether Subpage Config binding can be deferred in check mode
+  ansible.builtin.set_fact:
+    _es_subpage_deferred: >-
+      {{
+        ansible_check_mode
+        and (_es_subpage_uuid | default('') | trim | length == 0)
+        and (
+          (_es_subpage_is_declared | bool)
+          or (_es_subpage_planned_create | bool)
+        )
+      }}
+  delegate_to: localhost
+  run_once: true
+
+- name: Fail when Subpage Config name is unknown
+  ansible.builtin.assert:
+    that:
+      - >-
+        (_es_subpage_uuid | default('') | trim | length > 0)
+        or (_es_subpage_deferred | bool)
+    fail_msg: >-
+      Unknown Subpage Config name {{ _es_subpage_name | quote }}
+      for External Squad {{ _es_name | quote }}.
+      Create/apply Subpage Configs first, or fix the name.
+  delegate_to: localhost
+  run_once: true
+
+- name: Fail when Subpage Config UUID is still empty outside check mode
+  ansible.builtin.assert:
+    that:
+      - _es_subpage_uuid | default('') | trim | length > 0
+    fail_msg: >-
+      Subpage Config {{ _es_subpage_name | quote }} UUID is empty after Subpage Config
+      role for External Squad {{ _es_name | quote }}. Apply Subpage Configs first.
+  when: not ansible_check_mode
+  delegate_to: localhost
+  run_once: true
+
+- name: Assert Subpage Config UUID format for External Squad
+  ansible.builtin.assert:
+    that:
+      - _es_subpage_uuid is match(remnawave_external_squads_uuid_regex)
+    fail_msg: >-
+      Invalid Subpage Config UUID resolved for {{ _es_subpage_name | quote }}.
+  when: _es_subpage_uuid | default('') | trim | length > 0
+  delegate_to: localhost
+  run_once: true
+
+- name: Find existing External Squad by exact name
+  ansible.builtin.set_fact:
+    _es_matches: >-
+      {{
+        remnawave_external_squads_remote
+        | selectattr('name', 'equalto', _es_name)
+        | list
+      }}
+  no_log: true
+  delegate_to: localhost
+  run_once: true
+
+- name: Select existing External Squad
+  ansible.builtin.set_fact:
+    _es_existing: "{{ _es_matches | first if (_es_matches | length > 0) else {} }}"
+    _es_needs_create: "{{ _es_matches | length == 0 }}"
+  no_log: true
+  delegate_to: localhost
+  run_once: true
+
+- name: Report deferred External Squad plan in check mode
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        (
+          'External Squad ' ~ (_es_name | quote)
+          ~ ' is missing and would be created after Subpage Config '
+          ~ (_es_subpage_name | quote)
+          ~ ' is created, then linked to it via PATCH.'
+        )
+        if (_es_needs_create | bool)
+        else (
+          'External Squad ' ~ (_es_name | quote)
+          ~ ' would be linked to Subpage Config '
+          ~ (_es_subpage_name | quote)
+          ~ ' after that config is created.'
+        )
+      }}
+  when:
+    - _es_subpage_deferred | bool
+    - ansible_check_mode
+
+- name: Report External Squad create plan in check mode
+  ansible.builtin.debug:
+    msg: >-
+      External Squad {{ _es_name | quote }} is missing and would be created
+      via POST /api/external-squads, then linked to Subpage Config
+      {{ _es_subpage_name | quote }} via PATCH.
+  when:
+    - _es_needs_create | bool
+    - ansible_check_mode
+    - not (_es_subpage_deferred | bool)
+
+- name: Create missing External Squad via Remnawave API
+  ansible.builtin.uri:
+    url: "{{ remnawave_external_squads_panel_url }}/api/external-squads"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ remnawave_external_squads_api_token }}"
+      Accept: application/json
+    body_format: json
+    body:
+      name: "{{ _es_name }}"
+    return_content: true
+    status_code: [200, 201]
+    validate_certs: true
+    timeout: 30
+  register: _es_create_result
+  no_log: true
+  failed_when: false
+  changed_when: _es_create_result.status | default(0) in [200, 201]
+  when:
+    - _es_needs_create | bool
+    - not ansible_check_mode
+  delegate_to: localhost
+  run_once: true
+
+- name: Fail with sanitized External Squad create error
+  ansible.builtin.assert:
+    that:
+      - _es_create_result.status | default(0) in [200, 201]
+    fail_msg: >-
+      Remnawave External Squad POST failed for {{ _es_name | quote }}:
+      HTTP {{ _es_create_result.status | default('unknown') }},
+      errorCode={{ (_es_create_result.json | default({})).get('errorCode', 'unknown') }},
+      message={{ (_es_create_result.json | default({})).get('message', 'No API error message') }}
+  when:
+    - _es_needs_create | bool
+    - not ansible_check_mode
+  delegate_to: localhost
+  run_once: true
+
+- name: Capture created External Squad
+  ansible.builtin.set_fact:
+    _es_existing: "{{ _es_create_result.json.response }}"
+    remnawave_external_squads_remote: >-
+      {{ remnawave_external_squads_remote + [ _es_create_result.json.response ] }}
+  no_log: true
+  when:
+    - _es_needs_create | bool
+    - not ansible_check_mode
+  delegate_to: localhost
+  run_once: true
+
+- name: Link Subpage Config when External Squad exists and UUID is known
+  when:
+    - not (_es_needs_create | bool and ansible_check_mode)
+    - not (_es_subpage_deferred | bool)
+    - _es_subpage_uuid | default('') | trim | length > 0
+  block:
+    - name: Resolve External Squad UUID
+      ansible.builtin.set_fact:
+        _es_uuid: "{{ _es_existing.uuid }}"
+        _es_current_subpage: "{{ _es_existing.subpageConfigUuid | default(None) }}"
+      no_log: true
+      delegate_to: localhost
+      run_once: true
+
+    - name: Determine whether External Squad Subpage link needs update
+      ansible.builtin.set_fact:
+        _es_needs_link_update: "{{ _es_current_subpage != _es_subpage_uuid }}"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Report External Squad link plan
+      ansible.builtin.debug:
+        msg: >-
+          {{
+            (
+              'External Squad ' ~ (_es_name | quote)
+              ~ ' subpageConfigUuid differs and would be updated.'
+              if (_es_needs_link_update | bool)
+              else (
+                'External Squad ' ~ (_es_name | quote)
+                ~ ' is already linked to the desired Subpage Config.'
+              )
+            )
+          }}
+
+    - name: Update External Squad Subpage Config link via Remnawave API
+      ansible.builtin.uri:
+        url: "{{ remnawave_external_squads_panel_url }}/api/external-squads"
+        method: PATCH
+        headers:
+          Authorization: "Bearer {{ remnawave_external_squads_api_token }}"
+          Accept: application/json
+        body_format: json
+        body:
+          uuid: "{{ _es_uuid }}"
+          subpageConfigUuid: "{{ _es_subpage_uuid }}"
+        return_content: true
+        status_code: 200
+        validate_certs: true
+        timeout: 30
+      register: _es_update_result
+      no_log: true
+      failed_when: false
+      changed_when: _es_update_result.status | default(0) == 200
+      when:
+        - _es_needs_link_update | bool
+        - not ansible_check_mode
+      delegate_to: localhost
+      run_once: true
+
+    - name: Fail with sanitized External Squad update error
+      ansible.builtin.assert:
+        that:
+          - _es_update_result.status | default(0) == 200
+        fail_msg: >-
+          Remnawave External Squad PATCH failed for {{ _es_name | quote }}:
+          HTTP {{ _es_update_result.status | default('unknown') }},
+          errorCode={{ (_es_update_result.json | default({})).get('errorCode', 'unknown') }},
+          message={{ (_es_update_result.json | default({})).get('message', 'No API error message') }}
+      when:
+        - _es_needs_link_update | bool
+        - not ansible_check_mode
+      delegate_to: localhost
+      run_once: true

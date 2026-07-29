@@ -2258,7 +2258,7 @@
               },
               "buttons": [
                 {
-                  "link": "https://vpn-for-friends.com/redirect.html?url=happ://add/{{SUBSCRIPTION_LINK}}",
+                  "link": "https://vff.portalbase.link/redirect.html?url=happ://add/{{SUBSCRIPTION_LINK}}",
                   "text": {
                     "en": "Add Subscription",
                     "ru": "Добавить подписку"

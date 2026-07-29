@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ROLE_FILES = ROOT / "roles/remnawave_subscription_page_config/files"
 LEGACY_PATH = ROOT / "roles/remnawave_subscription_page/files/app-config.json"
 DEFAULT_SOURCE = ROLE_FILES / "source/default-7.2.1.json"
-DEFAULT_OUTPUT = ROLE_FILES / "vpn-for-friends.json"
+DEFAULT_OUTPUT = ROOT / "tests/fixtures/vpn-for-friends.golden.json"
 
 LOCALES = ("en", "ru")
 

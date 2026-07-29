@@ -1,0 +1,27 @@
+{
+  "brandingSettings": {
+    "title": "VPN for friends",
+    "supportUrl": "https://t.me/friends_connect_support"
+  },
+  "baseSettings": {
+    "metaTitle": "VPN for friends"
+  },
+  "platforms": {
+    "windows": {
+      "apps": [
+        {
+          "blocks": [
+            {},
+            {
+              "buttons": [
+                {
+                  "link": "https://vff.portalbase.link/redirect.html?url=happ://add/{{SUBSCRIPTION_LINK}}"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

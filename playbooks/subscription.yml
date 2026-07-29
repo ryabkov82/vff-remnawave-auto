@@ -95,10 +95,24 @@
           tags:
             - sub_next_config
             - sub_next_full
+            - subscription_branding
       tags:
         - never
         - sub_next_config
         - sub_next_full
+        - subscription_branding
+
+    - name: Manage Remnawave External Squads Subpage Config bindings
+      ansible.builtin.include_role:
+        name: remnawave_external_squads
+        apply:
+          tags:
+            - external_squads
+            - subscription_branding
+      tags:
+        - never
+        - external_squads
+        - subscription_branding
 
     - name: Cutover production subscription page upstream
       ansible.builtin.include_role:

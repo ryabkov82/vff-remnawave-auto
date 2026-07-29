@@ -57,7 +57,7 @@ IOS_ORDER = ["OneXray", "Shadowrocket", "Happ", "v2RayTun", "Streisand"]
 
 DEFAULT_CONFIG_PATH = (
     Path(__file__).resolve().parents[1]
-    / "roles/remnawave_subscription_page_config/files/vpn-for-friends.json"
+    / "roles/remnawave_subscription_page_config/files/base.json"
 )
 
 PLACEHOLDER_PATTERN = re.compile(r"\{\{[A-Z0-9_]+\}\}")

@@ -1,0 +1,27 @@
+{
+  "brandingSettings": {
+    "title": "Friends Connect",
+    "supportUrl": "https://t.me/friends_connect_support"
+  },
+  "baseSettings": {
+    "metaTitle": "Friends Connect"
+  },
+  "platforms": {
+    "windows": {
+      "apps": [
+        {
+          "blocks": [
+            {},
+            {
+              "buttons": [
+                {
+                  "link": "https://fc.portalbase.link/redirect.html?url=happ://add/{{SUBSCRIPTION_LINK}}"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
