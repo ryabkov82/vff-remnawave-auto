@@ -26,13 +26,17 @@ from remnawave_subpage_config import FilterModule  # noqa: E402
 from subpage_branding import (  # noqa: E402
     ALLOWED_BRAND_DIFF_PATHS,
     assert_only_brand_diffs,
+    build_external_squad_patch_body,
     collect_diff_paths,
     configs_equal,
     deep_merge,
+    merge_external_squad_subscription_settings,
     plan_external_squad_action,
     plan_subpage_config_action,
+    profile_title_needs_update,
     resolve_external_squad_subpage_binding,
     resolve_subpage_uuid_by_name,
+    verify_external_squad_patch_response,
 )
 
 
@@ -402,6 +406,183 @@ class ExternalSquadPlanTests(unittest.TestCase):
         self.assertTrue(binding["ok"])
         self.assertFalse(binding["deferred"])
         self.assertEqual(binding["uuid"], vff_uuid)
+
+
+class ExternalSquadProfileTitleTests(unittest.TestCase):
+    VFF_UUID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    FC_UUID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    VFF_SUBPAGE = "f24bc0b1-2386-4473-9bde-9cd7b384641c"
+    FC_SUBPAGE = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+
+    def test_merge_sets_brand_profile_titles(self) -> None:
+        vff = merge_external_squad_subscription_settings(
+            {"supportLink": "https://t.me/support"},
+            profile_title="VPN for friends",
+        )
+        fc = merge_external_squad_subscription_settings(
+            None,
+            profile_title="Friends Connect",
+        )
+        self.assertEqual(vff["profileTitle"], "VPN for friends")
+        self.assertEqual(fc["profileTitle"], "Friends Connect")
+        self.assertEqual(vff["supportLink"], "https://t.me/support")
+
+    def test_merge_preserves_existing_subscription_settings(self) -> None:
+        current = {
+            "supportLink": "https://t.me/support",
+            "profileUpdateInterval": 12,
+            "isProfileWebpageUrlEnabled": True,
+            "serveJsonAtBaseSubscription": False,
+            "isShowCustomRemarks": True,
+            "happAnnounce": "hello",
+            "happRouting": "route",
+            "randomizeHosts": False,
+            "profileTitle": "Old Title",
+        }
+        merged = merge_external_squad_subscription_settings(
+            current,
+            profile_title="Friends Connect",
+        )
+        for key, value in current.items():
+            if key == "profileTitle":
+                continue
+            self.assertEqual(merged[key], value, key)
+        self.assertEqual(merged["profileTitle"], "Friends Connect")
+
+    def test_null_subscription_settings_treated_as_empty_object(self) -> None:
+        merged = merge_external_squad_subscription_settings(
+            None,
+            profile_title="VPN for friends",
+        )
+        self.assertEqual(merged, {"profileTitle": "VPN for friends"})
+        self.assertTrue(profile_title_needs_update(None, "VPN for friends"))
+
+    def test_matching_profile_title_skips_patch(self) -> None:
+        existing = [
+            {
+                "uuid": self.FC_UUID,
+                "name": "Friends-Connect",
+                "subpageConfigUuid": self.FC_SUBPAGE,
+                "subscriptionSettings": {
+                    "profileTitle": "Friends Connect",
+                    "supportLink": "https://t.me/support",
+                },
+            }
+        ]
+        plan = plan_external_squad_action(
+            existing,
+            name="Friends-Connect",
+            desired_subpage_config_uuid=self.FC_SUBPAGE,
+            desired_profile_title="Friends Connect",
+            check_mode=False,
+        )
+        self.assertFalse(plan["patch_subpage"])
+        self.assertFalse(plan["patch_profile_title"])
+        self.assertEqual(plan["http_methods"], [])
+
+        body = build_external_squad_patch_body(
+            uuid=self.FC_UUID,
+            desired_subpage_config_uuid=self.FC_SUBPAGE,
+            current_subpage_config_uuid=self.FC_SUBPAGE,
+            current_subscription_settings=existing[0]["subscriptionSettings"],
+            desired_profile_title="Friends Connect",
+        )
+        self.assertEqual(body, {"uuid": self.FC_UUID})
+
+    def test_profile_title_change_preserves_subpage_uuid_in_patch_body(self) -> None:
+        current_settings = {
+            "profileTitle": "Old",
+            "supportLink": "https://t.me/support",
+            "happAnnounce": "keep-me",
+        }
+        body = build_external_squad_patch_body(
+            uuid=self.VFF_UUID,
+            desired_subpage_config_uuid=self.VFF_SUBPAGE,
+            current_subpage_config_uuid=self.VFF_SUBPAGE,
+            current_subscription_settings=current_settings,
+            desired_profile_title="VPN for friends",
+        )
+        self.assertNotIn("subpageConfigUuid", body)
+        self.assertEqual(body["uuid"], self.VFF_UUID)
+        self.assertEqual(
+            body["subscriptionSettings"]["profileTitle"],
+            "VPN for friends",
+        )
+        self.assertEqual(body["subscriptionSettings"]["supportLink"], "https://t.me/support")
+        self.assertEqual(body["subscriptionSettings"]["happAnnounce"], "keep-me")
+        self.assertIsNotNone(body["subscriptionSettings"])
+
+    def test_verify_keeps_subpage_and_other_settings(self) -> None:
+        before = {
+            "uuid": self.FC_UUID,
+            "name": "Friends-Connect",
+            "subpageConfigUuid": self.FC_SUBPAGE,
+            "subscriptionSettings": {
+                "profileTitle": "Old",
+                "supportLink": "https://t.me/support",
+                "randomizeHosts": True,
+            },
+        }
+        after = {
+            "uuid": self.FC_UUID,
+            "name": "Friends-Connect",
+            "subpageConfigUuid": self.FC_SUBPAGE,
+            "subscriptionSettings": {
+                "profileTitle": "Friends Connect",
+                "supportLink": "https://t.me/support",
+                "randomizeHosts": True,
+            },
+        }
+        errors = verify_external_squad_patch_response(
+            before,
+            after,
+            desired_profile_title="Friends Connect",
+            desired_subpage_config_uuid=self.FC_SUBPAGE,
+        )
+        self.assertEqual(errors, [])
+
+    def test_antiblock_premium_still_protected(self) -> None:
+        plan = plan_external_squad_action(
+            [{"uuid": self.VFF_UUID, "name": "AntiBlock-Premium"}],
+            name="AntiBlock-Premium",
+            desired_subpage_config_uuid=self.VFF_SUBPAGE,
+            desired_profile_title="Should Not Apply",
+            protected_names=["AntiBlock-Premium"],
+            check_mode=False,
+        )
+        self.assertTrue(plan["skip"])
+        self.assertEqual(plan["http_methods"], [])
+
+    def test_idempotent_rerun_after_profile_title_applied(self) -> None:
+        existing = [
+            {
+                "uuid": self.VFF_UUID,
+                "name": "VPN-for-Friends",
+                "subpageConfigUuid": self.VFF_SUBPAGE,
+                "subscriptionSettings": {
+                    "profileTitle": "VPN for friends",
+                    "supportLink": "https://t.me/support",
+                },
+            }
+        ]
+        first = plan_external_squad_action(
+            existing,
+            name="VPN-for-Friends",
+            desired_subpage_config_uuid=self.VFF_SUBPAGE,
+            desired_profile_title="VPN for friends",
+            check_mode=False,
+        )
+        second = plan_external_squad_action(
+            existing,
+            name="VPN-for-Friends",
+            desired_subpage_config_uuid=self.VFF_SUBPAGE,
+            desired_profile_title="VPN for friends",
+            check_mode=False,
+        )
+        self.assertEqual(first["http_methods"], [])
+        self.assertEqual(second["http_methods"], [])
+        self.assertFalse(first["patch_profile_title"])
+        self.assertFalse(second["patch_profile_title"])
 
 
 if __name__ == "__main__":

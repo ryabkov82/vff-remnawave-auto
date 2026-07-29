@@ -13,6 +13,7 @@
   ansible.builtin.set_fact:
     _es_name: "{{ external_squad_item.name | trim }}"
     _es_subpage_name: "{{ external_squad_item.subpage_config_name | trim }}"
+    _es_profile_title: "{{ external_squad_item.profile_title | default('') | trim }}"
   delegate_to: localhost
   run_once: true
 
@@ -296,42 +297,103 @@
   delegate_to: localhost
   run_once: true
 
-- name: Link Subpage Config when External Squad exists and UUID is known
+- name: Link Subpage Config and profileTitle when External Squad exists and UUID is known
   when:
     - not (_es_needs_create | bool and ansible_check_mode)
     - not (_es_subpage_deferred | bool)
     - _es_subpage_uuid | default('') | trim | length > 0
   block:
-    - name: Resolve External Squad UUID
+    - name: Resolve External Squad UUID and current subscriptionSettings
       ansible.builtin.set_fact:
         _es_uuid: "{{ _es_existing.uuid }}"
         _es_current_subpage: "{{ _es_existing.subpageConfigUuid | default(None) }}"
+        _es_current_subscription_settings: >-
+          {{
+            _es_existing.subscriptionSettings
+            if (_es_existing.subscriptionSettings is mapping)
+            else {}
+          }}
       no_log: true
       delegate_to: localhost
       run_once: true
 
-    - name: Determine whether External Squad Subpage link needs update
+    - name: Build merged subscriptionSettings with desired profileTitle
       ansible.builtin.set_fact:
-        _es_needs_link_update: "{{ _es_current_subpage != _es_subpage_uuid }}"
+        _es_merged_subscription_settings: >-
+          {{
+            _es_current_subscription_settings
+            | combine({'profileTitle': _es_profile_title})
+          }}
+      when: _es_profile_title | length > 0
+      no_log: true
       delegate_to: localhost
       run_once: true
 
-    - name: Report External Squad link plan
+    - name: Determine External Squad update necessities
+      ansible.builtin.set_fact:
+        _es_needs_link_update: "{{ _es_current_subpage != _es_subpage_uuid }}"
+        _es_needs_profile_title_update: >-
+          {{
+            (_es_profile_title | length > 0)
+            and (
+              (_es_current_subscription_settings.profileTitle | default('') | trim)
+              != _es_profile_title
+            )
+          }}
+      delegate_to: localhost
+      run_once: true
+
+    - name: Determine whether External Squad needs PATCH
+      ansible.builtin.set_fact:
+        _es_needs_patch: >-
+          {{
+            (_es_needs_link_update | bool)
+            or (_es_needs_profile_title_update | bool)
+          }}
+      delegate_to: localhost
+      run_once: true
+
+    - name: Build External Squad PATCH body
+      ansible.builtin.set_fact:
+        _es_patch_body: >-
+          {{
+            {'uuid': _es_uuid}
+            | combine(
+                {'subpageConfigUuid': _es_subpage_uuid}
+                if (_es_needs_link_update | bool) else {}
+              )
+            | combine(
+                {'subscriptionSettings': _es_merged_subscription_settings}
+                if (_es_needs_profile_title_update | bool) else {}
+              )
+          }}
+      when: _es_needs_patch | bool
+      no_log: true
+      delegate_to: localhost
+      run_once: true
+
+    - name: Report External Squad plan
       ansible.builtin.debug:
         msg: >-
           {{
             (
-              'External Squad ' ~ (_es_name | quote)
-              ~ ' subpageConfigUuid differs and would be updated.'
-              if (_es_needs_link_update | bool)
+              'External Squad ' ~ (_es_name | quote) ~ ' would be updated ('
+              ~ (
+                  (
+                    (['subpageConfigUuid'] if (_es_needs_link_update | bool) else [])
+                    + (['profileTitle'] if (_es_needs_profile_title_update | bool) else [])
+                  ) | join(', ')
+                )
+              ~ ').'
+              if (_es_needs_patch | bool)
               else (
                 'External Squad ' ~ (_es_name | quote)
-                ~ ' is already linked to the desired Subpage Config.'
+                ~ ' is already linked and profileTitle is up to date.'
               )
             )
           }}
 
-    - name: Update External Squad Subpage Config link via Remnawave API
+    - name: Update External Squad via Remnawave API
       ansible.builtin.uri:
         url: "{{ remnawave_external_squads_panel_url }}/api/external-squads"
         method: PATCH
@@ -339,9 +401,7 @@
           Authorization: "Bearer {{ remnawave_external_squads_api_token }}"
           Accept: application/json
         body_format: json
-        body:
-          uuid: "{{ _es_uuid }}"
-          subpageConfigUuid: "{{ _es_subpage_uuid }}"
+        body: "{{ _es_patch_body }}"
         return_content: true
         status_code: 200
         validate_certs: true
@@ -351,7 +411,7 @@
       failed_when: false
       changed_when: _es_update_result.status | default(0) == 200
       when:
-        - _es_needs_link_update | bool
+        - _es_needs_patch | bool
         - not ansible_check_mode
       delegate_to: localhost
       run_once: true
@@ -366,7 +426,72 @@
           errorCode={{ (_es_update_result.json | default({})).get('errorCode', 'unknown') }},
           message={{ (_es_update_result.json | default({})).get('message', 'No API error message') }}
       when:
-        - _es_needs_link_update | bool
+        - _es_needs_patch | bool
         - not ansible_check_mode
+      delegate_to: localhost
+      run_once: true
+
+    - name: Capture External Squad PATCH response
+      ansible.builtin.set_fact:
+        _es_after: "{{ _es_update_result.json.response }}"
+      no_log: true
+      when:
+        - _es_needs_patch | bool
+        - not ansible_check_mode
+      delegate_to: localhost
+      run_once: true
+
+    - name: Assert External Squad identity preserved after PATCH
+      ansible.builtin.assert:
+        that:
+          - _es_after.uuid == _es_uuid
+          - _es_after.name == _es_name
+          - _es_after.subpageConfigUuid | default(None) == _es_subpage_uuid
+        fail_msg: >-
+          External Squad {{ _es_name | quote }} identity/subpageConfigUuid changed after PATCH.
+      when:
+        - _es_needs_patch | bool
+        - not ansible_check_mode
+      delegate_to: localhost
+      run_once: true
+
+    - name: Assert External Squad profileTitle after PATCH
+      ansible.builtin.assert:
+        that:
+          - >-
+            (_es_after.subscriptionSettings | default({})).profileTitle | default('') | trim
+            == _es_profile_title
+        fail_msg: >-
+          External Squad {{ _es_name | quote }} profileTitle mismatch after PATCH.
+      when:
+        - _es_needs_patch | bool
+        - not ansible_check_mode
+        - _es_profile_title | length > 0
+      delegate_to: localhost
+      run_once: true
+
+    - name: Assert preexisting subscriptionSettings keys were preserved
+      ansible.builtin.assert:
+        that:
+          - _es_after.subscriptionSettings is mapping
+          - >-
+            (
+              _es_merged_subscription_settings.keys()
+              | map('extract', _es_after.subscriptionSettings)
+              | list
+            )
+            ==
+            (
+              _es_merged_subscription_settings.keys()
+              | map('extract', _es_merged_subscription_settings)
+              | list
+            )
+        fail_msg: >-
+          External Squad {{ _es_name | quote }} lost preexisting subscriptionSettings
+          fields after profileTitle PATCH.
+      when:
+        - _es_needs_patch | bool
+        - not ansible_check_mode
+        - _es_needs_profile_title_update | bool
       delegate_to: localhost
       run_once: true
