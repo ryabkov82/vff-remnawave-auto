@@ -41,6 +41,7 @@ PLAY_SUB ?= playbooks/subscription.yml
 PLAY_MIGRATE_INBOUND ?= playbooks/migrate_inbound.yml
 PLAY_MIGRATE_HOSTS ?= playbooks/migrate_hosts.yml
 PLAY_MIGRATE_USERS ?= playbooks/migrate_users.yml
+PLAY_AUDIT_HOSTS ?= playbooks/audit_hosts.yml
 
 # Доп. флаги для ansible/ansible-playbook (например: --ask-vault-pass, -e var=val)
 ANSIBLE_FLAGS ?=
@@ -61,7 +62,7 @@ include .env
 export $(shell sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' .env)
 endif
 
-.PHONY: help bootstrap dns dns-plan dns-absent panel nodes haproxy up smoke smoke-docker site lint vault ping facts destroy upgrade upgrade-remnawave sub-next sub-next-check sub-next-nginx sub-next-nginx-check sub-next-config-check sub-next-config-plan sub-next-config-apply sub-next-full sub-portalbase sub-portalbase-check sub-cutover-check sub-cutover sub-rollback-check sub-rollback subpage-brands-check subpage-brands external-squads-check external-squads subscription-branding-check subscription-branding
+.PHONY: help bootstrap dns dns-plan dns-absent panel nodes hosts-audit hosts-plan haproxy up smoke smoke-docker site lint vault ping facts destroy upgrade upgrade-remnawave sub-next sub-next-check sub-next-nginx sub-next-nginx-check sub-next-config-check sub-next-config-plan sub-next-config-apply sub-next-full sub-portalbase sub-portalbase-check sub-cutover-check sub-cutover sub-rollback-check sub-rollback subpage-brands-check subpage-brands external-squads-check external-squads subscription-branding-check subscription-branding
 
 help: ## Показать справку по целям
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*##/: /' | sort
@@ -124,6 +125,7 @@ nodes: ## Деплой Remnawave Nodes (+ регистрация, health-checks)
 	@#   make nodes LIMIT=de-fra-1 TAGS=register_node
 	@#   make nodes LIMIT=de-fra-1 TAGS=register_host
 	@#   make nodes LIMIT=de-fra-1 TAGS=register_host EXTRA='-e rw_host_force_recreate=true'
+	@#   make nodes LIMIT=de-fra-1 TAGS=register_host --check --diff
 	@#   make nodes LIMIT=de-fra-1 TAGS=cf_dns
 	@#   make nodes LIMIT=de-fra-1 TAGS=cert_enroll
 	@#   make nodes LIMIT=de-fra-1 TAGS=tls_sync
@@ -131,6 +133,19 @@ nodes: ## Деплой Remnawave Nodes (+ регистрация, health-checks)
 	@#   make nodes LIMIT=de-fra-1 TAGS=nginx
 	@#   make nodes LIMIT=de-fra-1 TAGS=qos
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_NODES) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
+
+hosts-audit: ## Read-only аудит API Host (только GET; отчёты в build/)
+	@# Примеры:
+	@#   make hosts-audit LIMIT=panel
+	@#   make hosts-audit LIMIT=panel ANSIBLE_FLAGS="--vault-password-file ~/.ansible/vault.pass"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_AUDIT_HOSTS) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
+
+hosts-plan: ## Dry-run register_host (Ansible --check --diff; без production update)
+	@# Примеры:
+	@#   make hosts-plan LIMIT=de-fra-1
+	@#   make hosts-plan LIMIT=de-fra-1 EXTRA='-e rw_host_match_by=endpoint_inbound'
+	@# Не выполняет массовый rename: нужен явный LIMIT и rw_host_set_remark_if_exists=true
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_NODES) $(LIMIT_FLAG) --tags register_host --check --diff $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
 
 disable-node: ## Отключить/включить ноду (опц.: отключить её хосты)
 	@# Примеры:

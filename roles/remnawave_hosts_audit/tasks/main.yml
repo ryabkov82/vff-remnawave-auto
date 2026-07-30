@@ -1,0 +1,204 @@
+---
+# Read-only audit of Remnawave Hosts via GET API only.
+# Writes build/remnawave-hosts-audit.{json,md}
+# Never prints API tokens. URI tasks that carry Authorization use no_log.
+
+- name: Fail if API credentials missing
+  ansible.builtin.assert:
+    that:
+      - remnawave_panel_api_token is defined
+      - remnawave_panel_api_token | length > 0
+      - remnawave_panel_api_base is defined
+      - remnawave_panel_api_base | length > 0
+    fail_msg: Missing remnawave_panel_api_token or remnawave_panel_api_base
+  no_log: true
+
+- name: Compose API headers
+  ansible.builtin.set_fact:
+    _rw_audit_headers:
+      Authorization: "Bearer {{ remnawave_panel_api_token }}"
+      Accept: "application/json"
+  no_log: true
+
+- name: Ensure audit directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ rw_hosts_audit_out_dir }}"
+    - "{{ rw_hosts_audit_work_dir }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+# ---------------------------------------------------------
+# Desired hosts from inventory (all nodes), no API writes
+# ---------------------------------------------------------
+- name: Collect desired Hosts from inventory hostvars
+  vars:
+    _nodes: "{{ groups['nodes'] | default([]) }}"
+  ansible.builtin.set_fact:
+    _rw_audit_desired: >-
+      {%- set out = [] -%}
+      {%- for hname in _nodes -%}
+        {%- set hv = hostvars[hname] -%}
+        {%- set hosts_list = hv.remnawave_hosts | default([]) -%}
+        {%- if hosts_list | length > 0 -%}
+          {%- for item in hosts_list -%}
+            {%- set _ = out.append({
+                  'inventory_host': hname,
+                  'remark': item.remark | default(''),
+                  'address': item.address | default(''),
+                  'port': (item.port | default(hv.rw_host_port | default(443)) | int),
+                  'inbound_tag': item.inbound_tag | default(hv.remnawave_inbound_tag | default(''))
+                }) -%}
+          {%- endfor -%}
+        {%- else -%}
+          {%- set remark = hv.remnawave_host_remark | default(hv.rw_host_remark | default('')) -%}
+          {%- set address = hv.remnawave_host_address | default(hv.rw_host_address | default('')) -%}
+          {%- if (remark | string | length) > 0 and (address | string | length) > 0 -%}
+            {%- set _ = out.append({
+                  'inventory_host': hname,
+                  'remark': remark,
+                  'address': address,
+                  'port': (hv.rw_host_port | default(443) | int),
+                  'inbound_tag': hv.remnawave_inbound_tag | default(hv.rw_inbound_tag | default(''))
+                }) -%}
+          {%- endif -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Write desired inventory JSON
+  ansible.builtin.copy:
+    dest: "{{ rw_hosts_audit_work_dir }}/desired.json"
+    mode: "0644"
+    content: "{{ _rw_audit_desired | to_nice_json }}\n"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+# ---------------------------------------------------------
+# GET-only API fetches (no_log: Authorization may appear in result)
+# ---------------------------------------------------------
+- name: "GET /api/hosts (read-only)"
+  ansible.builtin.uri:
+    url: "{{ remnawave_panel_api_base }}/hosts"
+    method: GET
+    headers: "{{ _rw_audit_headers }}"
+    return_content: true
+    status_code: [200]
+  register: _rw_audit_hosts_resp
+  no_log: true
+  check_mode: false
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: "GET /api/nodes (read-only)"
+  ansible.builtin.uri:
+    url: "{{ remnawave_panel_api_base }}/nodes"
+    method: GET
+    headers: "{{ _rw_audit_headers }}"
+    return_content: true
+    status_code: [200]
+  register: _rw_audit_nodes_resp
+  no_log: true
+  check_mode: false
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: "GET /api/config-profiles/inbounds (read-only)"
+  ansible.builtin.uri:
+    url: "{{ remnawave_panel_api_base }}/config-profiles/inbounds"
+    method: GET
+    headers: "{{ _rw_audit_headers }}"
+    return_content: true
+    status_code: [200]
+  register: _rw_audit_inbounds_resp
+  no_log: true
+  check_mode: false
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Persist raw GET payloads (response body only, no headers)
+  ansible.builtin.copy:
+    dest: "{{ rw_hosts_audit_work_dir }}/{{ item.file }}"
+    mode: "0644"
+    content: "{{ item.payload | to_nice_json }}\n"
+  loop:
+    - file: hosts.json
+      payload: "{{ _rw_audit_hosts_resp.json }}"
+    - file: nodes.json
+      payload: "{{ _rw_audit_nodes_resp.json }}"
+    - file: inbounds.json
+      payload: "{{ _rw_audit_inbounds_resp.json }}"
+  loop_control:
+    label: "{{ item.file }}"
+  no_log: true
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Resolve local Python interpreter
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/../.venv/bin/python"
+  register: _rw_audit_venv_python
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Build audit reports via Python helper
+  ansible.builtin.command:
+    argv:
+      - "{{ _rw_audit_venv_python.stat.path if _rw_audit_venv_python.stat.exists else 'python3' }}"
+      - "{{ playbook_dir }}/../scripts/remnawave_hosts_lib.py"
+      - --hosts-json
+      - "{{ rw_hosts_audit_work_dir }}/hosts.json"
+      - --nodes-json
+      - "{{ rw_hosts_audit_work_dir }}/nodes.json"
+      - --inbounds-json
+      - "{{ rw_hosts_audit_work_dir }}/inbounds.json"
+      - --desired-json
+      - "{{ rw_hosts_audit_work_dir }}/desired.json"
+      - --out-dir
+      - "{{ rw_hosts_audit_out_dir }}"
+      - --managed-tag
+      - "{{ rw_host_managed_tag }}"
+      - --match-by
+      - "{{ rw_hosts_audit_match_by }}"
+  register: _rw_audit_py
+  changed_when: false
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Show audit summary
+  ansible.builtin.debug:
+    msg: "{{ _rw_audit_py.stdout_lines | default([]) }}"
+
+- name: Confirm report files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ rw_hosts_audit_out_dir }}/remnawave-hosts-audit.json"
+    - "{{ rw_hosts_audit_out_dir }}/remnawave-hosts-audit.md"
+  register: _rw_audit_report_stats
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Assert reports exist
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    fail_msg: "Missing audit report: {{ item.item }}"
+  loop: "{{ _rw_audit_report_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"

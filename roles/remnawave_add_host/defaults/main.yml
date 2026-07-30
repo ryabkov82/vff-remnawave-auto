@@ -37,10 +37,26 @@ rw_config_profile_name: null                    # optional if inbound lookup ret
 rw_inbound_tag: "{{ remnawave_inbound_tag }}"   # default per request
 
 # Behaviour
-rw_host_match_by: "remark"          # remark | address_port
+# Match modes:
+#   remark           — exact remark (default; rename of remark cannot find Host)
+#   address_port     — legacy; may collide when Reality + xHTTP share address:port
+#   endpoint_inbound — safe: address + port + configProfileUuid + configProfileInboundUuid
+rw_host_match_by: "remark"          # remark | address_port | endpoint_inbound
 rw_host_force_recreate: false
 rw_host_set_inbound_if_exists: true
 rw_host_set_port_if_exists: false
+
+# Managed remark rename (off by default). Requires rw_host_match_by=endpoint_inbound.
+# Remnawave 2.7.4: PATCH /api/hosts with partial body {uuid, remark} is safe and
+# does not reset nodes/inbound/sni/tag/serverDescription/etc. when omitted.
+rw_host_set_remark_if_exists: false
+rw_host_allow_unmanaged_update: false
+
+# Confirmed API update contract (Remnawave backend 2.7.4 UpdateHostCommand).
+# Do not enable rename if this is set false.
+rw_host_update_api_confirmed: true
+rw_host_update_api_method: "PATCH"
+rw_host_update_api_path: "/hosts"
 
 # Preferred declarative list. If empty -> legacy rw_host_* is used.
 remnawave_hosts: []

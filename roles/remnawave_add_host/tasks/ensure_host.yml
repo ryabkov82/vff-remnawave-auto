@@ -117,18 +117,70 @@
 
 # ---------------------------------------------------------
 # Select existing host (from prefetched list)
+# Modes: remark | address_port (legacy) | endpoint_inbound (safe)
+# Never create when match is ambiguous.
 # ---------------------------------------------------------
-- name: Select existing host by rule
+- name: Assert known rw_host_match_by
+  ansible.builtin.assert:
+    that:
+      - rw_host_match_by in ['remark', 'address_port', 'endpoint_inbound']
+    fail_msg: >-
+      Unknown rw_host_match_by={{ rw_host_match_by }}.
+      Allowed: remark, address_port, endpoint_inbound.
+
+- name: Assert desired remark is non-empty
+  ansible.builtin.assert:
+    that:
+      - (rw_item.remark | default('') | trim | length) > 0
+    fail_msg: Desired Host remark is empty; refusing to continue.
+
+- name: Collect Host match candidates
+  ansible.builtin.set_fact:
+    _rw_match_candidates: >-
+      {%- if rw_host_match_by == 'address_port' -%}
+      {{
+        _rw_hosts_existing
+        | selectattr('address', 'equalto', rw_item.address)
+        | selectattr('port', 'equalto', (rw_item.port | default(443) | int))
+        | list
+      }}
+      {%- elif rw_host_match_by == 'endpoint_inbound' -%}
+      {{
+        _rw_hosts_existing
+        | selectattr('address', 'equalto', rw_item.address)
+        | selectattr('port', 'equalto', (rw_item.port | default(443) | int))
+        | selectattr('inbound.configProfileUuid', 'equalto', _profile_uuid)
+        | selectattr('inbound.configProfileInboundUuid', 'equalto', _inbound_uuid)
+        | list
+      }}
+      {%- else -%}
+      {{
+        _rw_hosts_existing
+        | selectattr('remark', 'equalto', rw_item.remark)
+        | list
+      }}
+      {%- endif -%}
+
+- name: Fail on ambiguous Host match (never create)
+  when: (_rw_match_candidates | default([]) | length) > 1
+  ansible.builtin.fail:
+    msg: >-
+      Ambiguous Host match for match_by={{ rw_host_match_by }}
+      address={{ rw_item.address }} port={{ rw_item.port | default(443) }}
+      inbound_tag={{ rw_item.inbound_tag }} remark={{ rw_item.remark }}
+      profile_uuid={{ _profile_uuid }} inbound_uuid={{ _inbound_uuid }}
+      candidate_uuids={{ _rw_match_candidates | map(attribute='uuid') | list }}
+      candidate_remarks={{ _rw_match_candidates | map(attribute='remark') | list }}.
+      Refusing to create or update.
+
+- name: Select existing host (0 -> missing, 1 -> selected)
   ansible.builtin.set_fact:
     _rw_existing: >-
-      {%- if rw_host_match_by == 'address_port' -%}
-      {{ _rw_hosts_existing | selectattr('address', 'equalto', rw_item.address)
-                           | selectattr('port', 'equalto', (rw_item.port | default(443) | int))
-                           | list | first | default(None) }}
-      {%- else -%}
-      {{ _rw_hosts_existing | selectattr('remark', 'equalto', rw_item.remark)
-                           | list | first | default(None) }}
-      {%- endif -%}
+      {{
+        (_rw_match_candidates | first)
+        if ((_rw_match_candidates | default([]) | length) == 1)
+        else None
+      }}
 
 - name: Maybe delete existing host if force_recreate
   when: _rw_existing is not none and rw_host_force_recreate | bool
@@ -276,6 +328,141 @@
     return_content: true
   register: _rw_bulk_port
 
+# ---------------------------------------------------------
+# Optional remark rename (PATCH /api/hosts, partial {uuid,remark})
+# Safe only with endpoint_inbound. Off by default.
+# ---------------------------------------------------------
+- name: Decide if remark differs on existing host
+  when: _rw_existing is not none
+  ansible.builtin.set_fact:
+    _rw_remark_differs: "{{ (_rw_existing.remark | default('')) != (rw_item.remark | default('')) }}"
+
+- name: Init remark-differs when host is new
+  when: _rw_existing is none
+  ansible.builtin.set_fact:
+    _rw_remark_differs: false
+
+- name: Guard rename requires confirmed API contract
+  when:
+    - _rw_existing is not none
+    - rw_host_set_remark_if_exists | bool
+    - _rw_remark_differs | bool
+  ansible.builtin.assert:
+    that:
+      - rw_host_update_api_confirmed | bool
+      - (rw_host_update_api_method | upper) == 'PATCH'
+      - rw_host_update_api_path == '/hosts'
+    fail_msg: >-
+      Remark rename refused: API update contract is not confirmed
+      (expected PATCH /hosts partial {uuid,remark} for Remnawave 2.7.4).
+
+- name: Guard rename requires safe match mode endpoint_inbound
+  when:
+    - _rw_existing is not none
+    - rw_host_set_remark_if_exists | bool
+    - _rw_remark_differs | bool
+  ansible.builtin.assert:
+    that:
+      - rw_host_match_by == 'endpoint_inbound'
+    fail_msg: >-
+      Remark rename refused: rw_host_match_by must be endpoint_inbound
+      (current={{ rw_host_match_by }}). address_port is ambiguous for Reality/xHTTP.
+
+- name: Guard rename of unmanaged Host
+  when:
+    - _rw_existing is not none
+    - rw_host_set_remark_if_exists | bool
+    - _rw_remark_differs | bool
+    - (_rw_existing.tag | default('')) != rw_host_managed_tag
+    - not (rw_host_allow_unmanaged_update | bool)
+  ansible.builtin.fail:
+    msg: >-
+      Refusing to rename unmanaged Host uuid={{ _rw_existing.uuid }}
+      tag={{ _rw_existing.tag | default('') }}
+      old_remark={{ _rw_existing.remark }} new_remark={{ rw_item.remark }}.
+      Set rw_host_allow_unmanaged_update=true to allow explicitly.
+
+- name: Plan remark rename (check mode only)
+  when:
+    - _rw_existing is not none
+    - rw_host_set_remark_if_exists | bool
+    - _rw_remark_differs | bool
+    - ansible_check_mode
+  ansible.builtin.debug:
+    msg:
+      planned_rename: true
+      uuid: "{{ _rw_existing.uuid }}"
+      old_remark: "{{ _rw_existing.remark }}"
+      new_remark: "{{ rw_item.remark }}"
+      match_by: "{{ rw_host_match_by }}"
+  changed_when: true
+
+- name: "PATCH /api/hosts (remark only)"
+  when:
+    - _rw_existing is not none
+    - rw_host_set_remark_if_exists | bool
+    - _rw_remark_differs | bool
+    - not ansible_check_mode
+  block:
+    - name: Build partial remark update payload
+      ansible.builtin.set_fact:
+        _rw_remark_patch_body:
+          uuid: "{{ _rw_existing.uuid }}"
+          remark: "{{ rw_item.remark }}"
+
+    - name: Update Host remark via confirmed PATCH contract
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}{{ rw_host_update_api_path }}"
+        method: "{{ rw_host_update_api_method | upper }}"
+        headers: "{{ _rw_headers }}"
+        body_format: json
+        body: "{{ _rw_remark_patch_body }}"
+        status_code: [200]
+        return_content: true
+      register: _rw_remark_patch
+      no_log: true
+      failed_when: false
+
+    - name: Fail on remark update API error (no create/delete fallback)
+      when: (_rw_remark_patch.status | default(0) | int) != 200
+      ansible.builtin.fail:
+        msg: >-
+          Host remark PATCH failed for uuid={{ _rw_existing.uuid }}
+          status={{ _rw_remark_patch.status | default('n/a') }}.
+          Refusing create/delete fallback.
+
+    - name: Validate remark update response
+      vars:
+        _resp: "{{ _rw_remark_patch.json.response | default({}) }}"
+      ansible.builtin.assert:
+        that:
+          - (_resp.uuid | default('')) == (_rw_existing.uuid | string)
+          - (_resp.remark | default('')) == (rw_item.remark | string)
+        fail_msg: >-
+          Remark update response invalid:
+          uuid={{ _resp.uuid | default('') }} remark={{ _resp.remark | default('') }}
+          expected_uuid={{ _rw_existing.uuid }} expected_remark={{ rw_item.remark }}
+
+    - name: Refresh local existing Host remark after rename
+      ansible.builtin.set_fact:
+        _rw_existing: "{{ _rw_existing | combine({'remark': rw_item.remark}, recursive=True) }}"
+        _rw_remark_differs: false
+
+    - name: Refresh _rw_hosts_existing after rename (for loop + prune)
+      vars:
+        tmp: >-
+          {%- set out = [] -%}
+          {%- for h in _rw_hosts_existing -%}
+            {%- if (h.uuid | string) == (_rw_effective_uuid | string) -%}
+              {%- set _ = out.append(h | combine({'remark': rw_item.remark}, recursive=True)) -%}
+            {%- else -%}
+              {%- set _ = out.append(h) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ out | to_json }}
+      ansible.builtin.set_fact:
+        _rw_hosts_existing: "{{ tmp | from_json }}"
+
 - name: Output result
   ansible.builtin.debug:
     msg:
@@ -283,3 +470,5 @@
       host_uuid: "{{ _rw_effective_uuid }}"
       inbound_tag: "{{ rw_item.inbound_tag }}"
       managed_tag: "{{ rw_host_managed_tag }}"
+      remark_renamed: "{{ (rw_host_set_remark_if_exists | bool) and (_rw_remark_differs | default(false) | bool) and ansible_check_mode }}"
+      match_by: "{{ rw_host_match_by }}"

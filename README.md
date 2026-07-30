@@ -166,6 +166,18 @@ make nodes LIMIT=node-name TAGS=register_node
 make nodes LIMIT=node-name TAGS=register_host
 ```
 
+Read-only аудит Host в панели и dry-run register_host:
+
+```bash
+make hosts-audit LIMIT=panel
+make hosts-plan LIMIT=de-fra-1
+```
+
+`remark` — отображаемое имя Host; брендовая подпись задаётся через External Squad
+`serverDescription`. Безопасное переименование Host: match mode `endpoint_inbound` +
+явный `rw_host_set_remark_if_exists=true` (по умолчанию выключено). Подробности:
+[docs/remnawave_add_host.md](docs/remnawave_add_host.md).
+
 ### Smoke-тесты
 ```bash
 make nodes LIMIT=node-name TAGS=smoke_node
@@ -318,7 +330,7 @@ make migrate-users LIMIT=panel EXTRA='-e remnawave_migrate_users_dry_run=false -
 | HAProxy | [docs/haproxy_tls_sni.md](docs/haproxy_tls_sni.md) | Совместная работа панели и Xray |
 | Ноды | [docs/remnawave_node.md](docs/remnawave_node.md) | Запуск контейнера с SECRET_KEY |
 | Регистрация ноды | [docs/remnawave_register_node.md](docs/remnawave_register_node.md) | API-регистрация ноды |
-| Регистрация Host | [docs/remnawave_add_host.md](docs/remnawave_add_host.md) | Добавление Host через API |
+| Регистрация Host | [docs/remnawave_add_host.md](docs/remnawave_add_host.md) | Host reconcile, audit, безопасный rename remark |
 | Subscription Deploy | [docs/remnawave_subscription_deploy.md](docs/remnawave_subscription_deploy.md) | Развёртывание страницы подписки |
 | Subscription Page | [docs/remnawave_subscription_page.md](docs/remnawave_subscription_page.md) | Конфигурация Nginx и Docker контейнера |
 | Subscription Page v7 | [docs/remnawave_subscription_page_next.md](docs/remnawave_subscription_page_next.md) | Blue-green deploy, API-конфигурация, cutover и rollback |

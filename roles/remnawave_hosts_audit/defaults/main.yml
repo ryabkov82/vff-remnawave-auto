@@ -1,0 +1,11 @@
+---
+# Read-only Remnawave Hosts audit.
+# Performs GET only. Never POST/PATCH/PUT/DELETE.
+
+remnawave_panel_api_base: "{{ (remnawave_panel_url | default('')) | ternary(remnawave_panel_url ~ '/api', '') }}"
+remnawave_panel_api_token: ""
+
+rw_host_managed_tag: "VFF:MANAGED"
+rw_hosts_audit_match_by: "endpoint_inbound"
+rw_hosts_audit_out_dir: "{{ playbook_dir }}/../build"
+rw_hosts_audit_work_dir: "{{ rw_hosts_audit_out_dir }}/.hosts-audit-work"

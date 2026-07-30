@@ -1,0 +1,10 @@
+---
+# Read-only Remnawave Hosts audit.
+# Uses inventory/vault credentials. Performs GET only — no production mutations.
+- name: Audit Remnawave Hosts (read-only)
+  hosts: panel
+  gather_facts: false
+  become: false
+  roles:
+    - role: remnawave_hosts_audit
+      tags: [hosts_audit, audit]
