@@ -7,6 +7,8 @@
     _rw_effective_uuid: ""
     _rw_inbound_differs: false
     _rw_port_differs: false
+    _rw_remark_rename_planned: false
+    _rw_remark_rename_performed: false
     _rw_sni_base: []
     _rw_sni_list: []
     _rw_sni_csv: ""
@@ -382,6 +384,16 @@
       old_remark={{ _rw_existing.remark }} new_remark={{ rw_item.remark }}.
       Set rw_host_allow_unmanaged_update=true to allow explicitly.
 
+- name: Mark remark rename as planned (check mode)
+  when:
+    - _rw_existing is not none
+    - rw_host_set_remark_if_exists | bool
+    - _rw_remark_differs | bool
+    - ansible_check_mode
+  ansible.builtin.set_fact:
+    _rw_remark_rename_planned: true
+  changed_when: false
+
 - name: Plan remark rename (check mode only)
   when:
     - _rw_existing is not none
@@ -409,6 +421,7 @@
         _rw_remark_patch_body:
           uuid: "{{ _rw_existing.uuid }}"
           remark: "{{ rw_item.remark }}"
+      changed_when: false
 
     - name: Update Host remark via confirmed PATCH contract
       ansible.builtin.uri:
@@ -422,6 +435,7 @@
       register: _rw_remark_patch
       no_log: true
       failed_when: false
+      changed_when: (_rw_remark_patch.status | default(0) | int) == 200
 
     - name: Fail on remark update API error (no create/delete fallback)
       when: (_rw_remark_patch.status | default(0) | int) != 200
@@ -443,10 +457,16 @@
           uuid={{ _resp.uuid | default('') }} remark={{ _resp.remark | default('') }}
           expected_uuid={{ _rw_existing.uuid }} expected_remark={{ rw_item.remark }}
 
+    - name: Mark remark rename as performed
+      ansible.builtin.set_fact:
+        _rw_remark_rename_performed: true
+      changed_when: false
+
     - name: Refresh local existing Host remark after rename
       ansible.builtin.set_fact:
         _rw_existing: "{{ _rw_existing | combine({'remark': rw_item.remark}, recursive=True) }}"
         _rw_remark_differs: false
+      changed_when: false
 
     - name: Refresh _rw_hosts_existing after rename (for loop + prune)
       vars:
@@ -462,6 +482,7 @@
           {{ out | to_json }}
       ansible.builtin.set_fact:
         _rw_hosts_existing: "{{ tmp | from_json }}"
+      changed_when: false
 
 - name: Output result
   ansible.builtin.debug:
@@ -470,5 +491,6 @@
       host_uuid: "{{ _rw_effective_uuid }}"
       inbound_tag: "{{ rw_item.inbound_tag }}"
       managed_tag: "{{ rw_host_managed_tag }}"
-      remark_renamed: "{{ (rw_host_set_remark_if_exists | bool) and (_rw_remark_differs | default(false) | bool) and ansible_check_mode }}"
+      remark_rename_planned: "{{ _rw_remark_rename_planned | bool }}"
+      remark_renamed: "{{ _rw_remark_rename_performed | bool }}"
       match_by: "{{ rw_host_match_by }}"

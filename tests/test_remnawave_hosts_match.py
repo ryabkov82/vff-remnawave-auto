@@ -319,6 +319,86 @@ class RoleStructureTests(unittest.TestCase):
         self.assertIn("planned_rename", ENSURE)
         self.assertIn("Refusing create/delete fallback", ENSURE)
         self.assertIn("Refresh _rw_hosts_existing after rename", ENSURE)
+        self.assertIn("_rw_remark_rename_planned", ENSURE)
+        self.assertIn("_rw_remark_rename_performed", ENSURE)
+        self.assertIn("remark_rename_planned", ENSURE)
+        self.assertIn("Mark remark rename as performed", ENSURE)
+        self.assertIn(
+            "changed_when: (_rw_remark_patch.status | default(0) | int) == 200",
+            ENSURE,
+        )
+
+
+class RemarkRenameReportingTests(unittest.TestCase):
+    """Structural guarantees for planned/performed rename reporting."""
+
+    def _task_block(self, name: str) -> str:
+        marker = f"- name: {name}"
+        start = ENSURE.find(marker)
+        self.assertGreaterEqual(start, 0, f"missing task: {name}")
+        rest = ENSURE[start + len(marker) :]
+        nxt = rest.find("\n- name:")
+        return rest if nxt < 0 else rest[:nxt]
+
+    def test_check_mode_sets_planned_not_performed(self) -> None:
+        mark = self._task_block("Mark remark rename as planned (check mode)")
+        self.assertIn("ansible_check_mode", mark)
+        self.assertIn("_rw_remark_rename_planned: true", mark)
+        self.assertNotIn("_rw_remark_rename_performed: true", mark)
+
+        plan = self._task_block("Plan remark rename (check mode only)")
+        self.assertIn("ansible_check_mode", plan)
+        self.assertIn("changed_when: true", plan)
+        self.assertNotIn("method: PATCH", plan)
+        self.assertNotIn("uri:", plan)
+
+        out = self._task_block("Output result")
+        self.assertIn(
+            'remark_rename_planned: "{{ _rw_remark_rename_planned | bool }}"',
+            out,
+        )
+        self.assertIn(
+            'remark_renamed: "{{ _rw_remark_rename_performed | bool }}"',
+            out,
+        )
+        # Must not report renamed=true solely from check-mode diff.
+        self.assertNotIn("ansible_check_mode", out)
+
+    def test_apply_patch_marks_changed_and_performed(self) -> None:
+        patch = self._task_block('"PATCH /api/hosts (remark only)"')
+        self.assertIn("not ansible_check_mode", patch)
+        self.assertIn("Update Host remark via confirmed PATCH contract", patch)
+        self.assertIn(
+            "changed_when: (_rw_remark_patch.status | default(0) | int) == 200",
+            patch,
+        )
+        # performed is set after response validation, before local refresh.
+        performed_pos = patch.find("Mark remark rename as performed")
+        refresh_pos = patch.find("Refresh local existing Host remark after rename")
+        self.assertGreater(performed_pos, 0)
+        self.assertGreater(refresh_pos, performed_pos)
+        performed = patch[performed_pos:refresh_pos]
+        self.assertIn("_rw_remark_rename_performed: true", performed)
+        self.assertNotIn("_rw_remark_rename_planned: true", performed)
+
+    def test_idempotent_repeat_leaves_flags_false(self) -> None:
+        reset = self._task_block('"Ensure host | Reset per-item working facts"')
+        self.assertIn("_rw_remark_rename_planned: false", reset)
+        self.assertIn("_rw_remark_rename_performed: false", reset)
+        # PATCH block only runs when remark differs; idempotent path skips it.
+        patch = self._task_block('"PATCH /api/hosts (remark only)"')
+        self.assertIn("_rw_remark_differs | bool", patch)
+
+    def test_api_error_does_not_set_performed(self) -> None:
+        patch = self._task_block('"PATCH /api/hosts (remark only)"')
+        fail_pos = patch.find("Fail on remark update API error")
+        performed_pos = patch.find("Mark remark rename as performed")
+        self.assertGreater(fail_pos, 0)
+        self.assertGreater(performed_pos, fail_pos)
+        # On non-200 the fail task runs and performed task is never reached.
+        fail_block = patch[fail_pos:performed_pos]
+        self.assertIn("!= 200", fail_block)
+        self.assertNotIn("_rw_remark_rename_performed: true", fail_block)
 
     def test_prune_still_managed_only(self) -> None:
         self.assertIn("rw_host_managed_tag", PRUNE)
