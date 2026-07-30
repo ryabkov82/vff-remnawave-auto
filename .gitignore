@@ -6,6 +6,7 @@ __pycache__/
 .env
 /files/ca/ca.key
 /var/
+/build/
 collections/
 !.gitkeep
 !collections/requirements.yml

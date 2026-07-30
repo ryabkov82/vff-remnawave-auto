@@ -9,12 +9,19 @@
 
 - name: Build desired host keys
   vars:
-    _want: "{{ _rw_hosts_desired }}"
+    # Prefer effective (profile-merged) list so port/inbound defaults match ensure_host.
+    _want: "{{ _rw_hosts_effective | default(_rw_hosts_desired) }}"
     tmp: >-
       {%- set out = [] -%}
       {%- for h in _want -%}
         {%- if rw_host_match_by == 'address_port' -%}
           {%- set _ = out.append(h.address ~ ':' ~ (h.port | default(443) | int)) -%}
+        {%- elif rw_host_match_by == 'endpoint_inbound' -%}
+          {%- set tag = (h.inbound_tag | default('')) -%}
+          {%- set m = (_rw_inbounds_by_tag[tag] | default({})) -%}
+          {%- set pu = (h.profile_uuid | default(m.profile_uuid | default(''))) -%}
+          {%- set iu = (h.inbound_uuid | default(m.inbound_uuid | default(''))) -%}
+          {%- set _ = out.append(h.address ~ ':' ~ (h.port | default(443) | int) ~ ':' ~ pu ~ ':' ~ iu) -%}
         {%- else -%}
           {%- set _ = out.append(h.remark) -%}
         {%- endif -%}
@@ -58,6 +65,10 @@
       {%- for h in _rw_managed_existing -%}
         {%- if rw_host_match_by == 'address_port' -%}
           {%- set key = h.address ~ ':' ~ (h.port | int) -%}
+        {%- elif rw_host_match_by == 'endpoint_inbound' -%}
+          {%- set pu = (h.inbound.configProfileUuid | default('')) -%}
+          {%- set iu = (h.inbound.configProfileInboundUuid | default('')) -%}
+          {%- set key = h.address ~ ':' ~ (h.port | int) ~ ':' ~ pu ~ ':' ~ iu -%}
         {%- else -%}
           {%- set key = h.remark -%}
         {%- endif -%}
