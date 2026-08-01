@@ -1,1 +1,198 @@
-.venv/bin/ansible-playbook -i inventory/hosts.ini playbooks/nodes.yml --limit de-fra-3,fi-hel-1,fr-mrs-1,nl-ams-1,nl-ams-2,nl-ams-3,nl-ams-4,ru-spb-2 --tags register_host --check --diff   -e rw_host_match_by=endpoint_inbound -e rw_host_set_remark_if_exists=true -e rw_host_prune=false
+---
+# Add or reconcile Host(s) in Remnawave Panel and bind them to a Node.
+# Supports declarative remnawave_hosts[] with legacy rw_host_* fallback.
+# Managed hosts are marked with tag == rw_host_managed_tag.
+# Optional prune removes only managed hosts (dry-run by default).
+
+- name: "Fail if required variables are missing"
+  ansible.builtin.assert:
+    that:
+      - remnawave_panel_api_token is defined
+      - remnawave_panel_api_token | length > 0
+      - remnawave_panel_api_base is defined
+      - remnawave_panel_api_base | length > 0
+    fail_msg: >-
+      Missing required inputs: remnawave_panel_api_token, remnawave_panel_api_base
+
+- name: Compose API headers
+  ansible.builtin.set_fact:
+    _rw_headers:
+      Authorization: "Bearer {{ remnawave_panel_api_token }}"
+      Content-Type: "application/json"
+      Accept: "application/json"
+
+# ---------------------------------------------------------
+# Desired hosts: new remnawave_hosts[] OR legacy rw_host_*
+# ---------------------------------------------------------
+- name: Normalize desired hosts list (new format or legacy fallback)
+  ansible.builtin.set_fact:
+    _rw_hosts_desired: >-
+      {{
+        (remnawave_hosts | default([]) | length > 0)
+        | ternary(
+            remnawave_hosts,
+            [ {
+                'remark': rw_host_remark,
+                'address': rw_host_address,
+                'port': (rw_host_port | default(443)),
+                'path': (rw_host_path | default('')),
+                'sni': (rw_host_sni | default('')),
+                'host': (rw_host_host | default('')),
+                'alpn': (rw_host_alpn | default(None)),
+                'fingerprint': (rw_host_fingerprint | default('chrome')),
+                'securityLayer': (rw_host_security_layer | default('DEFAULT')),
+                'serverDescription': (rw_host_server_description | default('')),
+                'isHidden': (rw_host_is_hidden | default(false)),
+                'overrideSniFromAddress': (rw_host_override_sni_from_address | default(false)),
+                'vlessRouteId': (rw_host_vless_route_id | default(None)),
+                'allowInsecure': (rw_host_allow_insecure | default(false)),
+                'shuffleHost': (rw_host_shuffle_host | default(true)),
+                'mihomoX25519': (rw_host_mihomo_x25519 | default(false)),
+                'inbound_tag': (rw_inbound_tag | default(remnawave_inbound_tag | default(''))),
+                'config_profile_name': (rw_config_profile_name | default(None)),
+                'include_in_sni_map': true,
+                'patch_reality_servernames': true
+              } ]
+          )
+      }}
+
+- name: Assert desired hosts list not empty
+  ansible.builtin.assert:
+    that:
+      - _rw_hosts_desired | length > 0
+    fail_msg: "No hosts to process. Set remnawave_hosts[] or legacy rw_host_* vars."
+
+# ---------------------------------------------------------
+# Apply inbound_tag profiles (defaults) and validate
+# ---------------------------------------------------------
+
+- name: Init host profiles
+  ansible.builtin.set_fact:
+    _rw_host_profiles: "{{ remnawave_host_profiles | default({}) }}"
+
+- name: Build effective hosts list (profile defaults + host overrides)
+  ansible.builtin.set_fact:
+    _rw_hosts_effective: []
+    _rw_hosts_effective_errors: []
+
+- name: Merge host with its inbound profile
+  vars:
+    _tag: "{{ (rw_item.inbound_tag | default('')) | string }}"
+    _profile: "{{ _rw_host_profiles[_tag] if (_tag in _rw_host_profiles) else {} }}"
+    _effective: "{{ _profile | combine(rw_item, recursive=True) }}"
+    _err: >-
+      {{
+        []
+        + (['host.address is required'] if (_effective.address | default('') | length) == 0 else [])
+        + (['host.inbound_tag is required'] if (_tag | length) == 0 else [])
+        + (['unknown inbound_tag: ' ~ _tag] if (_tag | length > 0 and (_tag not in _rw_host_profiles)) else [])
+      }}
+  ansible.builtin.set_fact:
+    _rw_hosts_effective: "{{ _rw_hosts_effective + [_effective] }}"
+    _rw_hosts_effective_errors: "{{ _rw_hosts_effective_errors + ([_effective.address ~ ': ' ~ (_err | join('; '))] if (_err | length > 0) else []) }}"
+  loop: "{{ _rw_hosts_desired }}"
+  loop_control:
+    loop_var: rw_item
+    label: "{{ rw_item.remark | default(rw_item.address | default('host')) }}"
+
+- name: Fail if any host validation errors found
+  ansible.builtin.fail:
+    msg: |-
+      Host validation failed:
+      - {{ _rw_hosts_effective_errors | join('\n- ') }}
+  when: _rw_hosts_effective_errors | length > 0
+
+# ---------------------------------------------------------
+# Resolve NODE UUID (prefer facts from register_node)
+# ---------------------------------------------------------
+- name: Use provided node UUID if present
+  ansible.builtin.set_fact:
+    _node_uuid: "{{ rw_host_node_uuid }}"
+  when: rw_host_node_uuid is defined and (rw_host_node_uuid | default('') | length) > 0
+
+- name: Use remnawave_node_uuid fact if present
+  ansible.builtin.set_fact:
+    _node_uuid: "{{ remnawave_node_uuid }}"
+  when: (_node_uuid | default('') | length) == 0 and (remnawave_node_uuid | default('') | length) > 0
+
+- name: Resolve node UUID by name when absent
+  when: (_node_uuid | default('') | length) == 0
+  block:
+    - name: GET /api/nodes
+      check_mode: false
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}/nodes"
+        method: GET
+        headers: "{{ _rw_headers }}"
+        return_content: true
+        status_code: [200]
+      register: _nodes_resp
+      changed_when: false
+
+    - name: Pick node by exact name
+      vars:
+        _candidates: >-
+          {{
+            (_nodes_resp.json.response | default([]))
+            | selectattr('name', 'equalto', rw_node_name)
+            | list
+          }}
+      ansible.builtin.set_fact:
+        _node_uuid: "{{ (_candidates | first).uuid if (_candidates | length) == 1 else '' }}"
+      failed_when: (_candidates | length) != 1
+
+- name: Assert node uuid resolved
+  ansible.builtin.assert:
+    that:
+      - _node_uuid is defined
+      - _node_uuid | length > 0
+    fail_msg: "Failed to resolve node UUID."
+
+# ---------------------------------------------------------
+# Inbound mapping cache (prefer register_node export)
+# ---------------------------------------------------------
+- name: Ensure inbound cache (thin+full) is present
+  ansible.builtin.include_role:
+    name: remnawave_inbounds_cache
+  vars:
+    remnawave_inbounds_cache_api_base: "{{ remnawave_panel_api_base }}"
+    remnawave_inbounds_cache_api_token: "{{ remnawave_panel_api_token }}"
+    remnawave_inbounds_cache_export_facts: true
+
+- name: Init inbound mapping cache
+  ansible.builtin.set_fact:
+    _rw_inbounds_by_tag: "{{ remnawave_inbounds_by_tag | default({}) }}"
+
+# ---------------------------------------------------------
+# Fetch hosts list once
+# ---------------------------------------------------------
+- name: Get all hosts (once)
+  check_mode: false
+  ansible.builtin.uri:
+    url: "{{ remnawave_panel_api_base }}/hosts"
+    method: GET
+    headers: "{{ _rw_headers }}"
+    return_content: true
+    status_code: [200]
+  register: _rw_hosts_resp
+
+- name: Parse hosts list
+  ansible.builtin.set_fact:
+    _rw_hosts_existing: "{{ (_rw_hosts_resp.json.response | default([])) | list }}"
+
+# ---------------------------------------------------------
+# Ensure loop
+# ---------------------------------------------------------
+- name: Ensure hosts
+  ansible.builtin.include_tasks: ensure_host.yml
+  loop: "{{ _rw_hosts_effective }}"
+  loop_control:
+    loop_var: rw_item
+    label: "{{ rw_item.remark | default(rw_item.address) }}"
+
+# ---------------------------------------------------------
+# Optional prune (managed-only)
+# ---------------------------------------------------------
+- name: Optional prune managed hosts
+  ansible.builtin.include_tasks: prune.yml
+  when: rw_host_prune | bool
