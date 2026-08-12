@@ -239,6 +239,17 @@
           config: "{{ _prefixed_config }}"
       register: _patch_retry
 
+- name: Fail on global inbound tag collision (409)
+  when:
+    - _needs_update | bool
+    - (_patch.status | default(200) | int) == 409
+    - _ri.tag_collision_mode == 'fail'
+  ansible.builtin.fail:
+    msg: >-
+      Global inbound tag collision (HTTP 409) for profile '{{ _target_profile.name }}'.
+      remnawave_tag_collision_mode=fail; refusing auto-prefix because Hosts and
+      squad membership depend on a stable tag.
+
 # === 7) Результат
 - name: Summary
   ansible.builtin.debug:

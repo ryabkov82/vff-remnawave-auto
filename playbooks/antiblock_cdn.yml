@@ -1,0 +1,39 @@
+---
+# Dedicated AntiBlock / Yandex Cloud CDN orchestration.
+# Hosts and HAProxy are out of scope.
+#
+# Order: ensure shared inbound + squads on panel, then activate on each
+# CDN-enabled VPN node (group antiblock_cdn_nodes). Each node later gets its
+# own Yandex CDN Resource — this is not a shared origin group.
+#
+# Ordinary make nodes keeps the AntiBlock inbound via remnawave_inbound_tags_extra
+# on this group (replace still reconciles base tags strictly).
+
+- name: AntiBlock CDN | Ensure inbound and Internal Squad membership
+  hosts: panel
+  gather_facts: false
+  tags: [antiblock_cdn, antiblock_cdn_inbound]
+  roles:
+    - role: remnawave_inbounds
+      when: antiblock_cdn_enabled | bool
+      vars:
+        remnawave_inbounds:
+          - "{{ antiblock_cdn_inbound }}"
+        remnawave_inbounds_managed:
+          - "{{ antiblock_cdn_inbound_tag }}"
+        remnawave_tag_collision_mode: "{{ antiblock_cdn_tag_collision_mode }}"
+        remnawave_update_mode: replace
+        remnawave_register_inbounds_in_squad: false
+        remnawave_inbound_squad_memberships:
+          - inbound_tag: "{{ antiblock_cdn_inbound_tag }}"
+            present_in:
+              - "{{ antiblock_cdn_internal_squad }}"
+            absent_from: "{{ antiblock_cdn_forbidden_internal_squads }}"
+
+- name: AntiBlock CDN | Activate inbound on CDN-enabled nodes
+  hosts: antiblock_cdn_nodes
+  gather_facts: false
+  tags: [antiblock_cdn, antiblock_cdn_nodes]
+  roles:
+    - role: remnawave_register_node
+      when: antiblock_cdn_enabled | bool

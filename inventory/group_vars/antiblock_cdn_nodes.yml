@@ -1,0 +1,8 @@
+---
+# CDN-enabled VPN nodes. Each node later gets its own Yandex CDN Resource
+# and origin — not a shared origin pool.
+#
+# extra tags are included in remnawave_register_node desired list, so ordinary
+# make nodes TAGS=register_node in replace mode keeps the AntiBlock inbound.
+remnawave_inbound_tags_extra:
+  - "{{ antiblock_cdn_inbound_tag }}"

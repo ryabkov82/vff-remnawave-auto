@@ -19,6 +19,8 @@ remnawave_node_port: "{{ (remnawave_node_env_content | default('') | regex_searc
 # Профиль/инбаунды
 remnawave_node_inbounds_mode: "merge"   # replace|merge
 remnawave_inbound_tag: "VLESS TCP REALITY"  # какой инбаунд активировать
+# Feature inbounds kept in addition to remnawave_inbound_tags (replace still drops others).
+remnawave_inbound_tags_extra: []
 remnawave_profile_uuid: ""                  # можно пусто — возьмём из inbound.profileUuid
 
 # Прочие поля ноды

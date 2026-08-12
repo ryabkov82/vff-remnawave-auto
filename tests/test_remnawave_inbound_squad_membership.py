@@ -209,6 +209,17 @@ class RoleStructureTests(unittest.TestCase):
         self.assertIn("remnawave_squad_inbound_uuids", RECONCILE_ONE)
         self.assertIn("remnawave_squad_membership_conflicts", RECONCILE)
 
+    def test_fail_mode_stops_on_tag_collision_409(self) -> None:
+        fail = _task_block(MAIN_TASKS, "Fail on global inbound tag collision (409)")
+        self.assertIn("_ri.tag_collision_mode == 'fail'", fail)
+        self.assertIn("== 409", fail)
+        prefix = _task_block(MAIN_TASKS, "Handle global tag conflict (409) with auto-prefix")
+        self.assertIn("_ri.tag_collision_mode == 'auto_prefix'", prefix)
+        fail_pos = MAIN_TASKS.find("Fail on global inbound tag collision (409)")
+        squad_pos = MAIN_TASKS.find("Reconcile declarative inbound squad memberships")
+        self.assertGreater(fail_pos, 0)
+        self.assertGreater(squad_pos, fail_pos)
+
     def test_validation_fails_before_patch(self) -> None:
         conflict_pos = RECONCILE.find("present_in and absent_from overlap")
         missing_tag_pos = RECONCILE.find("membership inbound_tag is not in the profile")
@@ -266,10 +277,11 @@ class AntiblockInventoryTests(unittest.TestCase):
         self.assertIn("PLAY_INBOUNDS", makefile)
         self.assertIn("playbooks/inbounds.yml", makefile)
 
-    def test_origin_group_adds_de_fra_2_without_removing_existing_groups(self) -> None:
-        self.assertIn("[antiblock_cdn_origin]", HOSTS_INI)
-        origin = HOSTS_INI.split("[antiblock_cdn_origin]", 1)[1].split("[", 1)[0]
-        self.assertIn("de-fra-2", origin)
+    def test_cdn_nodes_group_adds_de_fra_2_without_removing_existing_groups(self) -> None:
+        self.assertIn("[antiblock_cdn_nodes]", HOSTS_INI)
+        self.assertNotIn("[antiblock_cdn_origin]", HOSTS_INI)
+        group = HOSTS_INI.split("[antiblock_cdn_nodes]", 1)[1].split("[", 1)[0]
+        self.assertIn("de-fra-2", group)
         nodes = HOSTS_INI.split("[nodes]", 1)[1].split("[", 1)[0]
         nodes_1g = HOSTS_INI.split("[nodes_1g]", 1)[1].split("[", 1)[0]
         self.assertIn("de-fra-2", nodes)

@@ -79,6 +79,7 @@ Ansible
 | Переменная | Описание |
 |-----------|----------|
 | `remnawave_inbound_tags` | Список inbound-тегов |
+| `remnawave_inbound_tags_extra` | Доп. feature-теги (default `[]`); входят в desired list, `replace` их не снимает |
 | `remnawave_inbound_tag` | Legacy single-tag |
 | `remnawave_profile_uuid` | UUID профиля (опционально) |
 
