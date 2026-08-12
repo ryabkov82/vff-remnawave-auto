@@ -19,16 +19,14 @@
             | default(inventory_hostname))
           }}
 
-    - name: "Normalize desired inbound tags (backward compatible)"
+    - name: "Normalize desired inbound tags (base + extra, unique)"
       ansible.builtin.set_fact:
         _desired_inbound_tags: >-
           {{
-            (
-              (remnawave_inbound_tags | default([]) | length) > 0
-            )
-            | ternary(
-                (remnawave_inbound_tags | map('trim') | list),
-                [ (remnawave_inbound_tag | default('') | trim) ]
+            (remnawave_inbound_tags | default([]))
+            | remnawave_effective_inbound_tags(
+                remnawave_inbound_tags_extra | default([]),
+                remnawave_inbound_tag | default('')
               )
           }}
 

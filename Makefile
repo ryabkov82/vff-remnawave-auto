@@ -24,6 +24,7 @@ PLAY_SMOKE     ?= playbooks/smoke.yml
 PLAY_SITE      ?= playbooks/site.yml
 PLAY_DNS       ?= playbooks/dns.yml
 PLAY_INBOUNDS  ?= playbooks/inbounds.yml
+PLAY_ANTIBLOCK_CDN ?= playbooks/antiblock_cdn.yml
 # === Плейбуки для отключения/удаления нод ===
 PLAY_DISABLE_NODE ?= playbooks/disable_node.yml
 PLAY_DELETE_NODE  ?= playbooks/delete_node.yml
@@ -62,7 +63,7 @@ include .env
 export $(shell sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' .env)
 endif
 
-.PHONY: help bootstrap dns dns-plan dns-absent panel nodes hosts-audit hosts-plan haproxy up smoke smoke-docker site lint vault ping facts destroy upgrade upgrade-remnawave sub-next sub-next-check sub-next-nginx sub-next-nginx-check sub-next-config-check sub-next-config-plan sub-next-config-apply sub-next-full sub-portalbase sub-portalbase-check sub-cutover-check sub-cutover sub-rollback-check sub-rollback subpage-brands-check subpage-brands external-squads-check external-squads subscription-branding-check subscription-branding
+.PHONY: help bootstrap dns dns-plan dns-absent panel nodes hosts-audit hosts-plan haproxy up smoke smoke-docker site lint vault ping facts destroy upgrade upgrade-remnawave sub-next sub-next-check sub-next-nginx sub-next-nginx-check sub-next-config-check sub-next-config-plan sub-next-config-apply sub-next-full sub-portalbase sub-portalbase-check sub-cutover-check sub-cutover sub-rollback-check sub-rollback subpage-brands-check subpage-brands external-squads-check external-squads subscription-branding-check subscription-branding antiblock-cdn-plan antiblock-cdn
 
 help: ## Показать справку по целям
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*##/: /' | sort
@@ -115,6 +116,21 @@ inbounds:  ## make inbounds [LIMIT=panel] [TAGS=inbounds] [EXTRA='-e remnawave_p
 	@# 	разово подменить базовый URL API (если нужно)
 	@#	make inbounds EXTRA='-e remnawave_api_base_url=https://remna.vpn-for-friends.com/api'	
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_INBOUNDS) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
+
+antiblock-cdn-plan: ## Local AntiBlock CDN validation (syntax-check only; no API writes)
+	@# Ansible --check is NOT used: remnawave uri roles skip or still GET, and
+	@# writes are not reliably blocked. This target never contacts panel/nodes.
+	@# Примеры:
+	@#   make antiblock-cdn-plan
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_ANTIBLOCK_CDN) --syntax-check
+
+antiblock-cdn: ## Apply AntiBlock inbound, squad membership, CDN node activation (API writes)
+	@# Does not manage Hosts or HAProxy. Does not change make inbounds / make nodes.
+	@# Примеры:
+	@#   make antiblock-cdn
+	@#   make antiblock-cdn TAGS=antiblock_cdn_inbound
+	@#   make antiblock-cdn TAGS=antiblock_cdn_nodes
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_ANTIBLOCK_CDN) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
 
 nodes: ## Деплой Remnawave Nodes (+ регистрация, health-checks)
 	@# Примеры:

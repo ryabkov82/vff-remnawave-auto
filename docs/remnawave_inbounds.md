@@ -155,7 +155,7 @@ remnawave_inbound_squad_memberships:
 
 По умолчанию список пустой: `make inbounds` / `playbooks/inbounds.yml` **не** передают memberships и **не** запускают `reconcile_squads.yml` (нет лишних GET/PATCH). Старый аддитивный путь не меняется.
 
-Пример AntiBlock (следующий этап, отдельный playbook — не `make inbounds`): inbound должен быть в `AntiBlock-Squad` и отсутствовать в `Default-Squad`. Источник параметров: `inventory/group_vars/all/antiblock_cdn.yml` (пассивный desired state CDN/xHTTP; `antiblock_cdn_enabled` описывает feature, но сам по себе не мапит `remnawave_inbound_squad_memberships`). Объект `antiblock_cdn_inbound` можно позже передать в `remnawave_inbounds` без копирования. Для стабильного AntiBlock-тега там задано `antiblock_cdn_tag_collision_mode: fail`; глобальный `remnawave_tag_collision_mode` production-инбаундов не меняется.
+AntiBlock apply — отдельный playbook `playbooks/antiblock_cdn.yml` (`make antiblock-cdn`). См. [docs/antiblock_cdn.md](antiblock_cdn.md). `antiblock_cdn_enabled` сам по себе ничего не применяет. Dedicated play передаёт `remnawave_inbound_squad_memberships` как role params: inbound в `AntiBlock-Squad`, отсутствует в `Default-Squad`. Объект `antiblock_cdn_inbound` берётся из `inventory/group_vars/all/antiblock_cdn.yml` без копирования. Tag collision для этого вызова: `antiblock_cdn_tag_collision_mode: fail` → `remnawave_tag_collision_mode`; глобальный default `auto_prefix` не меняется.
 
 
 ## Генерация Reality‑ключей (подсказка)

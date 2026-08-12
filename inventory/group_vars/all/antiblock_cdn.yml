@@ -3,9 +3,10 @@
 # This file is the common source of truth. Do not put Remnawave UUIDs here:
 # remnawave_inbounds continues to resolve the inbound by tag.
 #
-# Passive on this stage: feature vars only. Do NOT assign
-# remnawave_inbound_squad_memberships here — that would change make inbounds.
-# A later playbooks/antiblock_cdn.yml must pass memberships to the role explicitly.
+# Do NOT assign remnawave_inbound_squad_memberships here (that would change
+# make inbounds). Apply memberships via playbooks/antiblock_cdn.yml.
+# Node extra inbound tags live in group_vars/antiblock_cdn_nodes.yml so
+# ordinary register_node replace keeps the AntiBlock inbound on CDN nodes.
 #
 # This stage does not upsert the inbound into remnawave_inbounds /
 # remnawave_inbounds_managed, does not adopt Hosts, and does not change HAProxy.
