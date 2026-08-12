@@ -1,0 +1,93 @@
+---
+# Shared AntiBlock / Yandex Cloud CDN parameters (desired state).
+# This file is the common source of truth. Do not put Remnawave UUIDs here:
+# remnawave_inbounds continues to resolve the inbound by tag.
+#
+# Passive on this stage: feature vars only. Do NOT assign
+# remnawave_inbound_squad_memberships here — that would change make inbounds.
+# A later playbooks/antiblock_cdn.yml must pass memberships to the role explicitly.
+#
+# This stage does not upsert the inbound into remnawave_inbounds /
+# remnawave_inbounds_managed, does not adopt Hosts, and does not change HAProxy.
+
+antiblock_cdn_enabled: true
+
+antiblock_cdn_public_hostname: "cdn-lab.digitalstreamers.xyz"
+
+antiblock_cdn_origin_hostname: "origin-cdn.digitalstreamers.xyz"
+antiblock_cdn_origin_sni: "origin-cdn.digitalstreamers.xyz"
+
+antiblock_cdn_inbound_tag: "VLESS xHTTP packet-up test"
+antiblock_cdn_inbound_port: 8447
+
+antiblock_cdn_path: "/static/main/video/segment.ts/m0ce971085771"
+
+antiblock_cdn_ingress_ips:
+  - "188.72.111.7"
+  - "188.72.111.19"
+  - "188.72.111.35"
+  - "188.72.103.4"
+
+antiblock_cdn_internal_squad: "AntiBlock-Squad"
+
+antiblock_cdn_forbidden_internal_squads:
+  - "Default-Squad"
+
+# Hosts and squad membership key off this stable tag. When this inbound is
+# later added to remnawave_inbounds_managed, use fail (not auto_prefix).
+# Do not set remnawave_tag_collision_mode here: that would change production
+# Reality/xHTTP inbounds.
+antiblock_cdn_tag_collision_mode: "fail"
+
+# Drop-in remnawave_inbounds item (working packet-up config). decryption is
+# the verified production value; do not regenerate it.
+antiblock_cdn_inbound:
+  tag: "{{ antiblock_cdn_inbound_tag }}"
+  listen: "127.0.0.1"
+  port: "{{ antiblock_cdn_inbound_port | int }}"
+  protocol: "vless"
+  settings:
+    clients: []
+    decryption: "mlkem768x25519plus.native.600s.1--bQAKKkYU6tZV6JK6rZOYRg1hNV5v-DvRZegmHxL1FuzaD73vOZb6006_yG91_EIUy_NhV4vsZspCtbxyVEA"
+  sniffing:
+    destOverride:
+      - "http"
+      - "tls"
+      - "quic"
+      - "fakedns"
+    enabled: true
+    metadataOnly: false
+  streamSettings:
+    network: "xhttp"
+    security: "tls"
+    tlsSettings:
+      alpn:
+        - "h2"
+        - "http/1.1"
+      certificates:
+        - certificateFile: "/etc/letsencrypt/live/digitalstreamers.xyz/fullchain.pem"
+          keyFile: "/etc/letsencrypt/live/digitalstreamers.xyz/privkey.pem"
+      minVersion: "1.2"
+    xhttpSettings:
+      extra:
+        noGRPCHeader: true
+        noSSEHeader: true
+        scMaxBufferedPosts: 100
+        scMaxEachPostBytes: 3000000
+        scMinPostsIntervalMs: "30"
+        seqKey: "chunk_id"
+        seqPlacement: "query"
+        serverMaxHeaderBytes: 32768
+        sessionIDKey: "auth"
+        sessionIDPlacement: "query"
+        sessionKey: "auth"
+        sessionPlacement: "query"
+        uplinkDataPlacement: "body"
+        xPaddingBytes: "50-150"
+        xPaddingHeader: "X-Padding"
+        xPaddingKey: "x_padding"
+        xPaddingMethod: "tokenish"
+        xPaddingObfsMode: true
+        xPaddingPlacement: "header"
+      mode: "packet-up"
+      path: "{{ antiblock_cdn_path }}"

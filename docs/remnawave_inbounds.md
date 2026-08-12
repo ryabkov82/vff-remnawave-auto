@@ -107,6 +107,9 @@ remnawave_inbounds: []
 remnawave_register_inbounds_in_squad: true
 remnawave_internal_squad_name: "Default-Squad"
 remnawave_internal_squad_uuid: ""                # можно указать явно
+
+# Декларативное членство inbound → Internal Squad (по tag, без UUID)
+remnawave_inbound_squad_memberships: []
 ```
 
 ### Замечания
@@ -123,7 +126,36 @@ remnawave_internal_squad_uuid: ""                # можно указать я�
 2) находит **Internal Squad** по UUID или имени (`Default-Squad` по умолчанию);
 3) объединяет списки inbound’ов (без удаления существующих) и делает `PATCH /api/internal-squads`.
 
+Это **аддитивный** путь: `existing + desired | unique`. Он **не** умеет гарантировать отсутствие inbound в другом скваде. Поведение сохранено для обратной совместимости.
+
 > Можно указать `remnawave_internal_squad_uuid` для точного попадания в нужный сквад.
+
+
+## Декларативное членство: `remnawave_inbound_squad_memberships`
+
+Отдельный generic-механизм (файл `roles/remnawave_inbounds/tasks/reconcile_squads.yml`). Он **не заменяет** `remnawave_register_inbounds_in_squad`: оба пути могут работать в одном прогоне.
+
+```yaml
+remnawave_inbound_squad_memberships:
+  - inbound_tag: "VLESS xHTTP packet-up test"
+    present_in:
+      - "AntiBlock-Squad"
+    absent_from:
+      - "Default-Squad"
+```
+
+Гарантии:
+- inbound ищется **по `tag`** (UUID не хардкодятся);
+- unrelated inbound UUID в скваде **сохраняются** (и по возможности их порядок);
+- новый UUID при `present_in` добавляется в конец;
+- `PATCH /api/internal-squads` выполняется **только при drift**; повторный прогон уже корректного состояния даёт `changed=0` на этом шаге;
+- если сквад из конфигурации не существует — роль **падает** и **не создаёт** сквад;
+- если `inbound_tag` не найден в профиле — роль падает;
+- один и тот же сквад в `present_in` и `absent_from` для одного inbound — fail **до** любого PATCH.
+
+По умолчанию список пустой: `make inbounds` / `playbooks/inbounds.yml` **не** передают memberships и **не** запускают `reconcile_squads.yml` (нет лишних GET/PATCH). Старый аддитивный путь не меняется.
+
+Пример AntiBlock (следующий этап, отдельный playbook — не `make inbounds`): inbound должен быть в `AntiBlock-Squad` и отсутствовать в `Default-Squad`. Источник параметров: `inventory/group_vars/all/antiblock_cdn.yml` (пассивный desired state CDN/xHTTP; `antiblock_cdn_enabled` описывает feature, но сам по себе не мапит `remnawave_inbound_squad_memberships`). Объект `antiblock_cdn_inbound` можно позже передать в `remnawave_inbounds` без копирования. Для стабильного AntiBlock-тега там задано `antiblock_cdn_tag_collision_mode: fail`; глобальный `remnawave_tag_collision_mode` production-инбаундов не меняется.
 
 
 ## Генерация Reality‑ключей (подсказка)

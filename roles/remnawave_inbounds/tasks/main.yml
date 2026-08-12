@@ -19,6 +19,7 @@
       register_in_squad: "{{ (remnawave_register_inbounds_in_squad | default(true)) | bool }}"
       squad_name: "{{ remnawave_internal_squad_name | default('Default-Squad') }}"
       squad_uuid: "{{ remnawave_internal_squad_uuid | default('') }}"
+      squad_memberships: "{{ remnawave_inbound_squad_memberships | default([]) }}"
 
 - name: Assert required inputs
   ansible.builtin.assert:
@@ -374,3 +375,9 @@
     msg: >-
       Registered inbounds ({{ _desired_inbound_uuids | length }}) into internal squad
       '{{ _target_squad.name }}' (uuid={{ _target_squad.uuid }}).
+
+# 9) Declarative Internal Squad membership (present_in / absent_from).
+# Independent of the additive remnawave_register_inbounds_in_squad path above.
+- name: Reconcile declarative inbound squad memberships
+  when: (_ri.squad_memberships | default([])) | length > 0
+  ansible.builtin.include_tasks: reconcile_squads.yml

@@ -50,3 +50,13 @@ remnawave_register_inbounds_in_squad: true
 remnawave_internal_squad_name: "Default-Squad"
 # Можно вместо имени указать UUID сквада — быстрее:
 remnawave_internal_squad_uuid: ""
+
+# Declarative Internal Squad membership (additive + removal). Empty = no-op.
+# Independent of remnawave_register_inbounds_in_squad (that path stays additive).
+# remnawave_inbound_squad_memberships:
+#   - inbound_tag: "VLESS xHTTP packet-up test"
+#     present_in:
+#       - "AntiBlock-Squad"
+#     absent_from:
+#       - "Default-Squad"
+remnawave_inbound_squad_memberships: []

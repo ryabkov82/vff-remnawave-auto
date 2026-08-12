@@ -11,7 +11,7 @@ remnawave_node_name: "{{ inventory_hostname }}"
 
 remnawave_host_address: "edge-spb-02.digitalstreamers.xyz"
 remnawave_node_country_code: "RU"
-remnawave_host_remark: "🇷🇺 2 vpn-for-friends"
+remnawave_host_remark: "🇷🇺 Russia 2"
 remnawave_host_sni:
   - "cloudflare.com"
   - "www.cloudflare.com"
