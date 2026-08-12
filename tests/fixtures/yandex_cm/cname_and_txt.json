@@ -1,0 +1,25 @@
+{
+  "id": "runtime-only-not-inventoried",
+  "name": "antiblock-cdn-wildcard",
+  "type": "MANAGED",
+  "domains": ["*.digitalstreamers.xyz"],
+  "status": "VALIDATING",
+  "challenges": [
+    {
+      "status": "PENDING",
+      "dnsChallenge": {
+        "name": "_acme-challenge.digitalstreamers.xyz",
+        "type": "CNAME",
+        "value": "example-challenge.cm.yandexcloud.net."
+      }
+    },
+    {
+      "status": "PENDING",
+      "dnsChallenge": {
+        "name": "_acme-challenge.digitalstreamers.xyz",
+        "type": "TXT",
+        "value": "should-not-be-created-with-cname"
+      }
+    }
+  ]
+}

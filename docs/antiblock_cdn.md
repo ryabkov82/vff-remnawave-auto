@@ -95,16 +95,90 @@ make nodes LIMIT=de-fra-2 TAGS=register_node
 | Target | Что делает |
 |--------|------------|
 | `make antiblock-cdn-plan` | Только `ansible-playbook --syntax-check`. Без API. Ansible `--check` **не** используется: `uri` в Remnawave-ролях не является безопасным check-mode. |
-| `make antiblock-cdn` | Apply (API writes на panel + CDN nodes). |
+| `make antiblock-cdn` | Apply inbound + squads + CDN node activation. |
+| `make antiblock-cdn-bootstrap-plan` | Syntax-check + dump desired certificate state. Без Yandex/Cloudflare writes. `--check` не используется. |
+| `make antiblock-cdn-bootstrap` | Apply: managed wildcard cert + Cloudflare DNS challenge. |
 
-## Ещё не реализовано этим target
+## Global wildcard certificate bootstrap
 
-Hosts и HAProxy automation пока **не** реализованы данным target:
+Один managed certificate в Yandex Certificate Manager на все будущие
+per-node CDN Resources (`cdn-de-fra-3.digitalstreamers.xyz`,
+`cdn-nl-ams-2.digitalstreamers.xyz`, …):
 
-- Host adoption / reconcile
-- маркер `VFF:ANTIBLOCK`
-- safe prune
+```
+name:      antiblock-cdn-wildcard
+domains:   *.digitalstreamers.xyz
+challenge: DNS
+```
+
+Lookup **по name**, UUID сертификата в inventory не кладётся.
+
+```
+make antiblock-cdn-bootstrap-plan
+  |
+  +-- ansible-playbook --syntax-check
+  +-- print desired state (без Yandex/Cloudflare API)
+
+make antiblock-cdn-bootstrap
+  |
+  +-- найти/запросить managed certificate (Yandex CM)
+  +-- взять DNS challenge из FULL view (VALIDATING)
+  +-- после certificate ID: canonical renewal CNAME
+  +-- создать/держать CNAME в Cloudflare через roles/cf_dns (proxied=false)
+```
+
+`playbooks/antiblock_cdn.yml` сертификаты **не** выпускает. Обычные
+`make inbounds` / `make nodes` не меняются.
+
+### Auth (non-interactive)
+
+Автоматизация **не** использует `yc init`. Нужен service account в folder:
+
+1. Создать SA в Yandex Cloud folder, где будет сертификат.
+2. Выдать роль уровня folder, достаточную для Certificate Manager
+   (например `certificate-manager.editor`).
+3. Создать authorized key и положить JSON в Ansible Vault:
+
+   `inventory/group_vars/all/vault.yml` → `vault_yandex_cloud_sa_authorized_key`
+
+4. Заполнить `antiblock_cdn_yc_folder_id` (это folder ID, не UUID сертификата).
+5. На контроллере для JWT PS256 нужен пакет `cryptography`
+   (`$(VENV)/bin/pip install cryptography`).
+6. Cloudflare token (`vault_cf_dns_api_token`) должен уметь править зону
+   `digitalstreamers.xyz`. После ISSUED automation продолжает reconcile
+   канонического renewal CNAME, чтобы случайно удалённый `_acme-challenge`
+   восстановился до следующего Renewing.
+
+OAuth / IAM tokens в git не класть. Короткий IAM token
+(`vault_yandex_cloud_iam_token`) допустим только для ручного теста.
+
+SA bootstrap (создание SA, роли, ключа) — **prerequisite**, не часть этого
+playbook.
+
+### Certificate lifecycle
+
+```
+absent → request → VALIDATING → Cloudflare CNAME → PROCESSING → ISSUED
+```
+
+- `ISSUED` — успех; канонический renewal CNAME
+  `_acme-challenge.<domain> → <certificate_id>.cm.yandexcloud.net`
+  продолжает reconcile (не удаляется и восстанавливается, если его стёрли).
+  Certificate ID берётся из API как runtime fact, в inventory не хардкодится.
+- `VALIDATING` / challenge `PROCESSING` — сертификат ещё выпускается;
+  новый certificate с тем же name **не** создаётся; DNS challenge
+  name/type/value берутся строго из FULL view Yandex.
+- `INVALID` / `RENEWAL_FAILED` / `REVOKED` — fail с диагностикой.
+
+HTTP challenge для wildcard не используется. TXT рядом с CNAME на том же
+имени не создаётся (`solo: true` на CNAME).
+
+## Ещё не реализовано
+
+Hosts, HAProxy и per-node Yandex CDN пока **не** автоматизированы:
+
+- Host adoption / reconcile / маркер `VFF:ANTIBLOCK` / safe prune
 - HAProxy origin SNI (`origin-cdn.digitalstreamers.xyz` → `127.0.0.1:8447`)
 - `haproxy -c` / reload
+- per-node CDN Resource / Origin Group
 - CDN smoke tests
-- Yandex Cloud API / per-node CDN Resource

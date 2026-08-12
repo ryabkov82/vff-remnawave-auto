@@ -1,0 +1,20 @@
+---
+# Generic Yandex Certificate Manager role. Lookup is by stable name, never by
+# inventoried certificate UUID. Writes are off unless the caller sets
+# yandex_cm_allow_writes. Challenge records come from Certificate Manager
+# FULL view; this role does not invent DNS names or values.
+
+yandex_cm_folder_id: ""
+yandex_cm_certificate_name: ""
+yandex_cm_domains: []
+yandex_cm_challenge_type: "DNS"
+yandex_cm_dns_zone: ""
+yandex_cm_allow_writes: false
+
+# Non-interactive auth. Prefer a service-account authorized-key JSON from Vault.
+# Optional short-lived IAM token is for local testing only — do not commit it.
+yandex_cm_sa_authorized_key: ""
+yandex_cm_iam_token: ""
+
+yandex_cm_python: "{{ ansible_playbook_python | default('/usr/bin/python3') }}"
+yandex_cm_script: "{{ playbook_dir }}/../scripts/yandex_certificate_manager.py"

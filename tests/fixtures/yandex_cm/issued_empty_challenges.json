@@ -1,0 +1,8 @@
+{
+  "id": "runtime-only-not-inventoried",
+  "name": "antiblock-cdn-wildcard",
+  "type": "MANAGED",
+  "domains": ["*.digitalstreamers.xyz"],
+  "status": "ISSUED",
+  "challenges": []
+}
