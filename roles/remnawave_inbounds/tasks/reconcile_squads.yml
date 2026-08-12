@@ -1,0 +1,143 @@
+---
+# Declarative Internal Squad membership (present_in / absent_from).
+# Reuses profile/squad facts already loaded by the role. PATCH only on drift.
+# Does not create squads. Does not remove unrelated inbound UUIDs.
+
+- name: Assert squad memberships is a list of mappings
+  ansible.builtin.assert:
+    that:
+      - _ri.squad_memberships is iterable
+      - _ri.squad_memberships is not string
+      - _ri.squad_memberships is not mapping
+    fail_msg: "remnawave_inbound_squad_memberships must be a list."
+
+- name: Assert each squad membership has inbound_tag and list fields
+  ansible.builtin.assert:
+    that:
+      - item.inbound_tag is defined
+      - item.inbound_tag | string | length > 0
+      - (item.present_in | default([])) is iterable
+      - (item.present_in | default([])) is not string
+      - (item.absent_from | default([])) is iterable
+      - (item.absent_from | default([])) is not string
+    fail_msg: >-
+      Invalid remnawave_inbound_squad_memberships item: {{ item | to_nice_json }}.
+      Each item needs inbound_tag, present_in (list), absent_from (list).
+  loop: "{{ _ri.squad_memberships }}"
+  loop_control:
+    label: "{{ item.inbound_tag | default('missing-tag') }}"
+
+- name: Fail if present_in and absent_from overlap for the same inbound
+  vars:
+    _ri_membership_conflicts: "{{ _ri.squad_memberships | remnawave_squad_membership_conflicts }}"
+  ansible.builtin.assert:
+    that:
+      - _ri_membership_conflicts | length == 0
+    fail_msg: >-
+      inbound_tag cannot list the same Internal Squad in both present_in and
+      absent_from (no PATCH performed): {{ _ri_membership_conflicts | to_nice_json }}
+
+- name: Build tag-to-uuid map from already loaded profile (if needed)
+  when:
+    - _tag_to_uuid_map is not defined
+    - (_profile_full.json.response.inbounds | default([])) | length > 0
+  vars:
+    _inbounds_list: "{{ _profile_full.json.response.inbounds | default([]) }}"
+  ansible.builtin.set_fact:
+    _tag_to_uuid_map: >-
+      {{
+        dict(
+          (_inbounds_list | map(attribute='tag') | list)
+          |
+          zip(_inbounds_list | map(attribute='uuid') | list)
+        )
+      }}
+
+- name: Re-fetch profile for inbound UUIDs (only if tag map is missing)
+  when: _tag_to_uuid_map is not defined
+  ansible.builtin.uri:
+    url: "{{ _ri.api_base_url }}/config-profiles/{{ target_uuid }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ _ri.api_token }}"
+    return_content: true
+    status_code: 200
+  register: _profile_for_memberships
+
+- name: Build tag-to-uuid map from re-fetched profile
+  when: _tag_to_uuid_map is not defined
+  vars:
+    _inbounds_list: "{{ _profile_for_memberships.json.response.inbounds | default([]) }}"
+  ansible.builtin.set_fact:
+    _tag_to_uuid_map: >-
+      {{
+        dict(
+          (_inbounds_list | map(attribute='tag') | list)
+          |
+          zip(_inbounds_list | map(attribute='uuid') | list)
+        )
+      }}
+
+- name: Fail if membership inbound_tag is not in the profile
+  ansible.builtin.assert:
+    that:
+      - item.inbound_tag in (_tag_to_uuid_map.keys() | list)
+    fail_msg: >-
+      Inbound tag '{{ item.inbound_tag }}' was not found in the config profile.
+      Available tags: {{ _tag_to_uuid_map.keys() | list }}.
+      UUID is resolved by tag; it is not hardcoded.
+  loop: "{{ _ri.squad_memberships }}"
+  loop_control:
+    label: "{{ item.inbound_tag }}"
+
+- name: Ensure internal squads list is available
+  when: _squads_list is not defined
+  block:
+    - name: Get internal squads for membership reconcile
+      ansible.builtin.uri:
+        url: "{{ _ri.api_base_url }}/internal-squads"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ _ri.api_token }}"
+        return_content: true
+        status_code: 200
+      register: _squads_for_memberships
+
+    - name: Extract internal squads list for membership reconcile
+      ansible.builtin.set_fact:
+        _squads_list: >-
+          {{
+            _squads_for_memberships.json.response.internalSquads
+            | default(_squads_for_memberships.json.internalSquads)
+            | default([])
+          }}
+
+- name: Collect unique Internal Squad names from memberships
+  ansible.builtin.set_fact:
+    _ri_squad_names: >-
+      {{
+        (
+          (_ri.squad_memberships | map(attribute='present_in', default=[]) | list | flatten)
+          +
+          (_ri.squad_memberships | map(attribute='absent_from', default=[]) | list | flatten)
+        ) | unique | list
+      }}
+
+- name: Fail if a configured Internal Squad does not exist
+  ansible.builtin.assert:
+    that:
+      - item in (_squads_list | map(attribute='name') | list)
+    fail_msg: >-
+      Internal squad '{{ item }}' does not exist.
+      Available squads: {{ _squads_list | map(attribute='name') | list }}.
+      Squads are not created automatically.
+  loop: "{{ _ri_squad_names }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Reconcile inbound UUID membership per Internal Squad
+  ansible.builtin.include_tasks: reconcile_one_squad.yml
+  loop: "{{ _ri_squad_names }}"
+  loop_control:
+    loop_var: _ri_squad_name
+    label: "{{ _ri_squad_name }}"

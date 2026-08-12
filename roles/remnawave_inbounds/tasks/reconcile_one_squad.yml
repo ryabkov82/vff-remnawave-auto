@@ -1,0 +1,77 @@
+---
+# Reconcile one Internal Squad: keep unrelated members, PATCH only on drift.
+
+- name: Collect inbound UUIDs to add or remove ({{ _ri_squad_name }})
+  vars:
+    _add_tags: >-
+      {{
+        _ri.squad_memberships
+        | selectattr('present_in', 'defined')
+        | selectattr('present_in', 'contains', _ri_squad_name)
+        | map(attribute='inbound_tag')
+        | list
+      }}
+    _remove_tags: >-
+      {{
+        _ri.squad_memberships
+        | selectattr('absent_from', 'defined')
+        | selectattr('absent_from', 'contains', _ri_squad_name)
+        | map(attribute='inbound_tag')
+        | list
+      }}
+  ansible.builtin.set_fact:
+    _ri_squad_add_uuids: "{{ _add_tags | map('extract', _tag_to_uuid_map) | list }}"
+    _ri_squad_remove_uuids: "{{ _remove_tags | map('extract', _tag_to_uuid_map) | list }}"
+
+- name: Fail if add/remove UUID sets overlap ({{ _ri_squad_name }})
+  ansible.builtin.assert:
+    that:
+      - (_ri_squad_add_uuids | intersect(_ri_squad_remove_uuids)) | length == 0
+    fail_msg: >-
+      Internal squad '{{ _ri_squad_name }}' would both add and remove the same
+      inbound UUID(s): {{ _ri_squad_add_uuids | intersect(_ri_squad_remove_uuids) }}.
+      No PATCH performed.
+
+- name: Get Internal Squad current inbound UUIDs ({{ _ri_squad_name }})
+  ansible.builtin.uri:
+    url: "{{ _ri.api_base_url }}/internal-squads/{{ (_squads_list | selectattr('name', 'equalto', _ri_squad_name) | list | first).uuid }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ _ri.api_token }}"
+    return_content: true
+    status_code: 200
+  register: _ri_squad_full
+
+- name: Build desired inbound UUID list ({{ _ri_squad_name }})
+  vars:
+    _current_uuids: "{{ _ri_squad_full.json.response.inbounds | default([]) | remnawave_squad_inbound_uuids }}"
+  ansible.builtin.set_fact:
+    _ri_squad_reconciled: "{{ _current_uuids | remnawave_reconcile_squad_members(_ri_squad_add_uuids, _ri_squad_remove_uuids) }}"
+
+- name: PATCH Internal Squad inbound membership on drift ({{ _ri_squad_name }})
+  when: _ri_squad_reconciled.needs_patch | bool
+  ansible.builtin.uri:
+    url: "{{ _ri.api_base_url }}/internal-squads"
+    method: PATCH
+    headers:
+      Authorization: "Bearer {{ _ri.api_token }}"
+      Content-Type: "application/json"
+    status_code: 200
+    body_format: json
+    body:
+      uuid: "{{ (_squads_list | selectattr('name', 'equalto', _ri_squad_name) | list | first).uuid }}"
+      inbounds: "{{ _ri_squad_reconciled.members }}"
+  register: _ri_squad_patch
+
+- name: Squad membership reconcile summary ({{ _ri_squad_name }})
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        'Patched Internal Squad ' ~ _ri_squad_name
+        ~ ' (added=' ~ (_ri_squad_add_uuids | length)
+        ~ ', removed=' ~ (_ri_squad_remove_uuids | length)
+        ~ ', members=' ~ (_ri_squad_reconciled.members | length) ~ ').'
+        if (_ri_squad_reconciled.needs_patch | bool)
+        else
+        'No squad membership drift for ' ~ _ri_squad_name ~ ' — skipping PATCH.'
+      }}
