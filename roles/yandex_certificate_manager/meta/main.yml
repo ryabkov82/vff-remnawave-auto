@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  author: vff-remnawave-auto
+  role_name: yandex_certificate_manager
+  description: Idempotent Yandex Certificate Manager lookup/request (DNS challenge)
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

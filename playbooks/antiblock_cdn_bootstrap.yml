@@ -1,0 +1,37 @@
+---
+# Global AntiBlock CDN bootstrap: one wildcard managed certificate and its
+# Cloudflare DNS challenge. No per-node CDN Resource, Origin Group, HAProxy,
+# Remnawave Hosts, or node changes.
+#
+# Lookup is by certificate name. Do not inventory the certificate UUID.
+# Ansible --check is not a safe plan: the helper may still call Yandex APIs.
+# Use `make antiblock-cdn-bootstrap-plan` (syntax + desired-state dump only).
+
+- name: AntiBlock CDN | Bootstrap global wildcard certificate
+  hosts: panel
+  connection: local
+  gather_facts: false
+  become: false
+  run_once: true
+  tags: [antiblock_cdn_bootstrap]
+  roles:
+    - role: yandex_certificate_manager
+      when: antiblock_cdn_enabled | bool
+      vars:
+        yandex_cm_folder_id: "{{ antiblock_cdn_yc_folder_id }}"
+        yandex_cm_certificate_name: "{{ antiblock_cdn_certificate.name }}"
+        yandex_cm_domains: "{{ antiblock_cdn_certificate.domains }}"
+        yandex_cm_challenge_type: "DNS"
+        yandex_cm_dns_zone: "{{ antiblock_cdn_certificate.dns_zone }}"
+        yandex_cm_allow_writes: true
+        yandex_cm_sa_authorized_key: "{{ vault_yandex_cloud_sa_authorized_key | default('') }}"
+        yandex_cm_iam_token: "{{ vault_yandex_cloud_iam_token | default('') }}"
+    - role: cf_dns
+      when:
+        - antiblock_cdn_enabled | bool
+        - (yandex_cm_cf_dns_records | default([]) | length) > 0
+      vars:
+        cf_dns_zone: "{{ antiblock_cdn_certificate.dns_zone }}"
+        cf_dns_records: "{{ yandex_cm_cf_dns_records }}"
+        cf_dns_state: present
+        cf_dns_proxied_default: false

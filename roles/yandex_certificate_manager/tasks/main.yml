@@ -1,0 +1,128 @@
+---
+# Idempotent managed-certificate reconcile.
+# Default yandex_cm_allow_writes=false never calls requestNew.
+# DNS challenge records are taken from Certificate Manager FULL view.
+
+- name: Yandex CM | Check required inputs
+  ansible.builtin.assert:
+    that:
+      - (yandex_cm_folder_id | trim | length) > 0
+      - (yandex_cm_certificate_name | trim | length) > 0
+      - (yandex_cm_domains | default([]) | length) > 0
+      - (yandex_cm_dns_zone | trim | length) > 0
+      - (yandex_cm_challenge_type | trim | upper) == "DNS"
+      - >
+        ((yandex_cm_sa_authorized_key | default('') | trim | length) > 0)
+        or ((yandex_cm_iam_token | default('') | trim | length) > 0)
+    fail_msg: >-
+      yandex_cm_folder_id, certificate name/domains, dns_zone, DNS challenge,
+      and non-interactive Yandex auth (vault_yandex_cloud_sa_authorized_key or
+      a short-lived IAM token) are required. Interactive yc init is not used.
+      Service-account bootstrap is a prerequisite — see docs/antiblock_cdn.md.
+  tags: [yandex_cm]
+
+- name: Yandex CM | Reconcile managed certificate
+  tags: [yandex_cm]
+  block:
+    - name: Yandex CM | Create ephemeral auth file
+      ansible.builtin.tempfile:
+        state: file
+        suffix: .yc-auth
+      register: yandex_cm_auth_tmp
+      changed_when: false
+      tags: [yandex_cm]
+
+    - name: Yandex CM | Select auth material
+      ansible.builtin.set_fact:
+        yandex_cm_use_iam: "{{ (yandex_cm_iam_token | default('') | trim | length) > 0 }}"
+      tags: [yandex_cm]
+
+    - name: Yandex CM | Write auth material
+      ansible.builtin.copy:
+        dest: "{{ yandex_cm_auth_tmp.path }}"
+        mode: "0600"
+        content: "{{ yandex_cm_iam_token if yandex_cm_use_iam else yandex_cm_sa_authorized_key }}"
+      no_log: true
+      changed_when: false
+      tags: [yandex_cm]
+
+    - name: Yandex CM | Build reconcile argv
+      ansible.builtin.set_fact:
+        yandex_cm_reconcile_argv: "{{ _yandex_cm_argv_base + _yandex_cm_argv_domains + _yandex_cm_argv_write + _yandex_cm_argv_auth }}"
+      vars:
+        _yandex_cm_argv_base:
+          - "{{ yandex_cm_python }}"
+          - "{{ yandex_cm_script }}"
+          - reconcile
+          - --folder-id
+          - "{{ yandex_cm_folder_id }}"
+          - --name
+          - "{{ yandex_cm_certificate_name }}"
+          - --dns-zone
+          - "{{ yandex_cm_dns_zone }}"
+        _yandex_cm_argv_domains: "{{ ['--domains'] + (yandex_cm_domains | map('string') | list) }}"
+        _yandex_cm_argv_write: "{{ ['--allow-writes'] if yandex_cm_allow_writes | bool else [] }}"
+        _yandex_cm_argv_auth:
+          - "{{ '--iam-token-file' if yandex_cm_use_iam else '--sa-key-file' }}"
+          - "{{ yandex_cm_auth_tmp.path }}"
+      tags: [yandex_cm]
+
+    - name: Yandex CM | Lookup or request certificate
+      ansible.builtin.command:
+        argv: "{{ yandex_cm_reconcile_argv }}"
+      register: yandex_cm_reconcile
+      changed_when: >-
+        yandex_cm_reconcile.rc == 0
+        and (yandex_cm_reconcile.stdout | default('') | length > 0)
+        and ((yandex_cm_reconcile.stdout | from_json).requested | default(false) | bool)
+      tags: [yandex_cm]
+
+    - name: Yandex CM | Parse reconcile result
+      ansible.builtin.set_fact:
+        yandex_cm_result: "{{ yandex_cm_reconcile.stdout | from_json }}"
+        yandex_cm_cf_dns_records: "{{ (yandex_cm_reconcile.stdout | from_json).dns_records | default([]) }}"
+      tags: [yandex_cm]
+
+    - name: Yandex CM | Fail on INVALID / RENEWAL_FAILED / REVOKED
+      ansible.builtin.fail:
+        msg: >-
+          Certificate {{ yandex_cm_certificate_name }} is
+          {{ yandex_cm_result.status }} ({{ yandex_cm_result.reason }}).
+          Challenge statuses: {{ yandex_cm_result.challenge_statuses | default([]) }}.
+      when: (yandex_cm_result.status_class | default('')) == 'failed'
+      tags: [yandex_cm]
+
+    - name: Yandex CM | Show certificate status
+      ansible.builtin.debug:
+        msg: >-
+          name={{ yandex_cm_certificate_name }}
+          status={{ yandex_cm_result.status }}
+          class={{ yandex_cm_result.status_class }}
+          challenges={{ yandex_cm_result.challenge_statuses | default([]) }}
+          dns_source={{ yandex_cm_result.dns_source | default('challenge') }}
+          dns_records={{ yandex_cm_cf_dns_records | length }}
+          requested={{ yandex_cm_result.requested | default(false) }}
+          {{ yandex_cm_result.reason }}
+      tags: [yandex_cm]
+
+    - name: Yandex CM | Certificate still issuing
+      ansible.builtin.debug:
+        msg: >-
+          Certificate {{ yandex_cm_certificate_name }} is
+          {{ yandex_cm_result.status }} (pending). DNS challenge records from
+          Certificate Manager FULL view will be ensured in Cloudflare.
+          Re-run after status becomes ISSUED. After ISSUED, the canonical
+          renewal CNAME is still reconciled (not deleted).
+      when: (yandex_cm_result.status_class | default('')) == 'pending'
+      tags: [yandex_cm]
+
+  always:
+    - name: Yandex CM | Remove ephemeral auth file
+      ansible.builtin.file:
+        path: "{{ yandex_cm_auth_tmp.path }}"
+        state: absent
+      when:
+        - yandex_cm_auth_tmp is defined
+        - yandex_cm_auth_tmp.path | default('') | length > 0
+      changed_when: false
+      tags: [yandex_cm]

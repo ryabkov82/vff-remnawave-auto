@@ -327,7 +327,7 @@ make migrate-users LIMIT=panel EXTRA='-e remnawave_migrate_users_dry_run=false -
 | Панель | [docs/remnawave_panel.md](docs/remnawave_panel.md) | Установка панели и сервисов |
 | **Обновление (Upgrade)** | **[docs/remnawave_upgrade.md](docs/remnawave_upgrade.md)** | **Безопасное обновление панели и нод (upgrade flow)** |
 | Inbounds | [docs/remnawave_inbounds.md](docs/remnawave_inbounds.md) | Добавление и регистрация inbound’ов |
-| AntiBlock CDN | [docs/antiblock_cdn.md](docs/antiblock_cdn.md) | xHTTP packet-up inbound, squad membership, origin node merge |
+| AntiBlock CDN | [docs/antiblock_cdn.md](docs/antiblock_cdn.md) | xHTTP packet-up inbound, squads, wildcard cert bootstrap |
 | HAProxy | [docs/haproxy_tls_sni.md](docs/haproxy_tls_sni.md) | Совместная работа панели и Xray |
 | Ноды | [docs/remnawave_node.md](docs/remnawave_node.md) | Запуск контейнера с SECRET_KEY |
 | Регистрация ноды | [docs/remnawave_register_node.md](docs/remnawave_register_node.md) | API-регистрация ноды |
