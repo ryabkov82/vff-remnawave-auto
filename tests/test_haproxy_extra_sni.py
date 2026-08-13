@@ -368,7 +368,7 @@ class ArchitectureTests(unittest.TestCase):
         derived = GROUP_CDN["antiblock_cdn_node"]
         self.assertEqual(
             derived["public_hostname"],
-            "cdn-{{ inventory_hostname }}.digitalstreamers.xyz",
+            "{{ inventory_hostname }}.cdn.digitalstreamers.xyz",
         )
         self.assertEqual(
             derived["origin_hostname"],

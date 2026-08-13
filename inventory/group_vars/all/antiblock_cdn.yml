@@ -102,7 +102,9 @@ antiblock_cdn_inbound:
 # ---------------------------------------------------------------------------
 # Global wildcard certificate (Yandex Certificate Manager).
 # One managed cert, reused later by every per-node CDN Resource
-# (cdn-de-fra-3.digitalstreamers.xyz, cdn-nl-ams-2.digitalstreamers.xyz, …).
+# (de-fra-3.cdn.digitalstreamers.xyz, nl-ams-2.cdn.digitalstreamers.xyz, …).
+# Scope is *.cdn.digitalstreamers.xyz so Certbot can keep the zone-apex
+# ACME TXT challenge. Do not issue a Yandex cert for the apex wildcard.
 # Lookup is by name. Do not inventory the certificate UUID.
 # Apply only via playbooks/antiblock_cdn_bootstrap.yml — not make inbounds,
 # make nodes, or playbooks/antiblock_cdn.yml.
@@ -110,14 +112,14 @@ antiblock_cdn_inbound:
 antiblock_cdn_certificate:
   name: "antiblock-cdn-wildcard"
   domains:
-    - "*.digitalstreamers.xyz"
+    - "*.cdn.digitalstreamers.xyz"
   challenge: "dns"
   dns_zone: "digitalstreamers.xyz"
 
 # Yandex Cloud folder that owns the managed certificate and CDN resources.
 # Not a secret and not a certificate/resource UUID. Fill before apply
 # (or pass -e antiblock_cdn_yc_folder_id=...).
-antiblock_cdn_yc_folder_id: ""
+antiblock_cdn_yc_folder_id: "b1g99s1jpqj9u8v9621a"
 
 # Auth: put the service-account authorized-key JSON in Ansible Vault as
 # vault_yandex_cloud_sa_authorized_key (inventory/group_vars/all/vault.yml).

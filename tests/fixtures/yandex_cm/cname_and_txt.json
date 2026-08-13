@@ -2,13 +2,13 @@
   "id": "runtime-only-not-inventoried",
   "name": "antiblock-cdn-wildcard",
   "type": "MANAGED",
-  "domains": ["*.digitalstreamers.xyz"],
+  "domains": ["*.cdn.digitalstreamers.xyz"],
   "status": "VALIDATING",
   "challenges": [
     {
       "status": "PENDING",
       "dnsChallenge": {
-        "name": "_acme-challenge.digitalstreamers.xyz",
+        "name": "_acme-challenge.cdn.digitalstreamers.xyz",
         "type": "CNAME",
         "value": "example-challenge.cm.yandexcloud.net."
       }
@@ -16,7 +16,7 @@
     {
       "status": "PENDING",
       "dnsChallenge": {
-        "name": "_acme-challenge.digitalstreamers.xyz",
+        "name": "_acme-challenge.cdn.digitalstreamers.xyz",
         "type": "TXT",
         "value": "should-not-be-created-with-cname"
       }
