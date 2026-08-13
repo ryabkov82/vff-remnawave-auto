@@ -44,7 +44,7 @@ COMMITTED_VARS = [
 UUID_RE = re.compile(
     r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
 )
-NAME = "antiblock-cdn-wildcard"
+NAME = "edge-cert-01"
 DOMAINS = ["*.cdn.digitalstreamers.xyz"]
 ZONE = "digitalstreamers.xyz"
 CDN_ACME = "_acme-challenge.cdn.digitalstreamers.xyz"

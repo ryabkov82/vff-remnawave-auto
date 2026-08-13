@@ -12,7 +12,7 @@ remnawave_inbound_tags_extra:
 antiblock_cdn_node:
   public_hostname: "{{ inventory_hostname }}.cdn.digitalstreamers.xyz"
   origin_hostname: "origin-{{ inventory_hostname }}.digitalstreamers.xyz"
-  origin_group_name: "antiblock-{{ inventory_hostname }}"
+  origin_group_name: "edge-{{ inventory_hostname }}"
   origin_group_use_next: false
   certificate_mode: shared_wildcard
 

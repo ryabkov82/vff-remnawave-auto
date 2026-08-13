@@ -1,6 +1,6 @@
 {
   "id": "runtime-only-not-inventoried",
-  "name": "antiblock-cdn-wildcard",
+  "name": "edge-cert-01",
   "type": "MANAGED",
   "domains": ["*.cdn.digitalstreamers.xyz"],
   "status": "ISSUED",

@@ -110,7 +110,7 @@ antiblock_cdn_inbound:
 # make nodes, or playbooks/antiblock_cdn.yml.
 # ---------------------------------------------------------------------------
 antiblock_cdn_certificate:
-  name: "antiblock-cdn-wildcard"
+  name: "edge-cert-01"
   domains:
     - "*.cdn.digitalstreamers.xyz"
   challenge: "dns"

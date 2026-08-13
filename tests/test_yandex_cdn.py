@@ -45,7 +45,7 @@ PUBLIC = "cdn-lab.digitalstreamers.xyz"
 ORIGIN = "origin-cdn.digitalstreamers.xyz"
 GROUP_NAME = "common-origin-cdn-digitalstreamers-xyz"
 ZONE = "digitalstreamers.xyz"
-WILDCARD = "antiblock-cdn-wildcard"
+WILDCARD = "edge-cert-01"
 FORBIDDEN_IDS = (
     "7883994692362412293",
     "bc8rzaiaqqkilvbp4fhu",
@@ -121,7 +121,7 @@ class OriginGroupPlanTests(unittest.TestCase):
 
     def test_d_extra_origin_on_new_node_plans_update(self) -> None:
         group = _load("origin_group_ok.json")
-        group["name"] = "antiblock-de-fra-3"
+        group["name"] = "edge-de-fra-3"
         group["origins"].append(
             {"source": "origin-extra.example", "enabled": True, "backup": True}
         )
@@ -129,7 +129,7 @@ class OriginGroupPlanTests(unittest.TestCase):
         plan = ycdn.plan_origin_group(
             group,
             **_desired(
-                name="antiblock-de-fra-3",
+                name="edge-de-fra-3",
                 origin_hostname="origin-de-fra-3.digitalstreamers.xyz",
                 use_next=False,
                 public_hostname="de-fra-3.cdn.digitalstreamers.xyz",
@@ -369,7 +369,7 @@ class DnsAndArchitectureTests(unittest.TestCase):
             derived["origin_hostname"],
             "origin-{{ inventory_hostname }}.digitalstreamers.xyz",
         )
-        self.assertEqual(derived["origin_group_name"], "antiblock-{{ inventory_hostname }}")
+        self.assertEqual(derived["origin_group_name"], "edge-{{ inventory_hostname }}")
         self.assertFalse(derived["origin_group_use_next"])
         self.assertEqual(derived["certificate_mode"], "shared_wildcard")
         legacy = HOST_DE_FRA_2["antiblock_cdn_node"]
@@ -417,7 +417,7 @@ class ReconcileWriteGuardTests(unittest.TestCase):
                                 folder_id="folder",
                                 public_hostname="de-fra-3.cdn.digitalstreamers.xyz",
                                 origin_hostname="origin-de-fra-3.digitalstreamers.xyz",
-                                origin_group_name="antiblock-de-fra-3",
+                                origin_group_name="edge-de-fra-3",
                                 origin_group_use_next=False,
                                 certificate_mode="shared_wildcard",
                                 certificate_name=WILDCARD,

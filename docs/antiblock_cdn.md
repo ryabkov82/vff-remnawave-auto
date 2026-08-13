@@ -118,7 +118,7 @@ per-node CDN Resources (`de-fra-3.cdn.digitalstreamers.xyz`,
 этот namespace занят Certbot (`_acme-challenge.digitalstreamers.xyz` TXT).
 
 ```
-name:      antiblock-cdn-wildcard
+name:      edge-cert-01
 domains:   *.cdn.digitalstreamers.xyz
 challenge: DNS
 dns_zone:  digitalstreamers.xyz
@@ -246,7 +246,7 @@ IDs (Origin Group, Origin, Resource, certificate, `provider_cname`) **не**
 
 - Origin Group — exact stable `antiblock_cdn_node.origin_group_name`
 - CDN Resource — exact `antiblock_cdn_node.public_hostname` (cname)
-- wildcard cert — name `antiblock-cdn-wildcard`, только если
+- wildcard cert — name `edge-cert-01`, только если
   `certificate_mode: shared_wildcard`
 
 Новые ноды (group default):
@@ -255,7 +255,7 @@ IDs (Origin Group, Origin, Resource, certificate, `provider_cname`) **не**
 antiblock_cdn_node:
   public_hostname: "{{ inventory_hostname }}.cdn.digitalstreamers.xyz"
   origin_hostname: "origin-{{ inventory_hostname }}.digitalstreamers.xyz"
-  origin_group_name: "antiblock-{{ inventory_hostname }}"
+  origin_group_name: "edge-{{ inventory_hostname }}"
   origin_group_use_next: false
   certificate_mode: shared_wildcard
 ```
