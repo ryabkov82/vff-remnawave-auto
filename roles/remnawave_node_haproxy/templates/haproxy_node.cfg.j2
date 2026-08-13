@@ -62,12 +62,12 @@ backend be_xray_{{ port }}
 {% for route in _haproxy_extra_sni_routes | default([]) | haproxy_extra_sni_backends %}
 backend {{ route.backend_name }}
     mode tcp
-{%- if route.timeout_connect %}
+{% if route.timeout_connect %}
     timeout connect {{ route.timeout_connect }}
-{%- endif %}
-{%- if route.timeout_server %}
+{% endif %}
+{% if route.timeout_server %}
     timeout server {{ route.timeout_server }}
-{%- endif %}
+{% endif %}
     {{ route | haproxy_extra_sni_backend_line }}
 {% endfor %}
 
