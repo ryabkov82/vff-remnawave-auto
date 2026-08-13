@@ -80,6 +80,22 @@ def _makefile_block(target: str) -> str:
     return rest if nxt < 0 else rest[:nxt]
 
 
+def _task_tags(task: dict) -> list[str]:
+    tags = task.get("tags") or []
+    if isinstance(tags, str):
+        return [tags]
+    return [str(item) for item in tags]
+
+
+def _apply_tags(task: dict) -> list[str]:
+    include = task.get("ansible.builtin.include_role") or task.get("include_role") or {}
+    apply = include.get("apply") or {}
+    tags = apply.get("tags") or []
+    if isinstance(tags, str):
+        return [tags]
+    return [str(item) for item in tags]
+
+
 def _includes(play: dict) -> list[tuple[str, dict]]:
     out: list[tuple[str, dict]] = []
     for task in play.get("tasks") or []:
@@ -510,6 +526,32 @@ class PlaybookMakefileTests(unittest.TestCase):
             public["ansible.builtin.include_role"]["apply"]["delegate_to"],
             "localhost",
         )
+
+    def test_public_cname_include_propagates_yandex_tag(self) -> None:
+        play = _plays()[1]
+        by_name = {str(task.get("name")): task for task in play.get("tasks") or []}
+        origin = by_name["AntiBlock CDN | Ensure origin A record"]
+        haproxy = by_name["AntiBlock CDN | Ensure HAProxy origin SNI route"]
+        wait = by_name["AntiBlock CDN | Wait until origin inbound is listening"]
+        yandex = by_name["AntiBlock CDN | Ensure Yandex Origin Group and CDN Resource"]
+        public = by_name["AntiBlock CDN | Ensure public CDN CNAME"]
+        yandex_tag = "antiblock_cdn_yandex"
+
+        self.assertIn(yandex_tag, _task_tags(public))
+        self.assertIn(yandex_tag, _apply_tags(public))
+        self.assertIn(yandex_tag, _task_tags(yandex))
+        self.assertIn(yandex_tag, _apply_tags(yandex))
+
+        self.assertNotIn(yandex_tag, _task_tags(origin))
+        self.assertNotIn(yandex_tag, _apply_tags(origin))
+        self.assertNotIn(yandex_tag, _task_tags(haproxy))
+        self.assertNotIn(yandex_tag, _apply_tags(haproxy))
+        self.assertNotIn(yandex_tag, _task_tags(wait))
+
+        self.assertIn("antiblock_cdn_nodes", _apply_tags(origin))
+        self.assertIn("antiblock_cdn_nodes", _apply_tags(haproxy))
+        self.assertEqual(origin["ansible.builtin.include_role"]["name"], "cf_dns")
+        self.assertEqual(public["ansible.builtin.include_role"]["name"], "cf_dns")
 
     def test_plan_playbook_is_local_read_only(self) -> None:
         plays = _plays(PLAN_PLAY)

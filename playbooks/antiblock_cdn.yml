@@ -9,6 +9,9 @@
 #
 # Yandex/Cloudflare CDN API calls use delegate_to: localhost so
 # --limit panel:HOST does not skip cloud provisioning.
+# include_role apply.tags must repeat the include tags: role tasks keep
+# their own tags (cf_dns/haproxy/…) and otherwise TAGS=antiblock_cdn_yandex
+# would include cf_dns but skip its inner tasks.
 # Ordinary make nodes keeps the AntiBlock inbound via remnawave_inbound_tags_extra.
 # Origin DNS uses antiblock_cdn_origin_dns_records; public CNAME uses the
 # runtime list from roles/yandex_cdn. Group vars do not set generic
@@ -55,6 +58,10 @@
     - name: AntiBlock CDN | Ensure origin A record
       ansible.builtin.include_role:
         name: cf_dns
+        apply:
+          tags:
+            - antiblock_cdn
+            - antiblock_cdn_nodes
       when:
         - antiblock_cdn_enabled | bool
         - (antiblock_cdn_node.origin_hostname | default('') | length) > 0
@@ -71,6 +78,9 @@
         name: remnawave_node_haproxy
         apply:
           become: true
+          tags:
+            - antiblock_cdn
+            - antiblock_cdn_nodes
       when: antiblock_cdn_enabled | bool
       tags: [antiblock_cdn, antiblock_cdn_nodes]
 
@@ -80,6 +90,10 @@
         apply:
           delegate_to: localhost
           become: false
+          tags:
+            - antiblock_cdn
+            - antiblock_cdn_nodes
+            - antiblock_cdn_yandex
       when: antiblock_cdn_enabled | bool
       vars:
         yandex_cdn_folder_id: "{{ antiblock_cdn_yc_folder_id }}"
@@ -102,6 +116,10 @@
         apply:
           delegate_to: localhost
           become: false
+          tags:
+            - antiblock_cdn
+            - antiblock_cdn_nodes
+            - antiblock_cdn_yandex
       when:
         - antiblock_cdn_enabled | bool
         - (yandex_cdn_public_dns_records | default([]) | length) > 0
