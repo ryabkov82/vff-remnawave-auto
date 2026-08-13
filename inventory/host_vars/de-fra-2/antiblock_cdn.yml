@@ -1,0 +1,6 @@
+---
+# Legacy/reference CDN node. Keep production public/origin names; do not
+# rename to the derived cdn-<node> / origin-<node> scheme.
+antiblock_cdn_node:
+  public_hostname: "cdn-lab.digitalstreamers.xyz"
+  origin_hostname: "origin-cdn.digitalstreamers.xyz"

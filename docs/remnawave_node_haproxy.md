@@ -10,7 +10,13 @@
 - получает список хостов, привязанных к этой ноде;
 - вычисляет список SNI-доменов, которые должны быть направлены на Reality inbound;
 - формирует корректный `haproxy.cfg`;
-- перезапускает HAProxy.
+- проверяет candidate config (`haproxy -c`) до замены production файла;
+- делает graceful reload HAProxy (без blind restart).
+
+Дополнительно роль принимает generic `haproxy_node_extra_sni_routes`
+(по умолчанию пустой список) для static SNI, которые **не** берутся из
+Remnawave Hosts — например origin SNI Yandex CDN. Конфликт extra SNI с
+dynamic map останавливает роль до записи конфига.
 
 ---
 
@@ -125,7 +131,7 @@ remnawave_panel_url: "https://panel.example.com"
 
 4. Генерирует `haproxy.cfg`
 
-5. Перезапускает HAProxy.
+5. Проверяет `haproxy.cfg` через `haproxy -c` и делает reload.
 
 ---
 

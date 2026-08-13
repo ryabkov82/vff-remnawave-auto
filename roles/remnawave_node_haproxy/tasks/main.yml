@@ -12,6 +12,25 @@
     remnawave_sni_api_token: "{{ remnawave_panel_api_token }}"
   tags: ['sni_map']
 
+- name: Prepare extra static SNI routes
+  ansible.builtin.set_fact:
+    _haproxy_extra_sni: "{{ haproxy_node_extra_sni_routes | default([]) | haproxy_prepare_extra_sni_routes(_sni_port_map | default({})) }}"
+  tags: ['haproxy', 'node_haproxy']
+
+- name: Fail if extra SNI routes collide or are invalid
+  ansible.builtin.assert:
+    that:
+      - _haproxy_extra_sni.ok | bool
+    fail_msg: |-
+      Extra HAProxy SNI routes are invalid (no haproxy.cfg change):
+      - {{ (_haproxy_extra_sni.errors | default([])) | join('\n- ') }}
+  tags: ['haproxy', 'node_haproxy']
+
+- name: Expose prepared extra SNI routes for the template
+  ansible.builtin.set_fact:
+    _haproxy_extra_sni_routes: "{{ _haproxy_extra_sni.routes }}"
+  tags: ['haproxy', 'node_haproxy']
+
 - name: Install HAProxy
   ansible.builtin.apt:
     name: haproxy
@@ -19,12 +38,13 @@
     update_cache: true
 
 # ========= 7) Render haproxy.cfg ==============================================
-- name: "Render haproxy.cfg"
+- name: Render haproxy.cfg
   ansible.builtin.template:
     src: haproxy_node.cfg.j2
     dest: "{{ haproxy_cfg_path }}"
     mode: "0644"
-  notify: Restart HAProxy
+    validate: "{{ haproxy_validate_cmd }}"
+  notify: Reload HAProxy
 
 # ========= 8) Ensure HAProxy running ==========================================
 - name: Ensure HAProxy enabled and running

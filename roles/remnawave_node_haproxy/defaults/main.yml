@@ -16,3 +16,8 @@ website_domains:
 
 # Путь куда класть haproxy.cfg
 haproxy_cfg_path: "/etc/haproxy/haproxy.cfg"
+haproxy_validate_cmd: "/usr/sbin/haproxy -c -f %s"
+
+# Additional static SNI routes (not from Remnawave Hosts). Empty by default so
+# ordinary nodes are unchanged. CDN origin SNI is wired via group_vars.
+haproxy_node_extra_sni_routes: []

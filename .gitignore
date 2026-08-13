@@ -22,7 +22,8 @@ inventory/host_vars/*
 # inside each host dir: ignore everything
 inventory/host_vars/*/*
 
-# allow only examples + docs
+# allow only examples + docs + committed AntiBlock per-node desired state
 !inventory/host_vars/*/*.example.yml
 !inventory/host_vars/*/README.md
 !inventory/host_vars/*/.gitkeep
+!inventory/host_vars/*/antiblock_cdn.yml

@@ -8,18 +8,24 @@
 # Node extra inbound tags live in group_vars/antiblock_cdn_nodes.yml so
 # ordinary register_node replace keeps the AntiBlock inbound on CDN nodes.
 #
-# This stage does not upsert the inbound into remnawave_inbounds /
-# remnawave_inbounds_managed, does not adopt Hosts, and does not change HAProxy.
+# Per-node origin DNS + HAProxy extra SNI routes are wired in
+# group_vars/antiblock_cdn_nodes.yml (generic roles stay reusable).
+# This file does not upsert the inbound into remnawave_inbounds /
+# remnawave_inbounds_managed and does not adopt Remnawave Hosts.
 
 antiblock_cdn_enabled: true
 
+# Legacy lab names for de-fra-2. Per-node source of truth is antiblock_cdn_node
+# (group default derived from inventory_hostname; de-fra-2 host_vars override).
 antiblock_cdn_public_hostname: "cdn-lab.digitalstreamers.xyz"
-
 antiblock_cdn_origin_hostname: "origin-cdn.digitalstreamers.xyz"
 antiblock_cdn_origin_sni: "origin-cdn.digitalstreamers.xyz"
 
 antiblock_cdn_inbound_tag: "VLESS xHTTP packet-up test"
 antiblock_cdn_inbound_port: 8447
+
+# Read-only wait after inbound activation, before HAProxy origin route.
+antiblock_cdn_origin_listen_timeout: 90
 
 antiblock_cdn_path: "/static/main/video/segment.ts/m0ce971085771"
 

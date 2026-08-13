@@ -1,5 +1,8 @@
 ---
-- name: Restart HAProxy
+- name: Reload HAProxy
   ansible.builtin.service:
     name: haproxy
-    state: restarted
+    state: reloaded
+  listen:
+    - Reload HAProxy
+    - Restart HAProxy
