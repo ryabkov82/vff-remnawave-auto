@@ -16,7 +16,7 @@ playbook `playbooks/antiblock_cdn.yml` (`make antiblock-cdn`).
 GLOBAL
   shared xHTTP packet-up inbound :8447
   AntiBlock-Squad / absent Default-Squad
-  wildcard cert  *.digitalstreamers.xyz  (make antiblock-cdn-bootstrap)
+  wildcard cert  *.cdn.digitalstreamers.xyz  (make antiblock-cdn-bootstrap)
   Cloudflare authoritative DNS
 
 PER NODE  (one node = one Origin Group = one origin = one CDN Resource)
@@ -113,13 +113,15 @@ make nodes LIMIT=de-fra-2 TAGS=register_node
 ## Global wildcard certificate bootstrap
 
 Один managed certificate в Yandex Certificate Manager на все будущие
-per-node CDN Resources (`cdn-de-fra-3.digitalstreamers.xyz`,
-`cdn-nl-ams-2.digitalstreamers.xyz`, …):
+per-node CDN Resources (`de-fra-3.cdn.digitalstreamers.xyz`,
+`nl-ams-2.cdn.digitalstreamers.xyz`, …). Не `*.digitalstreamers.xyz`:
+этот namespace занят Certbot (`_acme-challenge.digitalstreamers.xyz` TXT).
 
 ```
 name:      antiblock-cdn-wildcard
-domains:   *.digitalstreamers.xyz
+domains:   *.cdn.digitalstreamers.xyz
 challenge: DNS
+dns_zone:  digitalstreamers.xyz
 ```
 
 Lookup **по name**, UUID сертификата в inventory не кладётся.
@@ -159,8 +161,10 @@ make antiblock-cdn-bootstrap
    (`$(VENV)/bin/pip install cryptography`).
 6. Cloudflare token (`vault_cf_dns_api_token`) должен уметь править зону
    `digitalstreamers.xyz`. После ISSUED automation продолжает reconcile
-   канонического renewal CNAME, чтобы случайно удалённый `_acme-challenge`
-   восстановился до следующего Renewing.
+   канонического renewal CNAME
+   `_acme-challenge.cdn.digitalstreamers.xyz → <certificate_id>.cm.yandexcloud.net`,
+   чтобы случайно удалённый challenge восстановился до следующего Renewing.
+   Apex `_acme-challenge.digitalstreamers.xyz` (Certbot TXT) **не** трогается.
 
 OAuth / IAM tokens в git не класть. Короткий IAM token
 (`vault_yandex_cloud_iam_token`) допустим только для ручного теста.
@@ -175,7 +179,7 @@ absent → request → VALIDATING → Cloudflare CNAME → PROCESSING → ISSUED
 ```
 
 - `ISSUED` — успех; канонический renewal CNAME
-  `_acme-challenge.<domain> → <certificate_id>.cm.yandexcloud.net`
+  `_acme-challenge.cdn.digitalstreamers.xyz → <certificate_id>.cm.yandexcloud.net`
   продолжает reconcile (не удаляется и восстанавливается, если его стёрли).
   Certificate ID берётся из API как runtime fact, в inventory не хардкодится.
 - `VALIDATING` / challenge `PROCESSING` — сертификат ещё выпускается;
@@ -194,7 +198,11 @@ HTTP challenge для wildcard не используется. TXT рядом с 
 | Node | public | origin |
 |------|--------|--------|
 | de-fra-2 | `cdn-lab.digitalstreamers.xyz` | `origin-cdn.digitalstreamers.xyz` |
-| будущая de-fra-3 (ещё не в группе) | `cdn-de-fra-3.digitalstreamers.xyz` | `origin-de-fra-3.digitalstreamers.xyz` |
+| будущая de-fra-3 (ещё не в группе) | `de-fra-3.cdn.digitalstreamers.xyz` | `origin-de-fra-3.digitalstreamers.xyz` |
+
+Origin hostname остаётся в namespace `*.digitalstreamers.xyz`
+(`origin-<node>.digitalstreamers.xyz`), не под `*.cdn`. de-fra-2 не
+использует shared wildcard (`certificate_mode: legacy_existing`).
 
 `inventory/group_vars/antiblock_cdn_nodes.yml` задаёт derived names и
 `haproxy_node_extra_sni_routes`. Override de-fra-2:
@@ -245,7 +253,7 @@ IDs (Origin Group, Origin, Resource, certificate, `provider_cname`) **не**
 
 ```yaml
 antiblock_cdn_node:
-  public_hostname: "cdn-{{ inventory_hostname }}.digitalstreamers.xyz"
+  public_hostname: "{{ inventory_hostname }}.cdn.digitalstreamers.xyz"
   origin_hostname: "origin-{{ inventory_hostname }}.digitalstreamers.xyz"
   origin_group_name: "antiblock-{{ inventory_hostname }}"
   origin_group_use_next: false

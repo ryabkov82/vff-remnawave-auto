@@ -54,7 +54,7 @@ ISSUED_CERT = {
     "id": "fpq-wildcard-runtime",
     "name": WILDCARD,
     "type": "MANAGED",
-    "domains": ["*.digitalstreamers.xyz"],
+    "domains": ["*.cdn.digitalstreamers.xyz"],
     "status": "ISSUED",
 }
 
@@ -132,7 +132,7 @@ class OriginGroupPlanTests(unittest.TestCase):
                 name="antiblock-de-fra-3",
                 origin_hostname="origin-de-fra-3.digitalstreamers.xyz",
                 use_next=False,
-                public_hostname="cdn-de-fra-3.digitalstreamers.xyz",
+                public_hostname="de-fra-3.cdn.digitalstreamers.xyz",
                 legacy=False,
             ),
         )
@@ -265,7 +265,7 @@ class CertificateLookupTests(unittest.TestCase):
                 "t",
                 folder_id="folder",
                 name=WILDCARD,
-                domains=["*.digitalstreamers.xyz"],
+                domains=["*.cdn.digitalstreamers.xyz"],
             )
         self.assertEqual(found["id"], "fpq-wildcard-runtime")
         self.assertEqual(found["status"], "ISSUED")
@@ -278,11 +278,11 @@ class CertificateLookupTests(unittest.TestCase):
                     "t",
                     folder_id="folder",
                     name=WILDCARD,
-                    domains=["*.digitalstreamers.xyz"],
+                    domains=["*.cdn.digitalstreamers.xyz"],
                 )
         absent_plan = ycdn.plan_resource(
             None,
-            public_hostname="cdn-de-fra-3.digitalstreamers.xyz",
+            public_hostname="de-fra-3.cdn.digitalstreamers.xyz",
             origin_group_id="og-new",
             origin_hostname="origin-de-fra-3.digitalstreamers.xyz",
             certificate_id=None,
@@ -293,7 +293,7 @@ class CertificateLookupTests(unittest.TestCase):
             ycdn.create_resource(
                 "t",
                 folder_id="folder",
-                public_hostname="cdn-de-fra-3.digitalstreamers.xyz",
+                public_hostname="de-fra-3.cdn.digitalstreamers.xyz",
                 origin_group_id="og-new",
                 origin_hostname="origin-de-fra-3.digitalstreamers.xyz",
                 certificate_id=None,
@@ -333,10 +333,11 @@ class DnsAndArchitectureTests(unittest.TestCase):
 
     def test_x_provider_cname_is_cname_target(self) -> None:
         records = ycdn.public_cname_records(
-            "cdn-de-fra-3.digitalstreamers.xyz",
+            "de-fra-3.cdn.digitalstreamers.xyz",
             ZONE,
             "provider.topology.gslb.yccdn.ru.",
         )
+        self.assertEqual(records[0]["name"], "de-fra-3.cdn")
         self.assertEqual(records[0]["value"], "provider.topology.gslb.yccdn.ru")
 
     def test_y_origin_a_remains_separate(self) -> None:
@@ -360,6 +361,14 @@ class DnsAndArchitectureTests(unittest.TestCase):
 
     def test_z_one_resource_per_node_architecture(self) -> None:
         derived = GROUP_CDN["antiblock_cdn_node"]
+        self.assertEqual(
+            derived["public_hostname"],
+            "{{ inventory_hostname }}.cdn.digitalstreamers.xyz",
+        )
+        self.assertEqual(
+            derived["origin_hostname"],
+            "origin-{{ inventory_hostname }}.digitalstreamers.xyz",
+        )
         self.assertEqual(derived["origin_group_name"], "antiblock-{{ inventory_hostname }}")
         self.assertFalse(derived["origin_group_use_next"])
         self.assertEqual(derived["certificate_mode"], "shared_wildcard")
@@ -406,13 +415,13 @@ class ReconcileWriteGuardTests(unittest.TestCase):
                             result = ycdn.reconcile(
                                 token="t",
                                 folder_id="folder",
-                                public_hostname="cdn-de-fra-3.digitalstreamers.xyz",
+                                public_hostname="de-fra-3.cdn.digitalstreamers.xyz",
                                 origin_hostname="origin-de-fra-3.digitalstreamers.xyz",
                                 origin_group_name="antiblock-de-fra-3",
                                 origin_group_use_next=False,
                                 certificate_mode="shared_wildcard",
                                 certificate_name=WILDCARD,
-                                certificate_domains=["*.digitalstreamers.xyz"],
+                                certificate_domains=["*.cdn.digitalstreamers.xyz"],
                                 dns_zone=ZONE,
                                 allow_writes=False,
                             )
@@ -443,7 +452,7 @@ class ReconcileWriteGuardTests(unittest.TestCase):
                             origin_group_use_next=True,
                             certificate_mode="legacy_existing",
                             certificate_name=WILDCARD,
-                            certificate_domains=["*.digitalstreamers.xyz"],
+                            certificate_domains=["*.cdn.digitalstreamers.xyz"],
                             dns_zone=ZONE,
                             allow_writes=True,
                         )

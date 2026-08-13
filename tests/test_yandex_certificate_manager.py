@@ -45,8 +45,11 @@ UUID_RE = re.compile(
     r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
 )
 NAME = "antiblock-cdn-wildcard"
-DOMAINS = ["*.digitalstreamers.xyz"]
+DOMAINS = ["*.cdn.digitalstreamers.xyz"]
 ZONE = "digitalstreamers.xyz"
+CDN_ACME = "_acme-challenge.cdn.digitalstreamers.xyz"
+APEX_ACME = "_acme-challenge.digitalstreamers.xyz"
+CF_RELATIVE_ACME = "_acme-challenge.cdn"
 
 
 def _load_fixture(name: str) -> dict:
@@ -79,7 +82,8 @@ class DesiredStateTests(unittest.TestCase):
         self.assertEqual(cert["domains"], DOMAINS)
         self.assertEqual(cert["challenge"], "dns")
         self.assertEqual(cert["dns_zone"], ZONE)
-        self.assertEqual(ANTIBLOCK_VARS["antiblock_cdn_yc_folder_id"], "")
+        folder_id = str(ANTIBLOCK_VARS["antiblock_cdn_yc_folder_id"] or "")
+        self.assertIsNone(UUID_RE.search(folder_id))
         desired = ycm.load_desired_from_vars(ANTIBLOCK_VARS)
         self.assertEqual(desired["name"], NAME)
         self.assertEqual(desired["domains"], DOMAINS)
@@ -89,7 +93,8 @@ class DesiredStateTests(unittest.TestCase):
         raw = ANTIBLOCK_VARS_PATH.read_text(encoding="utf-8")
         self.assertIsNone(UUID_RE.search(raw))
         self.assertNotIn("certificate_id", raw.lower())
-        self.assertEqual(ANTIBLOCK_VARS["antiblock_cdn_yc_folder_id"], "")
+        folder_id = str(ANTIBLOCK_VARS["antiblock_cdn_yc_folder_id"] or "")
+        self.assertIsNone(UUID_RE.search(folder_id))
         bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
         self.assertIsNone(UUID_RE.search(bootstrap))
         self.assertIn("antiblock_cdn_certificate.name", bootstrap)
@@ -158,7 +163,7 @@ class ReconcileLogicTests(unittest.TestCase):
         self.assertEqual(result["dns_source"], "canonical_renewal")
         self.assertEqual(len(result["dns_records"]), 1)
         record = result["dns_records"][0]
-        self.assertEqual(record["name"], "_acme-challenge")
+        self.assertEqual(record["name"], CF_RELATIVE_ACME)
         self.assertEqual(record["type"], "CNAME")
         self.assertEqual(
             record["value"],
@@ -222,7 +227,7 @@ class ChallengeTests(unittest.TestCase):
             extracted,
             [
                 {
-                    "name": "_acme-challenge.digitalstreamers.xyz",
+                    "name": CDN_ACME,
                     "type": "CNAME",
                     "value": "example-challenge.cm.yandexcloud.net.",
                 }
@@ -230,7 +235,7 @@ class ChallengeTests(unittest.TestCase):
         )
         records = ycm.challenges_to_cf_dns_records(extracted, ZONE)
         self.assertEqual(len(records), 1)
-        self.assertEqual(records[0]["name"], "_acme-challenge")
+        self.assertEqual(records[0]["name"], CF_RELATIVE_ACME)
         self.assertEqual(records[0]["type"], "CNAME")
         self.assertEqual(records[0]["value"], "example-challenge.cm.yandexcloud.net")
         self.assertFalse(records[0]["proxied"])
@@ -256,14 +261,14 @@ class ChallengeTests(unittest.TestCase):
             selected,
             [
                 {
-                    "name": "_acme-challenge.digitalstreamers.xyz",
+                    "name": CDN_ACME,
                     "type": "CNAME",
                     "value": f"{cert['id']}.{ycm.RENEWAL_CNAME_TARGET_SUFFIX}.",
                 }
             ],
         )
         records = ycm.challenges_to_cf_dns_records(selected, ZONE)
-        self.assertEqual(records[0]["name"], "_acme-challenge")
+        self.assertEqual(records[0]["name"], CF_RELATIVE_ACME)
         self.assertEqual(records[0]["type"], "CNAME")
         self.assertFalse(records[0]["proxied"])
         self.assertTrue(records[0]["solo"])
@@ -307,7 +312,7 @@ class ChallengeTests(unittest.TestCase):
                 {
                     "status": "VALID",
                     "dnsChallenge": {
-                        "name": "_acme-challenge.digitalstreamers.xyz",
+                        "name": CDN_ACME,
                         "type": "TXT",
                         "value": "leftover-txt-must-not-be-created",
                     },
@@ -333,7 +338,7 @@ class ChallengeTests(unittest.TestCase):
         }
         selected, source = ycm.select_dns_challenges(cert, DOMAINS)
         self.assertEqual(source, "canonical_renewal")
-        self.assertEqual(selected[0]["name"], "_acme-challenge.digitalstreamers.xyz")
+        self.assertEqual(selected[0]["name"], CDN_ACME)
         self.assertEqual(selected[0]["type"], "CNAME")
 
     def test_http_challenge_ignored(self) -> None:
@@ -342,6 +347,114 @@ class ChallengeTests(unittest.TestCase):
         self.assertEqual(len(extracted), 1)
         self.assertEqual(extracted[0]["type"], "CNAME")
         self.assertNotIn("should-not-be-used", json.dumps(extracted))
+
+
+class AcmeNamespaceCollisionTests(unittest.TestCase):
+    """Certbot owns apex _acme-challenge.digitalstreamers.xyz TXT. Do not CNAME it."""
+
+    AUTOMATION_PATHS = [
+        REPO / "inventory/group_vars/all/antiblock_cdn.yml",
+        REPO / "inventory/group_vars/antiblock_cdn_nodes.yml",
+        REPO / "inventory/host_vars/de-fra-2/antiblock_cdn.yml",
+        REPO / "playbooks/antiblock_cdn.yml",
+        REPO / "playbooks/antiblock_cdn_bootstrap.yml",
+        REPO / "playbooks/antiblock_cdn_yandex.yml",
+        REPO / "scripts/yandex_cdn.py",
+        REPO / "roles/yandex_cdn/defaults/main.yml",
+        REPO / "roles/yandex_cdn/tasks/main.yml",
+        REPO / "roles/yandex_certificate_manager/defaults/main.yml",
+        REPO / "roles/yandex_certificate_manager/tasks/main.yml",
+    ]
+
+    def test_shared_wildcard_is_cdn_subdomain(self) -> None:
+        cert = ANTIBLOCK_VARS["antiblock_cdn_certificate"]
+        self.assertEqual(cert["domains"], ["*.cdn.digitalstreamers.xyz"])
+        self.assertEqual(cert["dns_zone"], ZONE)
+        self.assertNotIn("*.digitalstreamers.xyz", cert["domains"])
+        self.assertNotIn("digitalstreamers.xyz", cert["domains"])
+
+    def test_canonical_challenge_is_cdn_acme_not_apex(self) -> None:
+        self.assertEqual(
+            ycm.acme_challenge_fqdn("*.cdn.digitalstreamers.xyz"),
+            CDN_ACME,
+        )
+        canonical = ycm.canonical_renewal_challenges("fpq-runtime-cert-id", DOMAINS)
+        self.assertEqual([item["name"] for item in canonical], [CDN_ACME])
+        self.assertNotIn(APEX_ACME, [item["name"] for item in canonical])
+        records = ycm.challenges_to_cf_dns_records(canonical, ZONE)
+        self.assertEqual(records[0]["name"], CF_RELATIVE_ACME)
+        self.assertNotEqual(records[0]["name"], "_acme-challenge")
+        self.assertEqual(records[0]["type"], "CNAME")
+        self.assertFalse(records[0]["proxied"])
+        self.assertTrue(records[0]["solo"])
+
+    def test_automation_never_emits_apex_acme_challenge(self) -> None:
+        desired = ycm.load_desired_from_vars(ANTIBLOCK_VARS)
+        emitted = ycm.canonical_renewal_challenges("fpq-id", desired["domains"])
+        emitted += ycm.challenges_to_cf_dns_records(emitted, desired["dns_zone"])
+        blob = json.dumps(emitted)
+        self.assertNotIn(APEX_ACME, blob)
+        self.assertNotIn('"_acme-challenge"', blob)
+        for path in self.AUTOMATION_PATHS:
+            raw = path.read_text(encoding="utf-8")
+            self.assertNotIn(
+                APEX_ACME,
+                raw,
+                msg=f"{path} must not create/change {APEX_ACME}",
+            )
+        for fixture in (FIXTURES).glob("*.json"):
+            raw = fixture.read_text(encoding="utf-8")
+            self.assertNotIn(APEX_ACME, raw, msg=str(fixture))
+
+    def test_apex_leftover_txt_does_not_become_apex_cname(self) -> None:
+        cert = {
+            "id": "fpq-runtime-cert-id",
+            "name": NAME,
+            "status": "ISSUED",
+            "challenges": [
+                {
+                    "status": "VALID",
+                    "dnsChallenge": {
+                        "name": APEX_ACME,
+                        "type": "TXT",
+                        "value": "certbot-owned-must-not-become-yandex-cname",
+                    },
+                }
+            ],
+        }
+        selected, source = ycm.select_dns_challenges(cert, DOMAINS)
+        self.assertEqual(source, "canonical_renewal")
+        self.assertEqual([item["name"] for item in selected], [CDN_ACME])
+        records = ycm.challenges_to_cf_dns_records(selected, ZONE)
+        names = [item["name"] for item in records]
+        self.assertEqual(names, [CF_RELATIVE_ACME])
+        self.assertNotIn("_acme-challenge", names)
+
+    def test_de_fra_2_keeps_legacy_public_and_origin_namespace(self) -> None:
+        host = yaml.safe_load(
+            (REPO / "inventory/host_vars/de-fra-2/antiblock_cdn.yml").read_text(
+                encoding="utf-8"
+            )
+        )["antiblock_cdn_node"]
+        group = yaml.safe_load(
+            (REPO / "inventory/group_vars/antiblock_cdn_nodes.yml").read_text(
+                encoding="utf-8"
+            )
+        )["antiblock_cdn_node"]
+        self.assertEqual(host["public_hostname"], "cdn-lab.digitalstreamers.xyz")
+        self.assertEqual(host["origin_hostname"], "origin-cdn.digitalstreamers.xyz")
+        self.assertEqual(host["certificate_mode"], "legacy_existing")
+        self.assertEqual(
+            group["public_hostname"],
+            "{{ inventory_hostname }}.cdn.digitalstreamers.xyz",
+        )
+        self.assertEqual(
+            group["origin_hostname"],
+            "origin-{{ inventory_hostname }}.digitalstreamers.xyz",
+        )
+        self.assertTrue(group["origin_hostname"].endswith(".digitalstreamers.xyz"))
+        self.assertNotIn(".cdn.digitalstreamers.xyz", group["origin_hostname"])
+        self.assertNotIn("cdn-{{ inventory_hostname }}", group["public_hostname"])
 
 
 class PlaybookAndMakefileTests(unittest.TestCase):

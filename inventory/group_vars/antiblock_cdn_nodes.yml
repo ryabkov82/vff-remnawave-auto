@@ -10,7 +10,7 @@ remnawave_inbound_tags_extra:
 # Future nodes (e.g. de-fra-3) get derived names. de-fra-2 overrides in
 # inventory/host_vars/de-fra-2/antiblock_cdn.yml to keep production lab names.
 antiblock_cdn_node:
-  public_hostname: "cdn-{{ inventory_hostname }}.digitalstreamers.xyz"
+  public_hostname: "{{ inventory_hostname }}.cdn.digitalstreamers.xyz"
   origin_hostname: "origin-{{ inventory_hostname }}.digitalstreamers.xyz"
   origin_group_name: "antiblock-{{ inventory_hostname }}"
   origin_group_use_next: false
