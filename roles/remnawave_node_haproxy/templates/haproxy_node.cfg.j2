@@ -28,10 +28,21 @@ frontend https_in
     # XRAY dynamic routing via SNI
     # ============================================================
 
-    {% for sni, port in _sni_port_map.items() %}
+    {% for sni, port in (_sni_port_map | default({})).items() %}
 
     acl SNI_XRAY_{{ loop.index }} req.ssl_sni -i {{ sni }}
     use_backend be_xray_{{ port }} if SNI_XRAY_{{ loop.index }}
+
+    {% endfor %}
+
+    # ============================================================
+    # Extra static SNI routes (not from Remnawave Hosts)
+    # ============================================================
+
+    {% for route in _haproxy_extra_sni_routes | default([]) %}
+
+    acl SNI_{{ route.acl_suffix }} req.ssl_sni -i {{ route.sni }}
+    use_backend {{ route.backend_name }} if SNI_{{ route.acl_suffix }}
 
     {% endfor %}
 
@@ -42,10 +53,22 @@ backend be_nginx
     mode tcp
     server nginx_local {{ nginx_https_bind }} check
 
-{% for port in _sni_port_map.values() | unique %}
+{% for port in (_sni_port_map | default({})).values() | unique %}
 backend be_xray_{{ port }}
     mode tcp
     server xray_local 127.0.0.1:{{ port }} send-proxy-v2
+{% endfor %}
+
+{% for route in _haproxy_extra_sni_routes | default([]) | haproxy_extra_sni_backends %}
+backend {{ route.backend_name }}
+    mode tcp
+{%- if route.timeout_connect %}
+    timeout connect {{ route.timeout_connect }}
+{%- endif %}
+{%- if route.timeout_server %}
+    timeout server {{ route.timeout_server }}
+{%- endif %}
+    {{ route | haproxy_extra_sni_backend_line }}
 {% endfor %}
 
 listen stats

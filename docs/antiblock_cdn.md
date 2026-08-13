@@ -27,7 +27,9 @@ antiblock_cdn_nodes  (сейчас: de-fra-2; позже de-fra-3, nl-ams-2, …
 ```
 
 Origin SNI `origin-cdn.digitalstreamers.xyz` → `127.0.0.1:8447` (без
-send-proxy-v2) пока настроен вручную. Этот target его не меняет.
+send-proxy-v2) задаётся generic extra SNI route на группе
+`antiblock_cdn_nodes`. de-fra-2 сохраняет legacy names
+`cdn-lab` / `origin-cdn`.
 
 ## Orchestration
 
@@ -38,6 +40,9 @@ make antiblock-cdn
   +-- ensure AntiBlock-Squad membership
   +-- ensure absence from Default-Squad
   +-- activate inbound on antiblock_cdn_nodes
+  +-- origin A DNS via roles/cf_dns
+  +-- wait 127.0.0.1:antiblock_cdn_inbound_port
+  +-- HAProxy extra SNI route (validate + reload)
 ```
 
 Порядок plays обязателен: inbound должен существовать, прежде чем
@@ -95,7 +100,8 @@ make nodes LIMIT=de-fra-2 TAGS=register_node
 | Target | Что делает |
 |--------|------------|
 | `make antiblock-cdn-plan` | Только `ansible-playbook --syntax-check`. Без API. Ansible `--check` **не** используется: `uri` в Remnawave-ролях не является безопасным check-mode. |
-| `make antiblock-cdn` | Apply inbound + squads + CDN node activation. |
+| `make antiblock-cdn` | Apply inbound + squads + origin DNS + HAProxy extra SNI. |
+| `make antiblock-cdn-node HOST=…` | То же для одной ноды: `--limit panel:HOST`. HOST обязан быть в `[antiblock_cdn_nodes]`. |
 | `make antiblock-cdn-bootstrap-plan` | Syntax-check + dump desired certificate state. Без Yandex/Cloudflare writes. `--check` не используется. |
 | `make antiblock-cdn-bootstrap` | Apply: managed wildcard cert + Cloudflare DNS challenge. |
 
@@ -173,12 +179,50 @@ absent → request → VALIDATING → Cloudflare CNAME → PROCESSING → ISSUED
 HTTP challenge для wildcard не используется. TXT рядом с CNAME на том же
 имени не создаётся (`solo: true` на CNAME).
 
+## Per-node origin bootstrap
+
+Каждая CDN-enabled node получает свои hostname. de-fra-2 — legacy/reference
+и **не** переименовывается:
+
+| Node | public | origin |
+|------|--------|--------|
+| de-fra-2 | `cdn-lab.digitalstreamers.xyz` | `origin-cdn.digitalstreamers.xyz` |
+| будущая de-fra-3 (ещё не в группе) | `cdn-de-fra-3.digitalstreamers.xyz` | `origin-de-fra-3.digitalstreamers.xyz` |
+
+`inventory/group_vars/antiblock_cdn_nodes.yml` задаёт derived names и
+`haproxy_node_extra_sni_routes`. Override de-fra-2:
+`inventory/host_vars/de-fra-2/antiblock_cdn.yml`.
+
+Origin DNS — существующий `roles/cf_dns`: A-запись relative name, IP из
+`ansible_host`, `proxied: false`, `solo: true` (только другие A того же
+имени, например stale IP; другие имена зоны и другие типы не трогаются).
+Список `antiblock_cdn_origin_dns_records` передаётся в `cf_dns` только
+dedicated playbook’ом. Group vars **не** задаёт `cf_dns_records`, поэтому
+`make nodes` продолжает использовать host_vars DNS ноды.
+
+HAProxy extra route — generic `haproxy_node_extra_sni_routes` (роль
+`remnawave_node_haproxy`, default `[]`):
+
+- SNI → `127.0.0.1:{{ antiblock_cdn_inbound_port }}`
+- `send_proxy_v2: false`
+- `timeout connect 5s` / `timeout server 5m`
+- конфликт SNI с dynamic Host map или два разных backend на один SNI →
+  fail **до** записи `haproxy.cfg`
+- `validate: /usr/sbin/haproxy -c -f %s`; при ошибке production config
+  не меняется, reload не вызывается
+- handler: `systemctl reload haproxy` (имя `Restart HAProxy` оставлено
+  как listen alias)
+- перед HAProxy: read-only `wait_for` `127.0.0.1:{{ antiblock_cdn_inbound_port }}`
+  (`antiblock_cdn_origin_listen_timeout`, default 90s). `register_node` сам
+  порт не проверяет.
+
+`make antiblock-cdn-node HOST=de-fra-2` гоняет `playbooks/antiblock_cdn.yml`
+с `--limit panel:de-fra-2`, чтобы panel play не пропускался.
+
 ## Ещё не реализовано
 
-Hosts, HAProxy и per-node Yandex CDN пока **не** автоматизированы:
+Remnawave Hosts и per-node Yandex CDN пока **не** автоматизированы:
 
 - Host adoption / reconcile / маркер `VFF:ANTIBLOCK` / safe prune
-- HAProxy origin SNI (`origin-cdn.digitalstreamers.xyz` → `127.0.0.1:8447`)
-- `haproxy -c` / reload
-- per-node CDN Resource / Origin Group
+- per-node CDN Resource / Origin Group / public CDN CNAME
 - CDN smoke tests

@@ -371,12 +371,11 @@ class PlaybookAndMakefileTests(unittest.TestCase):
         raw = ANTIBLOCK_PLAY.read_text(encoding="utf-8")
         self.assertNotIn("yandex_certificate_manager", raw)
         self.assertNotIn("requestNew", raw)
-        self.assertNotIn("antiblock_cdn_certificate", raw)
         roles = []
         for play in _plays(ANTIBLOCK_PLAY):
             for item in play.get("roles") or []:
                 roles.append(item["role"] if isinstance(item, dict) else item)
-        self.assertEqual(roles, ["remnawave_inbounds", "remnawave_register_node"])
+        self.assertNotIn("yandex_certificate_manager", roles)
 
     def test_generic_make_inbounds_nodes_unchanged(self) -> None:
         inbounds = _makefile_block("inbounds")

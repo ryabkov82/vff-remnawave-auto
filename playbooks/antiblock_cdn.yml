@@ -1,13 +1,16 @@
 ---
 # Dedicated AntiBlock / Yandex Cloud CDN orchestration.
-# Hosts and HAProxy are out of scope.
+# Remnawave Hosts, Yandex CDN Resource, and Origin Group are out of scope.
 #
-# Order: ensure shared inbound + squads on panel, then activate on each
-# CDN-enabled VPN node (group antiblock_cdn_nodes). Each node later gets its
-# own Yandex CDN Resource — this is not a shared origin group.
+# Order: ensure shared inbound + squads on panel, then on each CDN-enabled
+# VPN node (group antiblock_cdn_nodes): activate inbound, origin DNS, wait
+# until :antiblock_cdn_inbound_port is listening, HAProxy origin SNI.
 #
 # Ordinary make nodes keeps the AntiBlock inbound via remnawave_inbound_tags_extra
-# on this group (replace still reconciles base tags strictly).
+# on this group. Extra HAProxy SNI routes also live in that group so make nodes
+# TAGS=haproxy cannot drop the origin route. Origin DNS uses a separate list
+# (antiblock_cdn_origin_dns_records) passed only here as cf_dns_records — group
+# vars do not set generic cf_dns_records, so make nodes keeps host_vars DNS.
 
 - name: AntiBlock CDN | Ensure inbound and Internal Squad membership
   hosts: panel
@@ -30,10 +33,37 @@
               - "{{ antiblock_cdn_internal_squad }}"
             absent_from: "{{ antiblock_cdn_forbidden_internal_squads }}"
 
-- name: AntiBlock CDN | Activate inbound on CDN-enabled nodes
+- name: AntiBlock CDN | Activate inbound, origin DNS, and HAProxy on CDN nodes
   hosts: antiblock_cdn_nodes
   gather_facts: false
   tags: [antiblock_cdn, antiblock_cdn_nodes]
   roles:
     - role: remnawave_register_node
       when: antiblock_cdn_enabled | bool
+    - role: cf_dns
+      when:
+        - antiblock_cdn_enabled | bool
+        - (antiblock_cdn_node.origin_hostname | default('') | length) > 0
+        - (antiblock_cdn_origin_dns_records | default([]) | length) > 0
+      vars:
+        cf_dns_zone: "{{ antiblock_cdn_certificate.dns_zone }}"
+        cf_dns_records: "{{ antiblock_cdn_origin_dns_records }}"
+        cf_dns_state: present
+        cf_dns_proxied_default: false
+  tasks:
+    - name: AntiBlock CDN | Wait until origin inbound is listening
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ antiblock_cdn_inbound_port | int }}"
+        state: started
+        timeout: "{{ antiblock_cdn_origin_listen_timeout | int }}"
+      when: antiblock_cdn_enabled | bool
+      tags: [antiblock_cdn, antiblock_cdn_nodes, antiblock_cdn_origin_ready]
+
+    - name: AntiBlock CDN | Ensure HAProxy origin SNI route
+      ansible.builtin.include_role:
+        name: remnawave_node_haproxy
+        apply:
+          become: true
+      when: antiblock_cdn_enabled | bool
+      tags: [antiblock_cdn, antiblock_cdn_nodes]

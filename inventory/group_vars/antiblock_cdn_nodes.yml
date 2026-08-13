@@ -6,3 +6,34 @@
 # make nodes TAGS=register_node in replace mode keeps the AntiBlock inbound.
 remnawave_inbound_tags_extra:
   - "{{ antiblock_cdn_inbound_tag }}"
+
+# Future nodes (e.g. de-fra-3) get derived names. de-fra-2 overrides in
+# inventory/host_vars/de-fra-2/antiblock_cdn.yml to keep production lab names.
+antiblock_cdn_node:
+  public_hostname: "cdn-{{ inventory_hostname }}.digitalstreamers.xyz"
+  origin_hostname: "origin-{{ inventory_hostname }}.digitalstreamers.xyz"
+
+# Origin A record only. IP comes from ansible_host via roles/cf_dns.
+# solo=true removes other A records of this same name (stale IP), not other
+# names in the zone and not other types. Do NOT set cf_dns_records here:
+# that would replace host_vars DNS on ordinary make nodes.
+antiblock_cdn_origin_dns_records:
+  - name: "{{ antiblock_cdn_node.origin_hostname | regex_replace('\\.' ~ antiblock_cdn_certificate.dns_zone ~ '$', '') }}"
+    type: A
+    proxied: false
+    solo: true
+
+# Generic extra SNI routes for remnawave_node_haproxy. Empty on ordinary nodes
+# (role default). Must live here so make nodes TAGS=haproxy on a CDN node
+# cannot wipe the origin route.
+haproxy_node_extra_sni_routes:
+  - name: xhttp_cdn
+    sni: "{{ antiblock_cdn_node.origin_hostname }}"
+    backend_host: "127.0.0.1"
+    backend_port: "{{ antiblock_cdn_inbound_port | int }}"
+    backend_name: "be_xhttp_{{ antiblock_cdn_inbound_port }}"
+    server_name: xhttp_local
+    send_proxy_v2: false
+    check: true
+    timeout_connect: "5s"
+    timeout_server: "5m"

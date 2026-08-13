@@ -45,13 +45,22 @@ def _plays(path: Path = PLAY) -> list[dict]:
     return [loaded]
 
 
-def _role(play: dict) -> dict:
+def _roles(play: dict) -> list[dict]:
     roles = play.get("roles") or []
+    out: list[dict] = []
+    for item in roles:
+        if isinstance(item, dict):
+            out.append(item)
+        else:
+            out.append({"role": item})
+    return out
+
+
+def _role(play: dict) -> dict:
+    roles = _roles(play)
     self = unittest.TestCase()
-    self.assertEqual(len(roles), 1, msg=play.get("name"))
-    role = roles[0]
-    self.assertIsInstance(role, dict)
-    return role
+    self.assertGreaterEqual(len(roles), 1, msg=play.get("name"))
+    return roles[0]
 
 
 def _makefile_block(target: str) -> str:
@@ -71,8 +80,7 @@ class AntiblockCdnPlaybookTests(unittest.TestCase):
         self.assertEqual(plays[0]["hosts"], "panel")
         self.assertEqual(plays[1]["hosts"], "antiblock_cdn_nodes")
         self.assertEqual(_role(plays[0])["role"], "remnawave_inbounds")
-        self.assertEqual(_role(plays[1])["role"], "remnawave_register_node")
-        self.assertNotIn("antiblock_cdn_origin", PLAY.read_text(encoding="utf-8"))
+        self.assertEqual(_roles(plays[1])[0]["role"], "remnawave_register_node")
 
     def test_inbound_passed_by_tag_without_uuid(self) -> None:
         raw = PLAY.read_text(encoding="utf-8")
@@ -155,14 +163,14 @@ class AntiblockCdnPlaybookTests(unittest.TestCase):
         self.assertEqual(inbounds["roles"][0]["role"], "remnawave_inbounds")
         self.assertNotIn("vars", inbounds["roles"][0])
 
-    def test_no_hosts_or_haproxy_in_antiblock_playbook(self) -> None:
+    def test_no_hosts_adoption_in_antiblock_playbook(self) -> None:
         raw = PLAY.read_text(encoding="utf-8")
         self.assertNotIn("remnawave_add_host", raw)
-        self.assertNotIn("remnawave_node_haproxy", raw)
         self.assertNotIn("haproxy_tls_sni", raw)
-        self.assertNotIn("haproxy.cfg", raw)
-        roles = [_role(play)["role"] for play in _plays()]
-        self.assertEqual(roles, ["remnawave_inbounds", "remnawave_register_node"])
+        roles = [item["role"] for play in _plays() for item in _roles(play)]
+        self.assertEqual(roles, ["remnawave_inbounds", "remnawave_register_node", "cf_dns"])
+        include = (_plays()[1].get("tasks") or [])[-1]["ansible.builtin.include_role"]["name"]
+        self.assertEqual(include, "remnawave_node_haproxy")
 
     def test_other_inbounds_kept_by_current_map_copy(self) -> None:
         self.assertIn("current_map.copy()", INBOUNDS_TASKS)
