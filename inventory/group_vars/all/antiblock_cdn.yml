@@ -8,8 +8,8 @@
 # Node extra inbound tags live in group_vars/antiblock_cdn_nodes.yml so
 # ordinary register_node replace keeps the AntiBlock inbound on CDN nodes.
 #
-# Per-node origin DNS + HAProxy extra SNI routes are wired in
-# group_vars/antiblock_cdn_nodes.yml (generic roles stay reusable).
+# Per-node origin DNS + HAProxy extra SNI routes + Yandex CDN names are
+# wired in group_vars/antiblock_cdn_nodes.yml (generic roles stay reusable).
 # This file does not upsert the inbound into remnawave_inbounds /
 # remnawave_inbounds_managed and does not adopt Remnawave Hosts.
 
@@ -114,8 +114,9 @@ antiblock_cdn_certificate:
   challenge: "dns"
   dns_zone: "digitalstreamers.xyz"
 
-# Yandex Cloud folder that owns the managed certificate. Not a secret and not
-# a certificate UUID. Fill before apply (or pass -e antiblock_cdn_yc_folder_id=...).
+# Yandex Cloud folder that owns the managed certificate and CDN resources.
+# Not a secret and not a certificate/resource UUID. Fill before apply
+# (or pass -e antiblock_cdn_yc_folder_id=...).
 antiblock_cdn_yc_folder_id: ""
 
 # Auth: put the service-account authorized-key JSON in Ansible Vault as

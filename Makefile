@@ -26,6 +26,7 @@ PLAY_DNS       ?= playbooks/dns.yml
 PLAY_INBOUNDS  ?= playbooks/inbounds.yml
 PLAY_ANTIBLOCK_CDN ?= playbooks/antiblock_cdn.yml
 PLAY_ANTIBLOCK_CDN_BOOTSTRAP ?= playbooks/antiblock_cdn_bootstrap.yml
+PLAY_ANTIBLOCK_CDN_YANDEX ?= playbooks/antiblock_cdn_yandex.yml
 # === Плейбуки для отключения/удаления нод ===
 PLAY_DISABLE_NODE ?= playbooks/disable_node.yml
 PLAY_DELETE_NODE  ?= playbooks/delete_node.yml
@@ -64,7 +65,7 @@ include .env
 export $(shell sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' .env)
 endif
 
-.PHONY: help bootstrap dns dns-plan dns-absent panel nodes hosts-audit hosts-plan haproxy up smoke smoke-docker site lint vault ping facts destroy upgrade upgrade-remnawave sub-next sub-next-check sub-next-nginx sub-next-nginx-check sub-next-config-check sub-next-config-plan sub-next-config-apply sub-next-full sub-portalbase sub-portalbase-check sub-cutover-check sub-cutover sub-rollback-check sub-rollback subpage-brands-check subpage-brands external-squads-check external-squads subscription-branding-check subscription-branding antiblock-cdn-plan antiblock-cdn antiblock-cdn-bootstrap-plan antiblock-cdn-bootstrap antiblock-cdn-node
+.PHONY: help bootstrap dns dns-plan dns-absent panel nodes hosts-audit hosts-plan haproxy up smoke smoke-docker site lint vault ping facts destroy upgrade upgrade-remnawave sub-next sub-next-check sub-next-nginx sub-next-nginx-check sub-next-config-check sub-next-config-plan sub-next-config-apply sub-next-full sub-portalbase sub-portalbase-check sub-cutover-check sub-cutover sub-rollback-check sub-rollback subpage-brands-check subpage-brands external-squads-check external-squads subscription-branding-check subscription-branding antiblock-cdn-plan antiblock-cdn antiblock-cdn-bootstrap-plan antiblock-cdn-bootstrap antiblock-cdn-node antiblock-cdn-node-plan
 
 help: ## Показать справку по целям
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*##/: /' | sort
@@ -125,22 +126,32 @@ antiblock-cdn-plan: ## Local AntiBlock CDN validation (syntax-check only; no API
 	@#   make antiblock-cdn-plan
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_ANTIBLOCK_CDN) --syntax-check
 
-antiblock-cdn: ## Apply AntiBlock inbound, squads, origin DNS, HAProxy (API/DNS/HAProxy writes)
-	@# Does not manage Remnawave Hosts or Yandex CDN Resource. Does not change make inbounds / make nodes.
+antiblock-cdn: ## Apply AntiBlock inbound, origin, HAProxy, Yandex CDN, public CNAME
+	@# Does not manage Remnawave Hosts. Does not change make inbounds / make nodes.
 	@# Примеры:
 	@#   make antiblock-cdn
 	@#   make antiblock-cdn TAGS=antiblock_cdn_inbound
 	@#   make antiblock-cdn TAGS=antiblock_cdn_nodes
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_ANTIBLOCK_CDN) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
 
-antiblock-cdn-node: ## Provision one CDN node: panel inbound/squads + HOST origin DNS/HAProxy
+antiblock-cdn-node: ## Provision one CDN node: panel + origin + HAProxy + Yandex CDN + public CNAME
 	@# HOST is required and must be in [antiblock_cdn_nodes]. Limit is panel:HOST so
-	@# the panel play is not skipped. Do not use LIMIT=HOST alone.
+	@# the panel play is not skipped. Yandex CDN uses delegate_to localhost (limit-safe).
 	@# Примеры:
 	@#   make antiblock-cdn-node HOST=de-fra-2
 	@test -n "$(HOST)" || { echo "HOST is required, e.g. make antiblock-cdn-node HOST=de-fra-2"; exit 1; }
 	@awk '/^\[antiblock_cdn_nodes\]/{p=1;next} /^\[/{p=0} p && $$1=="$(HOST)"{found=1} END{if(!found){print "$(HOST) is not in group antiblock_cdn_nodes" > "/dev/stderr"; exit 1}}' $(INVENTORY)
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_ANTIBLOCK_CDN) --limit panel:$(HOST) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
+
+antiblock-cdn-node-plan: ## Read-only Yandex CDN plan for one HOST (no cloud/HAProxy/Remnawave writes)
+	@# Syntax-check + Yandex GET compare. Does not use Ansible --check.
+	@# yandex_cdn_allow_writes stays false. No Cloudflare / HAProxy / Remnawave writes.
+	@# Примеры:
+	@#   make antiblock-cdn-node-plan HOST=de-fra-2
+	@test -n "$(HOST)" || { echo "HOST is required, e.g. make antiblock-cdn-node-plan HOST=de-fra-2"; exit 1; }
+	@awk '/^\[antiblock_cdn_nodes\]/{p=1;next} /^\[/{p=0} p && $$1=="$(HOST)"{found=1} END{if(!found){print "$(HOST) is not in group antiblock_cdn_nodes" > "/dev/stderr"; exit 1}}' $(INVENTORY)
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_ANTIBLOCK_CDN) --syntax-check
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_ANTIBLOCK_CDN_YANDEX) --limit $(HOST) $(ANSIBLE_FLAGS) $(EXTRA)
 
 antiblock-cdn-bootstrap-plan: ## Local wildcard-cert bootstrap validation (no cloud writes)
 	@# Syntax-check + desired-state dump only. Does not call Yandex or Cloudflare.

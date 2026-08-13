@@ -1,6 +1,11 @@
 ---
 # Legacy/reference CDN node. Keep production public/origin names; do not
 # rename to the derived cdn-<node> / origin-<node> scheme.
+# certificate_mode=legacy_existing: do not migrate cdn-lab onto the shared
+# wildcard cert. Origin group is adopted by stable name, not by ID.
 antiblock_cdn_node:
   public_hostname: "cdn-lab.digitalstreamers.xyz"
   origin_hostname: "origin-cdn.digitalstreamers.xyz"
+  origin_group_name: "common-origin-cdn-digitalstreamers-xyz"
+  origin_group_use_next: true
+  certificate_mode: legacy_existing

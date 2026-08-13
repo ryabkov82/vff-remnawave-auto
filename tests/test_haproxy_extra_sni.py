@@ -55,6 +55,19 @@ ORIGIN_ROUTE = {
 }
 
 
+def _include_tasks(play: dict, role_name: str | None = None) -> list[dict]:
+    out: list[dict] = []
+    for task in play.get("tasks") or []:
+        if not isinstance(task, dict):
+            continue
+        include = task.get("ansible.builtin.include_role") or task.get("include_role")
+        if not isinstance(include, dict):
+            continue
+        if role_name is None or include.get("name") == role_name:
+            out.append(task)
+    return out
+
+
 def _plays(path: Path = PLAY) -> list[dict]:
     loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
     if isinstance(loaded, list):
@@ -241,7 +254,11 @@ class OriginDnsTests(unittest.TestCase):
 
     def test_unrelated_records_not_deleted(self) -> None:
         play = _plays()[1]
-        cf_role = next(item for item in play["roles"] if item.get("role") == "cf_dns")
+        cf_role = next(
+            task
+            for task in _include_tasks(play, "cf_dns")
+            if "origin A" in str(task.get("name"))
+        )
         origin = GROUP_CDN["antiblock_cdn_origin_dns_records"][0]
         self.assertTrue(origin["solo"])
         self.assertEqual(origin["type"], "A")
@@ -305,7 +322,9 @@ class OriginDnsTests(unittest.TestCase):
         )
         self.assertNotIn("cf_dns_records", nodes_cf.get("vars") or {})
         antiblock_cf = next(
-            item for item in _plays()[1]["roles"] if item.get("role") == "cf_dns"
+            task
+            for task in _include_tasks(_plays()[1], "cf_dns")
+            if "origin A" in str(task.get("name"))
         )
         self.assertEqual(
             antiblock_cf["vars"]["cf_dns_records"],
@@ -342,6 +361,10 @@ class ArchitectureTests(unittest.TestCase):
         node = HOST_DE_FRA_2["antiblock_cdn_node"]
         self.assertEqual(node["public_hostname"], "cdn-lab.digitalstreamers.xyz")
         self.assertEqual(node["origin_hostname"], "origin-cdn.digitalstreamers.xyz")
+        self.assertEqual(
+            node["origin_group_name"],
+            "common-origin-cdn-digitalstreamers-xyz",
+        )
         derived = GROUP_CDN["antiblock_cdn_node"]
         self.assertEqual(
             derived["public_hostname"],
@@ -369,19 +392,24 @@ class ArchitectureTests(unittest.TestCase):
         self.assertNotIn("antiblock_cdn_origin_dns_records", NODES_PLAY)
         self.assertEqual(DEFAULTS["haproxy_node_extra_sni_routes"], [])
 
-    def test_antiblock_playbook_uses_cdn_group_without_cdn_resource(self) -> None:
+    def test_antiblock_playbook_wires_per_node_cdn_without_hosts(self) -> None:
         plays = _plays()
         self.assertEqual(plays[0]["hosts"], "panel")
         self.assertEqual(plays[1]["hosts"], "antiblock_cdn_nodes")
         self.assertEqual(
             _role_names(plays[1]),
-            ["remnawave_register_node", "cf_dns", "remnawave_node_haproxy"],
+            [
+                "remnawave_register_node",
+                "cf_dns",
+                "remnawave_node_haproxy",
+                "yandex_cdn",
+                "cf_dns",
+            ],
         )
         raw = PLAY.read_text(encoding="utf-8")
         self.assertNotIn("remnawave_add_host", raw)
-        self.assertNotIn("origin_group", raw.lower())
-        self.assertNotIn("yandex_cdn", raw.lower())
         self.assertNotIn("requestNew", raw)
+        self.assertIn("delegate_to: localhost", raw)
 
     def test_makefile_single_node_limit_includes_panel(self) -> None:
         block = _makefile_block("antiblock-cdn-node")

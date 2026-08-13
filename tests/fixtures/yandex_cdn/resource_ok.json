@@ -1,0 +1,57 @@
+{
+  "id": "res-fixture-1",
+  "cname": "cdn-lab.digitalstreamers.xyz",
+  "active": true,
+  "originGroupId": "og-fixture-1",
+  "originProtocol": "HTTPS",
+  "providerType": "ourcdn",
+  "providerCname": "ab9549976660aa28.topology.gslb.yccdn.ru",
+  "sslCertificate": {
+    "type": "CM",
+    "status": "READY",
+    "data": {
+      "cm": {
+        "id": "fpq-legacy-individual"
+      }
+    }
+  },
+  "tls": {
+    "profile": "PROFILE_COMPATIBLE"
+  },
+  "options": {
+    "edgeCacheSettings": {},
+    "browserCacheSettings": {},
+    "slice": {},
+    "staticHeaders": {},
+    "staticRequestHeaders": {},
+    "followRedirects": {},
+    "staticResponse": {},
+    "queryParamsOptions": {
+      "ignoreQueryString": {
+        "enabled": true,
+        "value": true
+      }
+    },
+    "hostOptions": {
+      "host": {
+        "enabled": true,
+        "value": "origin-cdn.digitalstreamers.xyz"
+      }
+    },
+    "allowedHttpMethods": {
+      "enabled": true,
+      "value": ["GET", "HEAD", "OPTIONS"]
+    },
+    "customServerName": {
+      "enabled": true,
+      "value": "origin-cdn.digitalstreamers.xyz"
+    },
+    "ignoreCookie": {
+      "enabled": true,
+      "value": true
+    },
+    "secureKey": {
+      "type": "DISABLE_IP_SIGNING"
+    }
+  }
+}

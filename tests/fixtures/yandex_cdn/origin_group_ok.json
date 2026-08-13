@@ -1,0 +1,20 @@
+{
+  "id": "og-fixture-1",
+  "name": "common-origin-cdn-digitalstreamers-xyz",
+  "useNext": true,
+  "providerType": "ourcdn",
+  "origins": [
+    {
+      "id": "origin-fixture-1",
+      "source": "origin-cdn.digitalstreamers.xyz",
+      "enabled": true,
+      "backup": false
+    }
+  ],
+  "resourcesMetadata": [
+    {
+      "id": "res-fixture-1",
+      "cname": "cdn-lab.digitalstreamers.xyz"
+    }
+  ]
+}
