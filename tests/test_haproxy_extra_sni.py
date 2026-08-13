@@ -120,6 +120,29 @@ def _unique(seq):
     return list(dict.fromkeys(list(seq)))
 
 
+def _backend_stanza(rendered: str, name: str) -> str:
+    marker = f"\nbackend {name}"
+    start = rendered.find(marker)
+    if start < 0:
+        if rendered.startswith(f"backend {name}"):
+            rest = rendered
+        else:
+            raise AssertionError(f"missing {marker!r} in rendered config")
+    else:
+        rest = rendered[start + 1 :]
+    nxt = rest.find("\nbackend ")
+    if nxt >= 0:
+        rest = rest[:nxt]
+    listen = rest.find("\nlisten ")
+    if listen >= 0:
+        rest = rest[:listen]
+    return rest
+
+
+def _directive_lines(stanza: str) -> list[str]:
+    return [line.strip() for line in stanza.splitlines() if line.strip()]
+
+
 def _render(**kwargs) -> str:
     env = Environment(loader=FileSystemLoader(str(ROLE / "templates")), autoescape=False)
     env.filters["unique"] = _unique
@@ -206,10 +229,57 @@ class HaproxyTemplateTests(unittest.TestCase):
         self.assertIn("timeout connect 5s", rendered)
         self.assertIn("timeout server 5m", rendered)
         self.assertIn("server xhttp_local 127.0.0.1:8447 check", rendered)
-        origin_backend = rendered.split("\nbackend be_xhttp_8447", 1)[1].split("listen stats", 1)[0]
+        origin_backend = _backend_stanza(rendered, "be_xhttp_8447")
         self.assertNotIn("send-proxy-v2", origin_backend)
-        xray_backend = rendered.split("\nbackend be_xray_8443", 1)[1].split("\nbackend be_xhttp_8447", 1)[0]
+        xray_backend = _backend_stanza(rendered, "be_xray_8443")
         self.assertIn("send-proxy-v2", xray_backend)
+
+    def test_extra_backend_timeouts_render_as_separate_lines(self) -> None:
+        prepared = prepare_extra_sni_routes([ORIGIN_ROUTE], {})["routes"]
+        rendered = _render(_haproxy_extra_sni_routes=prepared)
+        stanza = _backend_stanza(rendered, "be_xhttp_8447")
+        lines = _directive_lines(stanza)
+        self.assertEqual(
+            lines,
+            [
+                "backend be_xhttp_8447",
+                "mode tcp",
+                "timeout connect 5s",
+                "timeout server 5m",
+                "server xhttp_local 127.0.0.1:8447 check",
+            ],
+        )
+        self.assertNotIn("send-proxy-v2", stanza)
+        self.assertFalse(
+            any(
+                "timeout" in line and line.strip().startswith("mode ")
+                for line in stanza.splitlines()
+            ),
+            stanza,
+        )
+        extra_block = TEMPLATE.read_text(encoding="utf-8").split(
+            "haproxy_extra_sni_backends"
+        )[1]
+        self.assertNotIn("{%-", extra_block)
+
+    def test_extra_backend_without_timeouts_stays_valid(self) -> None:
+        route = dict(ORIGIN_ROUTE)
+        route["timeout_connect"] = ""
+        route["timeout_server"] = ""
+        prepared = prepare_extra_sni_routes([route], {})["routes"]
+        rendered = _render(_haproxy_extra_sni_routes=prepared)
+        stanza = _backend_stanza(rendered, "be_xhttp_8447")
+        lines = _directive_lines(stanza)
+        self.assertEqual(
+            lines,
+            [
+                "backend be_xhttp_8447",
+                "mode tcp",
+                "server xhttp_local 127.0.0.1:8447 check",
+            ],
+        )
+        self.assertFalse(any(line.startswith("timeout ") for line in lines))
+        self.assertNotIn("send-proxy-v2", stanza)
 
     def test_send_proxy_present_only_when_true(self) -> None:
         route = dict(ORIGIN_ROUTE)
