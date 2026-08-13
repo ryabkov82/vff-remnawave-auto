@@ -1,6 +1,6 @@
 ---
-# CDN-enabled VPN nodes. Each node later gets its own Yandex CDN Resource
-# and origin — not a shared origin pool.
+# CDN-enabled VPN nodes. Each node gets its own Yandex CDN Resource and
+# Origin Group (exactly one origin). This is not a shared origin pool.
 #
 # extra tags are included in remnawave_register_node desired list, so ordinary
 # make nodes TAGS=register_node in replace mode keeps the AntiBlock inbound.
@@ -12,6 +12,9 @@ remnawave_inbound_tags_extra:
 antiblock_cdn_node:
   public_hostname: "cdn-{{ inventory_hostname }}.digitalstreamers.xyz"
   origin_hostname: "origin-{{ inventory_hostname }}.digitalstreamers.xyz"
+  origin_group_name: "antiblock-{{ inventory_hostname }}"
+  origin_group_use_next: false
+  certificate_mode: shared_wildcard
 
 # Origin A record only. IP comes from ansible_host via roles/cf_dns.
 # solo=true removes other A records of this same name (stale IP), not other

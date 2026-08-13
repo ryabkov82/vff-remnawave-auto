@@ -1,0 +1,133 @@
+---
+# Idempotent Origin Group + CDN Resource reconcile.
+# Default yandex_cdn_allow_writes=false never POST/PATCH.
+# DELETE is not implemented. Runs on the controller (delegate_to: localhost).
+
+- name: Yandex CDN | Check required inputs
+  ansible.builtin.assert:
+    that:
+      - (yandex_cdn_folder_id | trim | length) > 0
+      - (yandex_cdn_public_hostname | trim | length) > 0
+      - (yandex_cdn_origin_hostname | trim | length) > 0
+      - (yandex_cdn_origin_group_name | trim | length) > 0
+      - (yandex_cdn_dns_zone | trim | length) > 0
+      - yandex_cdn_certificate_mode in ["shared_wildcard", "legacy_existing"]
+      - >
+        ((yandex_cdn_sa_authorized_key | default('') | trim | length) > 0)
+        or ((yandex_cdn_iam_token | default('') | trim | length) > 0)
+      - >
+        (yandex_cdn_certificate_mode != "shared_wildcard")
+        or (
+          (yandex_cdn_certificate_name | trim | length) > 0
+          and (yandex_cdn_certificate_domains | default([]) | length) > 0
+        )
+    fail_msg: >-
+      yandex_cdn_folder_id, public/origin hostnames, origin_group_name, dns_zone,
+      certificate_mode, and non-interactive Yandex auth
+      (vault_yandex_cloud_sa_authorized_key or a short-lived IAM token) are
+      required. Interactive yc init is not used. SA needs cdn.editor on the
+      folder. See docs/antiblock_cdn.md.
+  tags: [yandex_cdn, antiblock_cdn_yandex]
+
+- name: Yandex CDN | Reconcile origin group and resource
+  tags: [yandex_cdn, antiblock_cdn_yandex]
+  block:
+    - name: Yandex CDN | Create ephemeral auth file
+      ansible.builtin.tempfile:
+        state: file
+        suffix: .yc-auth
+      register: yandex_cdn_auth_tmp
+      changed_when: false
+      tags: [yandex_cdn, antiblock_cdn_yandex]
+
+    - name: Yandex CDN | Select auth material
+      ansible.builtin.set_fact:
+        yandex_cdn_use_iam: "{{ (yandex_cdn_iam_token | default('') | trim | length) > 0 }}"
+      tags: [yandex_cdn, antiblock_cdn_yandex]
+
+    - name: Yandex CDN | Write auth material
+      ansible.builtin.copy:
+        dest: "{{ yandex_cdn_auth_tmp.path }}"
+        mode: "0600"
+        content: "{{ yandex_cdn_iam_token if yandex_cdn_use_iam else yandex_cdn_sa_authorized_key }}"
+      no_log: true
+      changed_when: false
+      tags: [yandex_cdn, antiblock_cdn_yandex]
+
+    - name: Yandex CDN | Build reconcile argv
+      ansible.builtin.set_fact:
+        yandex_cdn_reconcile_argv: "{{ _ycdn_argv_prefix + _ycdn_argv_domains + _ycdn_argv_suffix + _ycdn_argv_use_next + _ycdn_argv_write + _ycdn_argv_auth }}"
+      vars:
+        _ycdn_argv_prefix:
+          - "{{ yandex_cdn_python }}"
+          - "{{ yandex_cdn_script }}"
+          - reconcile
+          - --folder-id
+          - "{{ yandex_cdn_folder_id }}"
+          - --public-hostname
+          - "{{ yandex_cdn_public_hostname }}"
+          - --origin-hostname
+          - "{{ yandex_cdn_origin_hostname }}"
+          - --origin-group-name
+          - "{{ yandex_cdn_origin_group_name }}"
+          - --certificate-mode
+          - "{{ yandex_cdn_certificate_mode }}"
+          - --certificate-name
+          - "{{ yandex_cdn_certificate_name }}"
+          - --certificate-domains
+        _ycdn_argv_domains: "{{ yandex_cdn_certificate_domains | default([]) | map('string') | list }}"
+        _ycdn_argv_suffix:
+          - --dns-zone
+          - "{{ yandex_cdn_dns_zone }}"
+          - --operation-timeout
+          - "{{ yandex_cdn_operation_timeout | int }}"
+          - --poll-interval
+          - "{{ yandex_cdn_poll_interval }}"
+          - --provider-cname-timeout
+          - "{{ yandex_cdn_provider_cname_timeout | int }}"
+        _ycdn_argv_use_next: "{{ ['--origin-group-use-next'] if yandex_cdn_origin_group_use_next | bool else [] }}"
+        _ycdn_argv_write: "{{ ['--allow-writes'] if yandex_cdn_allow_writes | bool else [] }}"
+        _ycdn_argv_auth:
+          - "{{ '--iam-token-file' if yandex_cdn_use_iam else '--sa-key-file' }}"
+          - "{{ yandex_cdn_auth_tmp.path }}"
+      tags: [yandex_cdn, antiblock_cdn_yandex]
+
+    - name: Yandex CDN | Lookup or ensure origin group and resource
+      ansible.builtin.command:
+        argv: "{{ yandex_cdn_reconcile_argv }}"
+      register: yandex_cdn_reconcile
+      changed_when: >-
+        yandex_cdn_reconcile.rc == 0
+        and (yandex_cdn_reconcile.stdout | default('') | length > 0)
+        and ((yandex_cdn_reconcile.stdout | from_json).changed | default(false) | bool)
+      tags: [yandex_cdn, antiblock_cdn_yandex]
+
+    - name: Yandex CDN | Parse reconcile result
+      ansible.builtin.set_fact:
+        yandex_cdn_result: "{{ yandex_cdn_reconcile.stdout | from_json }}"
+        yandex_cdn_provider_cname: "{{ (yandex_cdn_reconcile.stdout | from_json).provider_cname | default('') }}"
+        yandex_cdn_public_dns_records: "{{ (yandex_cdn_reconcile.stdout | from_json).public_dns_records | default([]) }}"
+      tags: [yandex_cdn, antiblock_cdn_yandex]
+
+    - name: Yandex CDN | Show plan
+      ansible.builtin.debug:
+        msg: >-
+          origin_group={{ yandex_cdn_result.origin_group.action }}
+          resource={{ yandex_cdn_result.resource.action }}
+          certificate_mode={{ yandex_cdn_result.certificate.mode }}
+          provider_cname={{ yandex_cdn_provider_cname | default('(empty)') }}
+          public_dns={{ yandex_cdn_public_dns_records | length }}
+          wrote={{ yandex_cdn_result.changed | default(false) }}
+          {{ yandex_cdn_result.reason }}
+      tags: [yandex_cdn, antiblock_cdn_yandex]
+
+  always:
+    - name: Yandex CDN | Remove ephemeral auth file
+      ansible.builtin.file:
+        path: "{{ yandex_cdn_auth_tmp.path }}"
+        state: absent
+      when:
+        - yandex_cdn_auth_tmp is defined
+        - yandex_cdn_auth_tmp.path | default('') | length > 0
+      changed_when: false
+      tags: [yandex_cdn, antiblock_cdn_yandex]

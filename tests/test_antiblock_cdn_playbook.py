@@ -168,9 +168,17 @@ class AntiblockCdnPlaybookTests(unittest.TestCase):
         self.assertNotIn("remnawave_add_host", raw)
         self.assertNotIn("haproxy_tls_sni", raw)
         roles = [item["role"] for play in _plays() for item in _roles(play)]
-        self.assertEqual(roles, ["remnawave_inbounds", "remnawave_register_node", "cf_dns"])
-        include = (_plays()[1].get("tasks") or [])[-1]["ansible.builtin.include_role"]["name"]
-        self.assertEqual(include, "remnawave_node_haproxy")
+        self.assertEqual(roles, ["remnawave_inbounds", "remnawave_register_node"])
+        includes = [
+            (task.get("ansible.builtin.include_role") or {}).get("name")
+            for task in (_plays()[1].get("tasks") or [])
+            if isinstance(task, dict)
+            and (task.get("ansible.builtin.include_role") or task.get("include_role"))
+        ]
+        self.assertEqual(
+            includes,
+            ["cf_dns", "remnawave_node_haproxy", "yandex_cdn", "cf_dns"],
+        )
 
     def test_other_inbounds_kept_by_current_map_copy(self) -> None:
         self.assertIn("current_map.copy()", INBOUNDS_TASKS)
@@ -211,6 +219,7 @@ class AntiblockCdnPlaybookTests(unittest.TestCase):
         self.assertIn("antiblock_cdn_enabled", DOCS)
         self.assertIn("remnawave_inbound_tags_extra", DOCS)
         self.assertIn("antiblock_cdn_nodes", DOCS)
+        self.assertIn("one node = one CDN Resource", DOCS)
 
 
 if __name__ == "__main__":

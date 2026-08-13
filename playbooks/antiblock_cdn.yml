@@ -1,16 +1,18 @@
 ---
 # Dedicated AntiBlock / Yandex Cloud CDN orchestration.
-# Remnawave Hosts, Yandex CDN Resource, and Origin Group are out of scope.
+# Remnawave Hosts are out of scope (stage 6).
 #
-# Order: ensure shared inbound + squads on panel, then on each CDN-enabled
-# VPN node (group antiblock_cdn_nodes): activate inbound, origin DNS, wait
-# until :antiblock_cdn_inbound_port is listening, HAProxy origin SNI.
+# Order: shared inbound + squads on panel, then on each CDN-enabled VPN node
+# (group antiblock_cdn_nodes): activate inbound, wait until :inbound_port is
+# listening, origin A, HAProxy origin SNI, then controller-side Yandex Origin
+# Group + CDN Resource + public Cloudflare CNAME.
 #
-# Ordinary make nodes keeps the AntiBlock inbound via remnawave_inbound_tags_extra
-# on this group. Extra HAProxy SNI routes also live in that group so make nodes
-# TAGS=haproxy cannot drop the origin route. Origin DNS uses a separate list
-# (antiblock_cdn_origin_dns_records) passed only here as cf_dns_records — group
-# vars do not set generic cf_dns_records, so make nodes keeps host_vars DNS.
+# Yandex/Cloudflare CDN API calls use delegate_to: localhost so
+# --limit panel:HOST does not skip cloud provisioning.
+# Ordinary make nodes keeps the AntiBlock inbound via remnawave_inbound_tags_extra.
+# Origin DNS uses antiblock_cdn_origin_dns_records; public CNAME uses the
+# runtime list from roles/yandex_cdn. Group vars do not set generic
+# cf_dns_records.
 
 - name: AntiBlock CDN | Ensure inbound and Internal Squad membership
   hosts: panel
@@ -33,23 +35,13 @@
               - "{{ antiblock_cdn_internal_squad }}"
             absent_from: "{{ antiblock_cdn_forbidden_internal_squads }}"
 
-- name: AntiBlock CDN | Activate inbound, origin DNS, and HAProxy on CDN nodes
+- name: AntiBlock CDN | Origin node, Yandex CDN, and public CNAME
   hosts: antiblock_cdn_nodes
   gather_facts: false
   tags: [antiblock_cdn, antiblock_cdn_nodes]
   roles:
     - role: remnawave_register_node
       when: antiblock_cdn_enabled | bool
-    - role: cf_dns
-      when:
-        - antiblock_cdn_enabled | bool
-        - (antiblock_cdn_node.origin_hostname | default('') | length) > 0
-        - (antiblock_cdn_origin_dns_records | default([]) | length) > 0
-      vars:
-        cf_dns_zone: "{{ antiblock_cdn_certificate.dns_zone }}"
-        cf_dns_records: "{{ antiblock_cdn_origin_dns_records }}"
-        cf_dns_state: present
-        cf_dns_proxied_default: false
   tasks:
     - name: AntiBlock CDN | Wait until origin inbound is listening
       ansible.builtin.wait_for:
@@ -60,6 +52,20 @@
       when: antiblock_cdn_enabled | bool
       tags: [antiblock_cdn, antiblock_cdn_nodes, antiblock_cdn_origin_ready]
 
+    - name: AntiBlock CDN | Ensure origin A record
+      ansible.builtin.include_role:
+        name: cf_dns
+      when:
+        - antiblock_cdn_enabled | bool
+        - (antiblock_cdn_node.origin_hostname | default('') | length) > 0
+        - (antiblock_cdn_origin_dns_records | default([]) | length) > 0
+      vars:
+        cf_dns_zone: "{{ antiblock_cdn_certificate.dns_zone }}"
+        cf_dns_records: "{{ antiblock_cdn_origin_dns_records }}"
+        cf_dns_state: present
+        cf_dns_proxied_default: false
+      tags: [antiblock_cdn, antiblock_cdn_nodes]
+
     - name: AntiBlock CDN | Ensure HAProxy origin SNI route
       ansible.builtin.include_role:
         name: remnawave_node_haproxy
@@ -67,3 +73,41 @@
           become: true
       when: antiblock_cdn_enabled | bool
       tags: [antiblock_cdn, antiblock_cdn_nodes]
+
+    - name: AntiBlock CDN | Ensure Yandex Origin Group and CDN Resource
+      ansible.builtin.include_role:
+        name: yandex_cdn
+        apply:
+          delegate_to: localhost
+          become: false
+      when: antiblock_cdn_enabled | bool
+      vars:
+        yandex_cdn_folder_id: "{{ antiblock_cdn_yc_folder_id }}"
+        yandex_cdn_public_hostname: "{{ antiblock_cdn_node.public_hostname }}"
+        yandex_cdn_origin_hostname: "{{ antiblock_cdn_node.origin_hostname }}"
+        yandex_cdn_origin_group_name: "{{ antiblock_cdn_node.origin_group_name }}"
+        yandex_cdn_origin_group_use_next: "{{ antiblock_cdn_node.origin_group_use_next | bool }}"
+        yandex_cdn_certificate_mode: "{{ antiblock_cdn_node.certificate_mode }}"
+        yandex_cdn_certificate_name: "{{ antiblock_cdn_certificate.name }}"
+        yandex_cdn_certificate_domains: "{{ antiblock_cdn_certificate.domains }}"
+        yandex_cdn_dns_zone: "{{ antiblock_cdn_certificate.dns_zone }}"
+        yandex_cdn_allow_writes: true
+        yandex_cdn_sa_authorized_key: "{{ vault_yandex_cloud_sa_authorized_key | default('') }}"
+        yandex_cdn_iam_token: "{{ vault_yandex_cloud_iam_token | default('') }}"
+      tags: [antiblock_cdn, antiblock_cdn_nodes, antiblock_cdn_yandex]
+
+    - name: AntiBlock CDN | Ensure public CDN CNAME
+      ansible.builtin.include_role:
+        name: cf_dns
+        apply:
+          delegate_to: localhost
+          become: false
+      when:
+        - antiblock_cdn_enabled | bool
+        - (yandex_cdn_public_dns_records | default([]) | length) > 0
+      vars:
+        cf_dns_zone: "{{ antiblock_cdn_certificate.dns_zone }}"
+        cf_dns_records: "{{ yandex_cdn_public_dns_records }}"
+        cf_dns_state: present
+        cf_dns_proxied_default: false
+      tags: [antiblock_cdn, antiblock_cdn_nodes, antiblock_cdn_yandex]

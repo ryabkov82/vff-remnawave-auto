@@ -1,0 +1,27 @@
+---
+# Generic Yandex Cloud CDN role: one Origin Group + one CDN Resource per
+# inventory host. Lookup is by origin-group name and resource CNAME.
+# IDs are runtime-only. Writes are off unless the caller sets
+# yandex_cdn_allow_writes. DELETE is not implemented.
+
+yandex_cdn_folder_id: ""
+yandex_cdn_public_hostname: ""
+yandex_cdn_origin_hostname: ""
+yandex_cdn_origin_group_name: ""
+yandex_cdn_origin_group_use_next: false
+yandex_cdn_certificate_mode: "shared_wildcard"
+yandex_cdn_certificate_name: ""
+yandex_cdn_certificate_domains: []
+yandex_cdn_dns_zone: ""
+yandex_cdn_allow_writes: false
+
+yandex_cdn_operation_timeout: 180
+yandex_cdn_poll_interval: 2
+yandex_cdn_provider_cname_timeout: 180
+
+# Non-interactive auth. Prefer a service-account authorized-key JSON from Vault.
+yandex_cdn_sa_authorized_key: ""
+yandex_cdn_iam_token: ""
+
+yandex_cdn_python: "{{ ansible_playbook_python | default('/usr/bin/python3') }}"
+yandex_cdn_script: "{{ playbook_dir }}/../scripts/yandex_cdn.py"

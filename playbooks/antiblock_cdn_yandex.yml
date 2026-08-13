@@ -1,0 +1,31 @@
+---
+# Read-only Yandex CDN plan for [antiblock_cdn_nodes].
+# GET Origin Group / Resource / Certificate Manager. No Yandex writes,
+# no Cloudflare writes, no HAProxy / Remnawave writes.
+# Ansible --check is not used. Default yandex_cdn_allow_writes=false.
+#
+# connection: local so --limit HOST does not need SSH or the panel play.
+# make antiblock-cdn-node-plan HOST=... validates group membership first.
+
+- name: AntiBlock CDN | Read-only Yandex CDN plan
+  hosts: antiblock_cdn_nodes
+  connection: local
+  gather_facts: false
+  become: false
+  tags: [antiblock_cdn_yandex]
+  roles:
+    - role: yandex_cdn
+      when: antiblock_cdn_enabled | bool
+      vars:
+        yandex_cdn_folder_id: "{{ antiblock_cdn_yc_folder_id }}"
+        yandex_cdn_public_hostname: "{{ antiblock_cdn_node.public_hostname }}"
+        yandex_cdn_origin_hostname: "{{ antiblock_cdn_node.origin_hostname }}"
+        yandex_cdn_origin_group_name: "{{ antiblock_cdn_node.origin_group_name }}"
+        yandex_cdn_origin_group_use_next: "{{ antiblock_cdn_node.origin_group_use_next | bool }}"
+        yandex_cdn_certificate_mode: "{{ antiblock_cdn_node.certificate_mode }}"
+        yandex_cdn_certificate_name: "{{ antiblock_cdn_certificate.name }}"
+        yandex_cdn_certificate_domains: "{{ antiblock_cdn_certificate.domains }}"
+        yandex_cdn_dns_zone: "{{ antiblock_cdn_certificate.dns_zone }}"
+        yandex_cdn_allow_writes: false
+        yandex_cdn_sa_authorized_key: "{{ vault_yandex_cloud_sa_authorized_key | default('') }}"
+        yandex_cdn_iam_token: "{{ vault_yandex_cloud_iam_token | default('') }}"

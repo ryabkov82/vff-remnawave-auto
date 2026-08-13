@@ -12,24 +12,26 @@ playbook `playbooks/antiblock_cdn.yml` (`make antiblock-cdn`).
 
 ## Architecture (текущий этап)
 
-Каждая CDN-enabled VPN node впоследствии получает **собственный** Yandex CDN
-Resource и origin. Группа `antiblock_cdn_nodes` — это не общий origin pool.
-
 ```
-Yandex CDN  (per-node resource, later)
-      |
-      | origin later handled by HAProxy
-      v
-antiblock_cdn_nodes  (сейчас: de-fra-2; позже de-fra-3, nl-ams-2, …)
-      |
-      +-- Remnawave inbound 8447
-          tag: VLESS xHTTP packet-up test
+GLOBAL
+  shared xHTTP packet-up inbound :8447
+  AntiBlock-Squad / absent Default-Squad
+  wildcard cert  *.digitalstreamers.xyz  (make antiblock-cdn-bootstrap)
+  Cloudflare authoritative DNS
+
+PER NODE  (one node = one Origin Group = one origin = one CDN Resource)
+  origin hostname  →  A record  →  HAProxy SNI  →  127.0.0.1:8447
+  Yandex Origin Group (exactly one origin, no backup, no round-robin)
+  Yandex CDN Resource (cname = public hostname)
+  public Cloudflare CNAME  →  resource.provider_cname
 ```
 
-Origin SNI `origin-cdn.digitalstreamers.xyz` → `127.0.0.1:8447` (без
-send-proxy-v2) задаётся generic extra SNI route на группе
+Никакого общего origin pool. Никакого backup origin. Никакого round-robin между VPN nodes.
+
+Origin SNI (de-fra-2: `origin-cdn.digitalstreamers.xyz`) → `127.0.0.1:8447` без
+send-proxy-v2 задаётся generic extra SNI route на группе
 `antiblock_cdn_nodes`. de-fra-2 сохраняет legacy names
-`cdn-lab` / `origin-cdn`.
+`cdn-lab` / `origin-cdn` / origin group `common-origin-cdn-digitalstreamers-xyz`.
 
 ## Orchestration
 
@@ -40,9 +42,11 @@ make antiblock-cdn
   +-- ensure AntiBlock-Squad membership
   +-- ensure absence from Default-Squad
   +-- activate inbound on antiblock_cdn_nodes
-  +-- origin A DNS via roles/cf_dns
   +-- wait 127.0.0.1:antiblock_cdn_inbound_port
+  +-- origin A DNS via roles/cf_dns
   +-- HAProxy extra SNI route (validate + reload)
+  +-- Yandex Origin Group + CDN Resource (delegate_to localhost)
+  +-- public Cloudflare CNAME → provider_cname
 ```
 
 Порядок plays обязателен: inbound должен существовать, прежде чем
@@ -100,8 +104,9 @@ make nodes LIMIT=de-fra-2 TAGS=register_node
 | Target | Что делает |
 |--------|------------|
 | `make antiblock-cdn-plan` | Только `ansible-playbook --syntax-check`. Без API. Ansible `--check` **не** используется: `uri` в Remnawave-ролях не является безопасным check-mode. |
-| `make antiblock-cdn` | Apply inbound + squads + origin DNS + HAProxy extra SNI. |
-| `make antiblock-cdn-node HOST=…` | То же для одной ноды: `--limit panel:HOST`. HOST обязан быть в `[antiblock_cdn_nodes]`. |
+| `make antiblock-cdn` | Apply inbound + squads + origin DNS + HAProxy + Yandex CDN + public CNAME. |
+| `make antiblock-cdn-node HOST=…` | То же для одной ноды: `--limit panel:HOST`. HOST обязан быть в `[antiblock_cdn_nodes]`. Yandex CDN идёт через `delegate_to: localhost`, поэтому limit не пропускает cloud provisioning. |
+| `make antiblock-cdn-node-plan HOST=…` | Membership check + syntax-check + **read-only** Yandex GET plan (`yandex_cdn_allow_writes=false`). Нет Cloudflare / HAProxy / Remnawave writes. Ansible `--check` не используется. |
 | `make antiblock-cdn-bootstrap-plan` | Syntax-check + dump desired certificate state. Без Yandex/Cloudflare writes. `--check` не используется. |
 | `make antiblock-cdn-bootstrap` | Apply: managed wildcard cert + Cloudflare DNS challenge. |
 
@@ -140,9 +145,11 @@ make antiblock-cdn-bootstrap
 
 Автоматизация **не** использует `yc init`. Нужен service account в folder:
 
-1. Создать SA в Yandex Cloud folder, где будет сертификат.
-2. Выдать роль уровня folder, достаточную для Certificate Manager
-   (например `certificate-manager.editor`).
+1. Создать SA в Yandex Cloud folder, где будет сертификат и CDN.
+2. Выдать роли уровня folder:
+   - Certificate Manager: например `certificate-manager.editor` (bootstrap);
+   - Cloud CDN: `cdn.editor` (этап 5, Origin Group + Resource).
+     Не расширять до primitive `editor`/`admin` без необходимости.
 3. Создать authorized key и положить JSON в Ansible Vault:
 
    `inventory/group_vars/all/vault.yml` → `vault_yandex_cloud_sa_authorized_key`
@@ -217,12 +224,97 @@ HAProxy extra route — generic `haproxy_node_extra_sni_routes` (роль
   порт не проверяет.
 
 `make antiblock-cdn-node HOST=de-fra-2` гоняет `playbooks/antiblock_cdn.yml`
-с `--limit panel:de-fra-2`, чтобы panel play не пропускался.
+с `--limit panel:de-fra-2`, чтобы panel play не пропускался. Yandex CDN
+вызывается `delegate_to: localhost` внутри node play — localhost не должен
+быть в `--limit`.
 
-## Ещё не реализовано
+## Per-node Yandex CDN
 
-Remnawave Hosts и per-node Yandex CDN пока **не** автоматизированы:
+`one node = one CDN Resource`. `one node = one Origin Group`.
+`one Origin Group = one origin`. No backup. No round-robin between nodes.
 
-- Host adoption / reconcile / маркер `VFF:ANTIBLOCK` / safe prune
-- per-node CDN Resource / Origin Group / public CDN CNAME
-- CDN smoke tests
+IDs (Origin Group, Origin, Resource, certificate, `provider_cname`) **не**
+кладутся в inventory. Lookup:
+
+- Origin Group — exact stable `antiblock_cdn_node.origin_group_name`
+- CDN Resource — exact `antiblock_cdn_node.public_hostname` (cname)
+- wildcard cert — name `antiblock-cdn-wildcard`, только если
+  `certificate_mode: shared_wildcard`
+
+Новые ноды (group default):
+
+```yaml
+antiblock_cdn_node:
+  public_hostname: "cdn-{{ inventory_hostname }}.digitalstreamers.xyz"
+  origin_hostname: "origin-{{ inventory_hostname }}.digitalstreamers.xyz"
+  origin_group_name: "antiblock-{{ inventory_hostname }}"
+  origin_group_use_next: false
+  certificate_mode: shared_wildcard
+```
+
+`use_next: false`, потому что второго origin нет.
+
+Writes выключены по умолчанию (`yandex_cdn_allow_writes: false`). Dedicated
+apply передаёт `true`. POST/PATCH без этого флага не выполняются. DELETE
+на этом этапе не реализован (нет prune).
+
+### Legacy DE-FRA-2 adoption
+
+de-fra-2 уже есть в production. Automation **не** переименовывает group,
+не пересоздаёт resource, не меняет public hostname / provider cname.
+
+```yaml
+# inventory/host_vars/de-fra-2/antiblock_cdn.yml
+certificate_mode: legacy_existing
+origin_group_name: common-origin-cdn-digitalstreamers-xyz
+origin_group_use_next: true
+```
+
+`legacy_existing` значит: **не** переводить cdn-lab на shared wildcard
+certificate при первом adoption. Миграция сертификата — отдельное решение.
+
+Перед destructive reconcile legacy group automation FAIL, если:
+
+- в группе больше одного origin;
+- `resourcesMetadata` содержит >1 resource или unrelated cname.
+
+Идеал после adoption: `changed=0`.
+
+Новая managed group с extra origin → UPDATE к ровно одному origin.
+Дубликаты имени group или cname resource → FAIL, без случайного выбора.
+
+### CDN Resource managed fields
+
+Воспроизводится рабочий cdn-lab template (без «улучшения» cache/compression):
+
+- `origin_protocol: HTTPS`, `active: true`, `provider_type: ourcdn`
+- `tls.profile: PROFILE_COMPATIBLE`
+- `ignore_query_string`, `host` = origin hostname, `custom_server_name` =
+  origin hostname, `allowed_http_methods: GET/HEAD/OPTIONS`, `ignore_cookie`
+- `secure_key.type: DISABLE_IP_SIGNING`
+
+Пустые default objects (`edge_cache_settings: {}` и т.п.) **не** считаются
+drift. Unmanaged options сохраняются: PATCH шлёт merge current+managed.
+CNAME resource — identity; rename через delete/recreate запрещён.
+
+`provider_cname` берётся только из GET resource (не deprecated
+GetProviderCName). Если operation done, а cname ещё пуст — poll GET.
+
+Public DNS — отдельный runtime-список `yandex_cdn_public_dns_records`
+(не generic `cf_dns_records` в group_vars): CNAME, `proxied: false`,
+`solo: true`. Origin A не затрагивается. Конфликт с чужим A/AAAA на том же
+имени → fail модуля Cloudflare, без удаления arbitrary types.
+
+Wildcard certificate для новых нод должен быть `ISSUED`. Absent →
+«Run make antiblock-cdn-bootstrap». VALIDATING/RENEWING → fail/pending,
+новый cert не создаётся.
+
+## Ещё не реализовано (этап 6)
+
+Remnawave CDN Hosts пока **не** автоматизированы:
+
+- Host adoption / public hostname Host / Yandex ingress IP Hosts
+- маркер `VFF:ANTIBLOCK` / safe prune
+- CDN transport smoke / full xHTTP/VLESS smoke
+- удаление stale CDN resources / origin groups
+- миграция de-fra-2 certificate на shared wildcard
