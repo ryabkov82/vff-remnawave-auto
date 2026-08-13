@@ -105,7 +105,7 @@ make nodes LIMIT=de-fra-2 TAGS=register_node
 |--------|------------|
 | `make antiblock-cdn-plan` | Только `ansible-playbook --syntax-check`. Без API. Ansible `--check` **не** используется: `uri` в Remnawave-ролях не является безопасным check-mode. |
 | `make antiblock-cdn` | Apply inbound + squads + origin DNS + HAProxy + Yandex CDN + public CNAME. |
-| `make antiblock-cdn-node HOST=…` | То же для одной ноды: `--limit panel:HOST`. HOST обязан быть в `[antiblock_cdn_nodes]`. Yandex CDN идёт через `delegate_to: localhost`, поэтому limit не пропускает cloud provisioning. |
+| `make antiblock-cdn-node HOST=…` | То же для одной ноды: `--limit panel:HOST`. HOST обязан быть в `[antiblock_cdn_nodes]`. Yandex CDN идёт через `delegate_to: localhost`, поэтому limit не пропускает cloud provisioning. `TAGS=antiblock_cdn_yandex` гоняет Yandex reconcile **и** public CNAME (`include_role apply.tags`); origin A / HAProxy / Remnawave не входят. |
 | `make antiblock-cdn-node-plan HOST=…` | Membership check + syntax-check + **read-only** Yandex GET plan (`yandex_cdn_allow_writes=false`). Нет Cloudflare / HAProxy / Remnawave writes. Ansible `--check` не используется. |
 | `make antiblock-cdn-bootstrap-plan` | Syntax-check + dump desired certificate state. Без Yandex/Cloudflare writes. `--check` не используется. |
 | `make antiblock-cdn-bootstrap` | Apply: managed wildcard cert + Cloudflare DNS challenge. |
