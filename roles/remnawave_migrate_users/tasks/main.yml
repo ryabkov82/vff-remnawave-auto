@@ -1,4 +1,6 @@
 ---
+# LEGACY: validated only for historical Remnawave 2.7.4 migration flow.
+# Do not run against 3.2.3.
 - name: MU | Build internal var map
   ansible.builtin.set_fact:
     _mu:

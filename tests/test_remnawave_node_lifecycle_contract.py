@@ -9,6 +9,9 @@ import unittest
 REPO = Path(__file__).resolve().parents[1]
 DELETE = (REPO / "roles/remnawave_delete_node/tasks/main.yml").read_text(encoding="utf-8")
 DISABLE = (REPO / "roles/remnawave_disable_node/tasks/main.yml").read_text(encoding="utf-8")
+REGISTER = (REPO / "roles/remnawave_register_node/tasks/main.yml").read_text(
+    encoding="utf-8"
+)
 
 
 def _task_block(src: str, name: str) -> str:
@@ -76,6 +79,38 @@ class DisableNodeContractTests(unittest.TestCase):
 
     def test_disable_role_bulk_has_no_legacy_success_pair(self) -> None:
         self.assertNotIn("status_code: [200, 400]", DISABLE)
+
+
+class RegisterNodeContractTests(unittest.TestCase):
+    def test_create_accepts_only_201(self) -> None:
+        block = _task_block(REGISTER, "Create node if absent")
+        self.assertIn("method: POST", block)
+        self.assertIn("/api/nodes", block)
+        self.assertIn("failed_when: _created.status not in [201]", block)
+        self.assertNotIn("[200, 201]", block)
+
+    def test_patch_accepts_only_200(self) -> None:
+        block = _task_block(REGISTER, "PATCH node configProfile if changed")
+        self.assertIn("method: PATCH", block)
+        self.assertIn("/api/nodes", block)
+        self.assertIn("failed_when: _patched.status not in [200]", block)
+        self.assertIn("activeInbounds:", block)
+        self.assertIn("_final_inbound_uuids", block)
+
+    def test_get_parses_response_as_array(self) -> None:
+        get_block = _task_block(REGISTER, "List nodes")
+        self.assertIn("method: GET", get_block)
+        self.assertIn("/api/nodes", get_block)
+        self.assertIn("failed_when: _nodes.status not in [200]", get_block)
+        pick = _task_block(REGISTER, "Pick existing node by name (if any)")
+        self.assertIn("_nodes.json.response", pick)
+        self.assertIn("selectattr('name'", pick)
+
+    def test_create_payload_uses_config_profile_inbound_uuids(self) -> None:
+        payload = _task_block(REGISTER, "Build payload (typed)")
+        self.assertIn("activeConfigProfileUuid:", payload)
+        self.assertIn("activeInbounds: \"{{ _desired_inbound_uuids }}\"", payload)
+        self.assertIn("_desired_inbound_uuids: \"{{ tmp | from_json }}\"", REGISTER)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,8 @@
 # 🧩 Роль `remnawave_migrate_users`
 
+> **LEGACY:** validated only for historical Remnawave 2.7.4 migration flow.
+> Do not run against 3.2.3.
+
 Миграция пользователей из **Marzban** в **Remnawave** с сохранением:
 - логина (`username`);
 - статуса и лимитов трафика;

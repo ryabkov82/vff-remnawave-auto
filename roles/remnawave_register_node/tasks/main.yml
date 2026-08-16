@@ -165,7 +165,7 @@
         body_format: json
         body: "{{ _payload }}"
       register: _created
-      failed_when: _created.status not in [200, 201]
+      failed_when: _created.status not in [201]
 
     # UUID — берём из найденного объекта или из ответа создания
     - name: "Set node UUID fact"

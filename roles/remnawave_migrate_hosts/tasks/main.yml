@@ -1,4 +1,6 @@
 ---
+# LEGACY: validated only for historical Remnawave 2.7.4 migration flow.
+# Do not run against 3.2.3.
 # Внутренний словарик, как в remnawave_inbounds
 - name: MH | Build internal var map
   ansible.builtin.set_fact:

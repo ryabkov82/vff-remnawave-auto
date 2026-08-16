@@ -1,5 +1,8 @@
 # remnawave_migrate_hosts
 
+> **LEGACY:** validated only for historical Remnawave 2.7.4 migration flow.
+> Do not run against 3.2.3.
+
 Роль `remnawave_migrate_hosts` выполняет автоматическую миграцию **Host‑конфигураций** из Marzban в Remnawave, строго соблюдая идемпотентность (повторный запуск не создаёт дубликатов).
 
 Это второй ключевой этап миграции после переноса Reality‑inbound’a.
