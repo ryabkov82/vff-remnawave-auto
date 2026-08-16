@@ -257,13 +257,13 @@
     body:
       name: "{{ _es_name }}"
     return_content: true
-    status_code: [200, 201]
+    status_code: [201]
     validate_certs: true
     timeout: 30
   register: _es_create_result
   no_log: true
   failed_when: false
-  changed_when: _es_create_result.status | default(0) in [200, 201]
+  changed_when: _es_create_result.status | default(0) == 201
   when:
     - _es_needs_create | bool
     - not ansible_check_mode
@@ -273,7 +273,7 @@
 - name: Fail with sanitized External Squad create error
   ansible.builtin.assert:
     that:
-      - _es_create_result.status | default(0) in [200, 201]
+      - _es_create_result.status | default(0) == 201
     fail_msg: >-
       Remnawave External Squad POST failed for {{ _es_name | quote }}:
       HTTP {{ _es_create_result.status | default('unknown') }},
