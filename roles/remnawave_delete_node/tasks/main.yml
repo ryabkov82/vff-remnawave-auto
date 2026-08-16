@@ -134,8 +134,7 @@
     body_format: json
     body:
       uuids: "{{ _host_uuids }}"
-    return_content: true
-    status_code: [200, 400]
+    status_code: [204]
     timeout: "{{ remnawave_timeout }}"
   register: _bulk_hosts
 
@@ -169,11 +168,10 @@
     url: "{{ remnawave_panel_api_base }}/nodes/{{ _node_obj.uuid }}"
     method: DELETE
     headers: "{{ _rw_hdr }}"
-    return_content: true
-    status_code: [200, 204, 404]   # 404 если уже удалена/нет — считаем идемпотентно ок
+    status_code: [204, 404]   # 3.2.3 success is 204; 404 = already absent (idempotent)
     timeout: "{{ remnawave_timeout }}"
   register: _del_node
-  changed_when: "_del_node.status in [200, 204]"
+  changed_when: (_del_node.status | default(0) | int) == 204
 
 - name: "Wait until node is gone (404)"
   when: not remnawave_dry_run | bool
