@@ -1,7 +1,7 @@
 ---
 # Add or reconcile Host(s) in Remnawave Panel and bind them to a Node.
 # Supports declarative remnawave_hosts[] with legacy rw_host_* fallback.
-# Managed hosts are marked with tag == rw_host_managed_tag.
+# Managed hosts are marked with rw_host_managed_tag in Host.tags (Remnawave 3.2.3).
 # Optional prune removes only managed hosts (dry-run by default).
 
 - name: "Fail if required variables are missing"

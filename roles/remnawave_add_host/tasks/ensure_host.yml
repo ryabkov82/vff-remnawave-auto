@@ -226,7 +226,7 @@
         _rw_existing: null
 
 # ---------------------------------------------------------
-# Build create payload (tag is managed marker)
+# Build create payload (tags[] is managed marker; Remnawave 3.2.3)
 # ---------------------------------------------------------
 - name: Build create payload
   ansible.builtin.set_fact:
@@ -244,11 +244,11 @@
         configProfileUuid: "{{ _profile_uuid }}"
         configProfileInboundUuid: "{{ _inbound_uuid }}"
       serverDescription: "{{ rw_item.serverDescription | default('') }}"
-      tag: "{{ rw_host_managed_tag }}"
+      tags:
+        - "{{ rw_host_managed_tag }}"
       isHidden: "{{ (rw_item.isHidden | default(false)) | bool }}"
       overrideSniFromAddress: "{{ (rw_item.overrideSniFromAddress | default(false)) | bool }}"
       vlessRouteId: "{{ rw_item.vlessRouteId | default(None) }}"
-      allowInsecure: "{{ (rw_item.allowInsecure | default(false)) | bool }}"
       shuffleHost: "{{ (rw_item.shuffleHost | default(true)) | bool }}"
       mihomoX25519: "{{ (rw_item.mihomoX25519 | default(false)) | bool }}"
       nodes: ["{{ _node_uuid }}"]
@@ -375,12 +375,12 @@
     - _rw_existing is not none
     - rw_host_set_remark_if_exists | bool
     - _rw_remark_differs | bool
-    - (_rw_existing.tag | default('')) != rw_host_managed_tag
+    - rw_host_managed_tag not in (_rw_existing.tags | default([], true))
     - not (rw_host_allow_unmanaged_update | bool)
   ansible.builtin.fail:
     msg: >-
       Refusing to rename unmanaged Host uuid={{ _rw_existing.uuid }}
-      tag={{ _rw_existing.tag | default('') }}
+      tags={{ _rw_existing.tags | default([], true) }}
       old_remark={{ _rw_existing.remark }} new_remark={{ rw_item.remark }}.
       Set rw_host_allow_unmanaged_update=true to allow explicitly.
 
