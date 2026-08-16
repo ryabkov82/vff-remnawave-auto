@@ -7,6 +7,12 @@
 remnawave_inbound_tags_extra:
   - "{{ antiblock_cdn_inbound_tag }}"
 
+# AntiBlock xHTTP inbound reads host Let's Encrypt files from inside remnanode.
+# Mount the whole tree: live/* is usually a symlink into archive/*.
+# This role does not issue or copy certificates.
+remnawave_node_extra_volumes:
+  - "/etc/letsencrypt:/etc/letsencrypt:ro"
+
 # Future nodes (e.g. de-fra-3) get derived names. de-fra-2 overrides in
 # inventory/host_vars/de-fra-2/antiblock_cdn.yml to keep production lab names.
 antiblock_cdn_node:
