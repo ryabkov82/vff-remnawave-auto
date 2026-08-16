@@ -11,12 +11,15 @@ services:
 {% endif %}
     env_file:
       - .env
-{% if remnawave_node_enable_host_logs or (remnawave_node_geo_files | length > 0) %}
+{% if remnawave_node_enable_host_logs or (remnawave_node_geo_files | default([]) | length > 0) or (remnawave_node_extra_volumes | default([]) | length > 0) %}
     volumes:
 {% if remnawave_node_enable_host_logs %}
       - "{{ remnawave_node_log_dir }}:/var/log/remnanode"
 {% endif %}
-{% for f in remnawave_node_geo_files %}
+{% for f in remnawave_node_geo_files | default([]) %}
       - "{{ remnawave_node_dir }}/{{ f.dest_name | basename }}:/usr/local/share/xray/{{ f.dest_name | basename }}"
+{% endfor %}
+{% for vol in remnawave_node_extra_volumes | default([]) %}
+      - "{{ vol }}"
 {% endfor %}
 {% endif %}

@@ -31,6 +31,11 @@ remnawave_node_env_content: |-
 # Пример элемента: { src: "files/geo-zapret.dat", dest_name: "geo-zapret.dat" }
 remnawave_node_geo_files: []
 
+# Extra host bind-mounts for remnanode (e.g. existing Let's Encrypt tree).
+# This role never issues or copies certificates; it only mounts what is already
+# on the host. Empty by default so ordinary VPN nodes stay unchanged.
+remnawave_node_extra_volumes: []
+
 # Логи Xray внутри контейнера (если хочешь хранить на хосте)
 remnawave_node_enable_host_logs: true
 remnawave_node_log_dir: /var/log/remnanode
