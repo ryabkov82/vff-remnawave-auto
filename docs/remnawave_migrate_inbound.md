@@ -1,5 +1,8 @@
 # remnawave_migrate_inbound
 
+> **LEGACY:** validated only for historical Remnawave 2.7.4 migration flow.
+> Do not run against 3.2.3.
+
 Роль `remnawave_migrate_inbound` синхронизирует **Reality-настройки inbound’a** в Remnawave
 с исходным inbound’ом из Marzban.  
 Цель роли — сделать миграцию максимально прозрачной для клиентов: чтобы
