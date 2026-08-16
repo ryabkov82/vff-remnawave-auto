@@ -1,0 +1,42 @@
+---
+# One representative GET. failed_when: false so we can emit 401 vs 403 vs 404.
+- name: Preflight representative GET {{ item.path }}
+  ansible.builtin.uri:
+    url: "{{ remnawave_panel_api_base }}{{ item.path }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ lookup('vars', item.token_var) }}"
+      Accept: "application/json"
+    status_code: [200]
+    return_content: false
+    validate_certs: "{{ remnawave_validate_certs }}"
+  register: _rw_pf
+  failed_when: false
+  changed_when: false
+  no_log: true
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Fail with scope/auth diagnosis
+  when: (_rw_pf.status | default(0) | int) != 200
+  vars:
+    _st: "{{ _rw_pf.status | default(0) | int }}"
+    _why: >-
+      {{
+        {
+          401: '401: invalid/expired API token',
+          403: '403: token authenticated but required Remnawave 3.2.3 scope is missing',
+          404: '404: contract/base URL mismatch'
+        }[_st | int]
+        | default('endpoint-specific preflight failure (HTTP ' ~ (_st | string) ~ ')')
+      }}
+  ansible.builtin.fail:
+    msg: >-
+      Remnawave 3.2.3 API preflight failed: {{ _why }}.
+      endpoint=GET {{ item.path }}
+      token_variable={{ item.token_var }}
+      expected_scope={{ item.scope }}
+      status={{ _st }}.
+      Read-only GET cannot prove write permission; grant {{ item.scope }}
+      on this token in the Remnawave panel before mutating automation.

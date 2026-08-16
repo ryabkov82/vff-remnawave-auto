@@ -1,4 +1,9 @@
 ---
+# POST-UPGRADE health/nodes/metrics only (GET).
+# This is NOT the 3.2.3 token-scope preflight: it does not cover
+# hosts / config-profiles / squads / subscription-page-configs.
+# After scopes are granted: make remnawave-api-preflight
+
 - name: Verify | Skip API checks (panel role already checked metrics health)
   ansible.builtin.debug:
     msg: "API verification is disabled; relying on remnawave_panel role health checks."

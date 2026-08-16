@@ -1,0 +1,127 @@
+---
+# Read-only Remnawave 3.2.3 API preflight.
+# GET only. Groups checks by token variable name, not by assuming one secret.
+
+- name: Assert panel API base and remnawave_panel_api_token
+  ansible.builtin.assert:
+    that:
+      - remnawave_panel_api_base | default('') | length > 0
+      - remnawave_panel_api_token | default('') | length > 0
+    fail_msg: >-
+      Missing remnawave_panel_api_base or remnawave_panel_api_token.
+      Do not print token values.
+  no_log: true
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Assert secondary token variables are set
+  ansible.builtin.assert:
+    that:
+      - remnawave_external_squads_api_token | default('') | length > 0
+      - remnawave_subpage_config_api_token | default('') | length > 0
+      - remnawave_inbounds_cache_api_token | default('') | length > 0
+    fail_msg: >-
+      Missing remnawave_external_squads_api_token,
+      remnawave_subpage_config_api_token, or remnawave_inbounds_cache_api_token.
+      These may inherit remnawave_panel_api_token, but each variable must be non-empty.
+      Do not print token values.
+  no_log: true
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Build representative GET checks (no token values)
+  ansible.builtin.set_fact:
+    _rw_pf_checks:
+      - path: /hosts
+        token_var: remnawave_panel_api_token
+        scope: hosts:*
+        resource: hosts
+      - path: /nodes
+        token_var: remnawave_panel_api_token
+        scope: nodes:*
+        resource: nodes
+      - path: /config-profiles/inbounds
+        token_var: remnawave_panel_api_token
+        scope: config-profiles:*
+        resource: config-profiles
+      - path: /config-profiles/inbounds
+        token_var: remnawave_inbounds_cache_api_token
+        scope: config-profiles:*
+        resource: config-profiles
+      - path: /internal-squads
+        token_var: remnawave_panel_api_token
+        scope: internal-squads:*
+        resource: internal-squads
+      - path: /system/health
+        token_var: remnawave_panel_api_token
+        scope: system:read
+        resource: system
+      - path: /external-squads
+        token_var: remnawave_external_squads_api_token
+        scope: external-squads:*
+        resource: external-squads
+      - path: /subscription-page-configs
+        token_var: remnawave_external_squads_api_token
+        scope: subscription-page-configs:*
+        resource: subscription-page-configs
+      - path: /subscription-page-configs
+        token_var: remnawave_subpage_config_api_token
+        scope: subscription-page-configs:*
+        resource: subscription-page-configs
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Show required manual resource-scope checklist
+  ansible.builtin.debug:
+    msg:
+      title: REQUIRED MANUAL CHECKLIST (Remnawave 3.2.3)
+      why: >-
+        resource:* is required because automation performs several read/write
+        endpoints inside each resource. A successful GET only proves that this
+        token can reach that read endpoint (hosts:read / hosts:list is enough
+        for GET /hosts). It does NOT prove write scopes.
+      official_source: remnawave/backend tag 3.2.3 libs/contract/api/controllers-info.ts
+      scopes: "{{ rw_api_preflight_required_scopes }}"
+      by_token_variable:
+        remnawave_panel_api_token:
+          - hosts:*
+          - nodes:*
+          - config-profiles:*
+          - internal-squads:*
+          - system:read
+        remnawave_inbounds_cache_api_token:
+          - config-profiles:*
+        remnawave_external_squads_api_token:
+          - external-squads:*
+          - subscription-page-configs:*
+        remnawave_subpage_config_api_token:
+          - subscription-page-configs:*
+      physical_token_union: >-
+        If inventory maps several variables to one physical token,
+        that token needs the union of all listed scopes.
+      do_not_run_mutations_until_scopes_are_granted: true
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Run read-only GET preflight checks
+  ansible.builtin.include_tasks: check_one.yml
+  loop: "{{ _rw_pf_checks }}"
+  loop_control:
+    label: "GET {{ item.path }} token_var={{ item.token_var }} scope={{ item.scope }}"
+
+- name: Preflight GET checks passed
+  ansible.builtin.debug:
+    msg:
+      result: read-only GET preflight passed
+      note: >-
+        This proves API reachability and read permission for the representative
+        endpoints. Grant the full resource:* checklist on each token before
+        running mutating playbooks.
+      checks: "{{ _rw_pf_checks | map(attribute='path') | list }}"
+  delegate_to: localhost
+  become: false
+  run_once: true

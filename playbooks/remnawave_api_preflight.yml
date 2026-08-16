@@ -1,0 +1,11 @@
+---
+# Read-only Remnawave 3.2.3 API token/scope preflight.
+# GET only. Safe after Panel upgrade and BEFORE mutating automation.
+# Does not change panel state. Does not print token values.
+- name: Remnawave 3.2.3 API scope preflight (read-only)
+  hosts: panel
+  gather_facts: false
+  become: false
+  roles:
+    - role: remnawave_api_preflight
+      tags: [api_preflight, preflight]
