@@ -18,6 +18,7 @@ class FilterModule:
 
     def filters(self) -> dict[str, Any]:
         return {
+            "remnawave_antiblock_trusted_ingress_ips": _lib.validate_trusted_ingress_ips,
             "remnawave_antiblock_hosts_desired": _lib.build_desired_antiblock_hosts,
             "remnawave_antiblock_hosts_plan": _lib.plan_from_filter,
             "remnawave_antiblock_hosts_verify": _lib.verify_from_filter,

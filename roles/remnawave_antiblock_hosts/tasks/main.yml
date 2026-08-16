@@ -23,10 +23,20 @@
       - (antiblock_cdn_host_owner_tag | default('') | length) > 0
       - antiblock_cdn_host_xhttp_extra_params is mapping
       - antiblock_cdn_host_xhttp_extra_params.uplinkHTTPMethod | default('') == 'GET'
+      - antiblock_cdn_trusted_ingress_ips is defined
+      - antiblock_cdn_trusted_ingress_ips is sequence
+      - not (antiblock_cdn_trusted_ingress_ips is string)
+      - antiblock_cdn_trusted_ingress_ips | length > 0
     fail_msg: >-
       Set remnawave_panel_url/token, antiblock_cdn_node.public_hostname,
-      antiblock_cdn_inbound_tag, antiblock_cdn_path, and
-      antiblock_cdn_host_xhttp_extra_params (with uplinkHTTPMethod=GET).
+      antiblock_cdn_inbound_tag, antiblock_cdn_path,
+      antiblock_cdn_host_xhttp_extra_params (with uplinkHTTPMethod=GET),
+      and a non-empty antiblock_cdn_trusted_ingress_ips list.
+  tags: [antiblock_cdn_hosts]
+
+- name: AntiBlock Hosts | Validate curated trusted ingress IPv4 pool
+  ansible.builtin.set_fact:
+    _abh_trusted_ingress_ips: "{{ antiblock_cdn_trusted_ingress_ips | remnawave_antiblock_trusted_ingress_ips }}"
   tags: [antiblock_cdn_hosts]
 
 - name: AntiBlock Hosts | Compose API headers
@@ -126,7 +136,7 @@
   vars:
     _abh_ctx:
       public_hostname: "{{ antiblock_cdn_node.public_hostname }}"
-      ingress_ips: "{{ antiblock_cdn_ingress_ips | default([]) }}"
+      trusted_ingress_ips: "{{ _abh_trusted_ingress_ips }}"
       port: "{{ antiblock_cdn_host_port | int }}"
       path: "{{ antiblock_cdn_path }}"
       sni: "{{ antiblock_cdn_node.public_hostname }}"

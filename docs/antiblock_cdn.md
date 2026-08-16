@@ -331,7 +331,8 @@ Dedicated role `roles/remnawave_antiblock_hosts`. Обычный `remnawave_add_
 - Unmanaged exact transport → PATCH только `tags` (adoption).
 - Unmanaged transport drift → hard fail, без mutate.
 - `antiblock_cdn_hosts_prune: false`. DELETE в Stage 6A не реализован.
-- Desired addresses: `public_hostname` + `antiblock_cdn_ingress_ips`.
+- Desired addresses: `public_hostname` + global
+  `antiblock_cdn_trusted_ingress_ips`.
 - Shared `antiblock_cdn_host_xhttp_extra_params` (`xhttpExtraParams`,
   `uplinkHTTPMethod`). Legacy `tag` / `xHttpExtraParams` / `allowInsecure`
   не отправляются.
@@ -339,10 +340,33 @@ Dedicated role `roles/remnawave_antiblock_hosts`. Обычный `remnawave_add_
   `include_role apply.tags` обязателен. Node/inbound UUID резолвятся read-only
   внутри роли, если tagged run пропустил `register_node`.
 
+### Trusted CDN edge IP pool
+
+`antiblock_cdn_trusted_ingress_ips` в
+`inventory/group_vars/all/antiblock_cdn.yml` — **curated/manual** пул CDN
+edge IP, общий для всех `antiblock_cdn_nodes`. Это не автоматически
+обнаруженные Yandex CDN IP: роль **не** резолвит `providerCname` и **не**
+делает DNS lookup этих адресов.
+
+Чтобы централизованно заменить или добавить trusted CDN edge IP,
+редактируем только этот список. После этого desired Remnawave IP Hosts
+на каждой AntiBlock CDN node становятся:
+
+```
+<antiblock_cdn_node.public_hostname>
++ antiblock_cdn_trusted_ingress_ips
+```
+
+de-fra-2: `cdn-lab.digitalstreamers.xyz` + тот же global pool.
+Будущая de-fra-3: `de-fra-3.cdn.digitalstreamers.xyz` + тот же pool.
+Список в host_vars не копируется. Per-node extra/exclude пока нет.
+
+Удаление IP из пула **не** удаляет старый Host (`prune=false`). Stage 6A
+может только создать новые desired Hosts.
+
 ## Ещё не реализовано (этап 6B+)
 
 - Safe prune stale `VFF:ANTIBLOCK` Hosts
-- Dynamic ingress discovery (сейчас static `antiblock_cdn_ingress_ips`)
 - CDN transport smoke / full xHTTP/VLESS smoke
 - удаление stale CDN resources / origin groups
 - миграция de-fra-2 certificate на shared wildcard
