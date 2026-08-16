@@ -159,7 +159,7 @@
     url: "{{ remnawave_panel_api_base }}/hosts/{{ item.uuid }}"
     method: DELETE
     headers: "{{ _rw_headers }}"
-    status_code: [200]
+    status_code: [204]
   loop: "{{ _rw_to_prune }}"
   loop_control:
     label: "{{ item.key }}"

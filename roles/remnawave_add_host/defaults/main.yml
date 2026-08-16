@@ -47,12 +47,12 @@ rw_host_set_inbound_if_exists: true
 rw_host_set_port_if_exists: false
 
 # Managed remark rename (off by default). Requires rw_host_match_by=endpoint_inbound.
-# Remnawave 2.7.4: PATCH /api/hosts with partial body {uuid, remark} is safe and
-# does not reset nodes/inbound/sni/tag/serverDescription/etc. when omitted.
+# Remnawave 3.2.3: PATCH /api/hosts is partial, but isDisabled has schema default false.
+# Every update of an existing Host must send the current Host.isDisabled explicitly.
 rw_host_set_remark_if_exists: false
 rw_host_allow_unmanaged_update: false
 
-# Confirmed API update contract (Remnawave backend 2.7.4 UpdateHostCommand).
+# Confirmed API update contract (Remnawave backend 3.2.3 UpdateHostCommand).
 # Do not enable rename if this is set false.
 rw_host_update_api_confirmed: true
 rw_host_update_api_method: "PATCH"

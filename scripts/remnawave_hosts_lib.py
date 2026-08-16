@@ -3,9 +3,9 @@
 
 API contract (Remnawave backend 3.2.3):
   GET  /api/hosts  — Host.tags: string[] (managed = marker in tags, not exclusive)
-  PATCH /api/hosts  body: UpdateHostCommand { uuid (required), remark? (optional), ... }
-  Partial PATCH with only {uuid, remark} is safe: HostsService.updateHost applies
-  only provided fields; nodes/inbound/tags/sni/etc. stay unchanged when omitted.
+  PATCH /api/hosts  — UpdateHost is partial, but isDisabled has schema default false.
+  Therefore every local PATCH helper must send the current Host.isDisabled.
+  Omitted fields (nodes/inbound/tags/sni/etc.) stay unchanged; omitted isDisabled does not.
   No bulk remark endpoint exists.
 
   Write-path is 3.2.3 only (create uses tags: [managed_tag]).
@@ -312,13 +312,25 @@ def legacy_address_port_first(
 
 
 def build_remark_update_payload(existing: dict[str, Any], new_remark: str) -> dict[str, Any]:
-    """Minimal safe PATCH body: uuid + remark only (Remnawave 2.7.4)."""
+    """Safe 3.2.3 remark PATCH: uuid + remark + current isDisabled.
+
+    UpdateHost is partial, but isDisabled defaults to false in the 3.2.3 schema.
+    This helper is safe only because it copies the existing Host.isDisabled.
+    Missing isDisabled is an error: defaulting to false would re-enable a
+    disabled Host.
+    """
     uuid = existing.get("uuid")
     if not uuid:
         raise ValueError("existing host missing uuid")
     if not (new_remark or "").strip():
         raise ValueError("desired remark is empty")
-    return {"uuid": str(uuid), "remark": new_remark}
+    if "isDisabled" not in existing:
+        raise ValueError("existing host missing isDisabled")
+    return {
+        "uuid": str(uuid),
+        "remark": new_remark,
+        "isDisabled": bool(existing["isDisabled"]),
+    }
 
 
 def assert_rename_response(
@@ -581,7 +593,8 @@ def build_audit_report(
                 "required": ["uuid"],
                 "partial_remark_supported": True,
                 "bulk_remark_endpoint": False,
-                "confirmed_for": "Remnawave backend 2.7.4 UpdateHostCommand",
+                "confirmed_for": "Remnawave backend 3.2.3 UpdateHostCommand",
+                "isDisabled_must_be_preserved": True,
             },
         },
     )
