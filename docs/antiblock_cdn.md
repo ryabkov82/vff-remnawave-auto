@@ -265,8 +265,8 @@ antiblock_cdn_node:
 `use_next: false`, потому что второго origin нет.
 
 Writes выключены по умолчанию (`yandex_cdn_allow_writes: false`). Dedicated
-apply передаёт `true`. POST/PATCH без этого флага не выполняются. DELETE
-на этом этапе не реализован (нет prune).
+apply передаёт `true`. POST/PATCH без этого флага не выполняются. Yandex
+CDN prune/DELETE на этом этапе не реализован.
 
 ### Legacy DE-FRA-2 adoption
 
@@ -330,7 +330,8 @@ Dedicated role `roles/remnawave_antiblock_hosts`. Обычный `remnawave_add_
   playbook передаёт `true`. Plan = GET + diff, без POST/PATCH/DELETE.
 - Unmanaged exact transport → PATCH только `tags` (adoption).
 - Unmanaged transport drift → hard fail, без mutate.
-- `antiblock_cdn_hosts_prune: false`. DELETE в Stage 6A не реализован.
+- `antiblock_cdn_hosts_prune: false` по умолчанию. DELETE только при
+  `allow_writes=true` и `prune=true` (Stage 6B.2).
 - Desired addresses: `public_hostname` + global
   `antiblock_cdn_trusted_ingress_ips`.
 - Shared `antiblock_cdn_host_xhttp_extra_params` (`xhttpExtraParams`,
@@ -361,10 +362,12 @@ de-fra-2: `cdn-lab.digitalstreamers.xyz` + тот же global pool.
 Будущая de-fra-3: `de-fra-3.cdn.digitalstreamers.xyz` + тот же pool.
 Список в host_vars не копируется. Per-node extra/exclude пока нет.
 
-Удаление IP из пула **не** удаляет старый Host. Stage 6B.1 только
-классифицирует stale / prune eligibility. DELETE ещё нет.
+Удаление IP из пула делает owned current-node Host **stale**.
+`prune=false` только классифицирует. `prune=true` планирует DELETE.
+Фактическое удаление дополнительно требует `allow_writes=true`.
+Третьего флага нет. Второй playbook run не обязателен.
 
-### Stage 6B.1 — stale detection (no DELETE)
+### Stage 6B.1 — stale detection
 
 После desired reconcile роль смотрит global GET `/api/hosts`, но stale
 считается **только** для текущего scope:
@@ -376,30 +379,69 @@ de-fra-2: `cdn-lab.digitalstreamers.xyz` + тот же global pool.
 
 `VFF:MANAGED` и `tags=[]` не являются AntiBlock ownership.
 
-prune_eligible (будущий DELETE) только если одновременно:
+`prune_eligible` только если одновременно:
 
 - tags ровно `["VFF:ANTIBLOCK"]` (extra tags, включая `VFF:MANAGED`, блокируют)
 - nodes ровно `[current_node_uuid]` (multi-node → `multiple_nodes`)
 - address IPv4 и не равен `public_hostname`
 - UUID есть
 
-Public hostname Host **никогда** не prune_eligible. Чужие node/inbound/profile
-вне scope и не попадают в `stale` / `prune_blocked`.
+Public hostname Host **никогда** не `prune_eligible`. Чужие
+node/inbound/profile вне scope и не попадают в `stale` / `prune_blocked`.
+Blocked stale Hosts сохраняются.
 
-`antiblock_cdn_hosts_prune` остаётся `false`. `plan.delete` всегда 0.
-Writes только POST/PATCH desired Hosts.
+### Stage 6B.2 — guarded DELETE
 
-Будущий Stage 6B.2 (не реализован):
+Defaults остаются `allow_writes=false` и `prune=false`. Обычный AntiBlock
+apply **не** удаляет stale Hosts, пока явно не передан
+`antiblock_cdn_hosts_prune=true`.
 
-1. calculate desired
-2. create/adopt/reconcile desired Hosts
-3. re-GET + verify desired Hosts
-4. smoke/gate
-5. только потом DELETE `prune_eligible` stale Hosts
+- `allow_writes=false`, `prune=false` — только классификация, без writes
+- `allow_writes=false`, `prune=true` — read-only prune plan (`delete=N`),
+  без POST/PATCH/DELETE
+- `allow_writes=true`, `prune=false` — Stage 6A POST/PATCH, без DELETE
+- `allow_writes=true`, `prune=true` — reconcile desired, verify, DELETE
+  `prune_eligible`, final verify
+
+Один run:
+
+1. GET `/api/hosts`
+2. calculate desired + stale + prune plan
+3. POST/PATCH desired Hosts
+4. verify **всех** desired Hosts (обязательный gate, в том числе
+   prune-only без POST/PATCH)
+5. `DELETE /api/hosts/{uuid}` только для `delete_items`
+   (`prune_eligible`, UUID path, HTTP 204)
+6. re-GET + verify desired + deleted UUID отсутствуют +
+   `prune_eligible=0` в текущем scope
+
+`stale==0` глобально не требуется: `prune_blocked` Hosts могут остаться.
+Частичный DELETE не откатывается: следующий run переклассифицирует
+оставшихся.
+
+Read-only zero-drift:
+
+```
+make antiblock-cdn-node HOST=de-fra-2 TAGS=antiblock_cdn_hosts \
+  EXTRA='-e antiblock_cdn_hosts_allow_writes=false'
+```
+
+Read-only prune plan:
+
+```
+make antiblock-cdn-node HOST=de-fra-2 TAGS=antiblock_cdn_hosts \
+  EXTRA='-e antiblock_cdn_hosts_allow_writes=false -e antiblock_cdn_hosts_prune=true'
+```
+
+Actual prune (apply уже ставит `allow_writes=true`):
+
+```
+make antiblock-cdn-node HOST=de-fra-2 TAGS=antiblock_cdn_hosts \
+  EXTRA='-e antiblock_cdn_hosts_prune=true'
+```
 
 ## Ещё не реализовано (этап 6B.2+)
 
-- Safe DELETE `prune_eligible` stale IPv4 Hosts
 - CDN transport smoke / full xHTTP/VLESS smoke
 - удаление stale CDN resources / origin groups
 - миграция de-fra-2 certificate на shared wildcard

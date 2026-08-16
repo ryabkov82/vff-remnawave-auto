@@ -128,7 +128,8 @@ antiblock-cdn-plan: ## Local AntiBlock CDN validation (syntax-check only; no API
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_ANTIBLOCK_CDN) --syntax-check
 
 antiblock-cdn: ## Apply AntiBlock inbound, origin, HAProxy, Yandex CDN, public CNAME, Hosts
-	@# Hosts default allow_writes=false; this apply playbook sets true. No DELETE.
+	@# Hosts default allow_writes=false; this apply playbook sets true.
+	@# Prune/DELETE stays off unless EXTRA='-e antiblock_cdn_hosts_prune=true'.
 	@# Does not change make inbounds / make nodes / remnawave_add_host.
 	@# Примеры:
 	@#   make antiblock-cdn
@@ -142,9 +143,13 @@ antiblock-cdn-node: ## Provision one CDN node: panel + origin + HAProxy + Yandex
 	@# the panel play is not skipped. Yandex CDN uses delegate_to localhost (limit-safe).
 	@# TAGS=antiblock_cdn_hosts skips Yandex / Cloudflare / HAProxy / inbound/squads.
 	@# Hosts plan: EXTRA='-e antiblock_cdn_hosts_allow_writes=false' (GET + diff only).
+	@# Read-only prune plan: also pass -e antiblock_cdn_hosts_prune=true (no DELETE).
+	@# Actual prune: apply already sets allow_writes=true; add prune=true EXTRA.
 	@# Примеры:
 	@#   make antiblock-cdn-node HOST=de-fra-2
 	@#   make antiblock-cdn-node HOST=de-fra-2 TAGS=antiblock_cdn_hosts EXTRA='-e antiblock_cdn_hosts_allow_writes=false'
+	@#   make antiblock-cdn-node HOST=de-fra-2 TAGS=antiblock_cdn_hosts EXTRA='-e antiblock_cdn_hosts_allow_writes=false -e antiblock_cdn_hosts_prune=true'
+	@#   make antiblock-cdn-node HOST=de-fra-2 TAGS=antiblock_cdn_hosts EXTRA='-e antiblock_cdn_hosts_prune=true'
 	@#   make antiblock-cdn-node HOST=de-fra-2 TAGS=antiblock_cdn_hosts
 	@test -n "$(HOST)" || { echo "HOST is required, e.g. make antiblock-cdn-node HOST=de-fra-2"; exit 1; }
 	@awk '/^\[antiblock_cdn_nodes\]/{p=1;next} /^\[/{p=0} p && $$1=="$(HOST)"{found=1} END{if(!found){print "$(HOST) is not in group antiblock_cdn_nodes" > "/dev/stderr"; exit 1}}' $(INVENTORY)
