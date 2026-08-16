@@ -245,9 +245,20 @@ class AntiblockInvariantTests(unittest.TestCase):
         self.assertEqual(inbound["listen"], "127.0.0.1")
         self.assertEqual(inbound["port"], "{{ antiblock_cdn_inbound_port | int }}")
         self.assertEqual(ANTIBLOCK_VARS["antiblock_cdn_inbound_port"], 8447)
-        self.assertNotIn("xHttpExtraParams", ANTIBLOCK_RAW)
-        self.assertNotIn("xhttpExtraParams", ANTIBLOCK_RAW)
-        self.assertIn("xhttpSettings:", ANTIBLOCK_RAW)
+        inbound_text = ANTIBLOCK_RAW.split("antiblock_cdn_inbound:")[1].split(
+            "antiblock_cdn_certificate:"
+        )[0]
+        self.assertIn("xhttpSettings:", inbound_text)
+        self.assertNotIn("xhttpExtraParams", inbound_text)
+        self.assertNotIn("xHttpExtraParams", inbound_text)
+        self.assertNotIn("XHttpExtraParams", inbound_text)
+        self.assertIn("antiblock_cdn_host_xhttp_extra_params", ANTIBLOCK_VARS)
+        self.assertEqual(
+            ANTIBLOCK_VARS["antiblock_cdn_host_xhttp_extra_params"]["uplinkHTTPMethod"],
+            "GET",
+        )
+        self.assertNotIn("xHttpExtraParams", yaml.dump(ANTIBLOCK_VARS))
+        self.assertNotIn("XHttpExtraParams", yaml.dump(ANTIBLOCK_VARS))
 
 
 if __name__ == "__main__":

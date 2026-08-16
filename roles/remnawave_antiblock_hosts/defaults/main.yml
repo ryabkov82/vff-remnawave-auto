@@ -1,0 +1,24 @@
+---
+# Remnawave AntiBlock Hosts (current Host API). Stage 6A: adopt + create.
+# DELETE / prune is not implemented. Default is plan-only (no POST/PATCH).
+
+remnawave_panel_api_base: "{{ (remnawave_panel_url | default('')) | ternary(remnawave_panel_url ~ '/api', '') }}"
+remnawave_panel_api_token: ""
+
+antiblock_cdn_host_owner_tag: "VFF:ANTIBLOCK"
+antiblock_cdn_hosts_allow_writes: false
+antiblock_cdn_hosts_prune: false
+
+antiblock_cdn_host_port: 443
+antiblock_cdn_host_alpn: "h2,http/1.1"
+antiblock_cdn_host_fingerprint: "firefox"
+antiblock_cdn_host_security_layer: "TLS"
+antiblock_cdn_host_is_disabled: false
+antiblock_cdn_host_is_hidden: false
+antiblock_cdn_host_override_sni_from_address: false
+antiblock_cdn_host_keep_sni_blank: false
+antiblock_cdn_host_shuffle_host: false
+antiblock_cdn_host_mihomo_x25519: false
+
+# Shared xHTTP extra params. Inventory overrides this object; do not copy per Host.
+antiblock_cdn_host_xhttp_extra_params: {}

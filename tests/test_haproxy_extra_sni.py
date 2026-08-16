@@ -462,7 +462,7 @@ class ArchitectureTests(unittest.TestCase):
         self.assertNotIn("antiblock_cdn_origin_dns_records", NODES_PLAY)
         self.assertEqual(DEFAULTS["haproxy_node_extra_sni_routes"], [])
 
-    def test_antiblock_playbook_wires_per_node_cdn_without_hosts(self) -> None:
+    def test_antiblock_playbook_wires_per_node_cdn_without_add_host(self) -> None:
         plays = _plays()
         self.assertEqual(plays[0]["hosts"], "panel")
         self.assertEqual(plays[1]["hosts"], "antiblock_cdn_nodes")
@@ -474,6 +474,7 @@ class ArchitectureTests(unittest.TestCase):
                 "remnawave_node_haproxy",
                 "yandex_cdn",
                 "cf_dns",
+                "remnawave_antiblock_hosts",
             ],
         )
         raw = PLAY.read_text(encoding="utf-8")

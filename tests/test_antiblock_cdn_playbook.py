@@ -165,7 +165,7 @@ class AntiblockCdnPlaybookTests(unittest.TestCase):
         self.assertEqual(inbounds["roles"][0]["role"], "remnawave_inbounds")
         self.assertNotIn("vars", inbounds["roles"][0])
 
-    def test_no_hosts_adoption_in_antiblock_playbook(self) -> None:
+    def test_hosts_adoption_after_public_cname_not_add_host(self) -> None:
         raw = PLAY.read_text(encoding="utf-8")
         self.assertNotIn("remnawave_add_host", raw)
         self.assertNotIn("haproxy_tls_sni", raw)
@@ -179,7 +179,28 @@ class AntiblockCdnPlaybookTests(unittest.TestCase):
         ]
         self.assertEqual(
             includes,
-            ["cf_dns", "remnawave_node_haproxy", "yandex_cdn", "cf_dns"],
+            [
+                "cf_dns",
+                "remnawave_node_haproxy",
+                "yandex_cdn",
+                "cf_dns",
+                "remnawave_antiblock_hosts",
+            ],
+        )
+        hosts = next(
+            task
+            for task in (_plays()[1].get("tasks") or [])
+            if (task.get("ansible.builtin.include_role") or {}).get("name")
+            == "remnawave_antiblock_hosts"
+        )
+        apply_tags = hosts["ansible.builtin.include_role"]["apply"]["tags"]
+        self.assertIn("antiblock_cdn_hosts", apply_tags)
+        self.assertIn("antiblock_cdn_hosts", hosts.get("tags") or [])
+        self.assertTrue(hosts["vars"]["antiblock_cdn_hosts_allow_writes"])
+        names = [str(task.get("name")) for task in (_plays()[1].get("tasks") or [])]
+        self.assertLess(
+            names.index("AntiBlock CDN | Ensure public CDN CNAME"),
+            names.index("AntiBlock CDN | Reconcile Remnawave CDN Hosts"),
         )
 
     def test_other_inbounds_kept_by_current_map_copy(self) -> None:

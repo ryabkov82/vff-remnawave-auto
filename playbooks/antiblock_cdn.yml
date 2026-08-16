@@ -1,11 +1,11 @@
 ---
 # Dedicated AntiBlock / Yandex Cloud CDN orchestration.
-# Remnawave Hosts are out of scope (stage 6).
+# Stage 6A adopts Remnawave CDN Hosts after public CNAME (no DELETE).
 #
 # Order: shared inbound + squads on panel, then on each CDN-enabled VPN node
 # (group antiblock_cdn_nodes): activate inbound, wait until :inbound_port is
 # listening, origin A, HAProxy origin SNI, then controller-side Yandex Origin
-# Group + CDN Resource + public Cloudflare CNAME.
+# Group + CDN Resource + public Cloudflare CNAME, then Remnawave Hosts.
 #
 # Yandex/Cloudflare CDN API calls use delegate_to: localhost so
 # --limit panel:HOST does not skip cloud provisioning.
@@ -129,3 +129,16 @@
         cf_dns_state: present
         cf_dns_proxied_default: false
       tags: [antiblock_cdn, antiblock_cdn_nodes, antiblock_cdn_yandex]
+
+    - name: AntiBlock CDN | Reconcile Remnawave CDN Hosts
+      ansible.builtin.include_role:
+        name: remnawave_antiblock_hosts
+        apply:
+          tags:
+            - antiblock_cdn
+            - antiblock_cdn_nodes
+            - antiblock_cdn_hosts
+      when: antiblock_cdn_enabled | bool
+      vars:
+        antiblock_cdn_hosts_allow_writes: true
+      tags: [antiblock_cdn, antiblock_cdn_nodes, antiblock_cdn_hosts]

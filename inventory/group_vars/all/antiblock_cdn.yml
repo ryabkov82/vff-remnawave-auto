@@ -11,7 +11,8 @@
 # Per-node origin DNS + HAProxy extra SNI routes + Yandex CDN names are
 # wired in group_vars/antiblock_cdn_nodes.yml (generic roles stay reusable).
 # This file does not upsert the inbound into remnawave_inbounds /
-# remnawave_inbounds_managed and does not adopt Remnawave Hosts.
+# remnawave_inbounds_managed. Remnawave Hosts are adopted only by
+# roles/remnawave_antiblock_hosts via playbooks/antiblock_cdn.yml.
 
 antiblock_cdn_enabled: true
 
@@ -34,6 +35,48 @@ antiblock_cdn_ingress_ips:
   - "188.72.111.19"
   - "188.72.111.35"
   - "188.72.103.4"
+
+# Remnawave Host ownership for CDN/xHTTP. Not VFF:MANAGED.
+# Writes stay off unless dedicated apply orchestration sets true.
+antiblock_cdn_host_owner_tag: "VFF:ANTIBLOCK"
+antiblock_cdn_hosts_allow_writes: false
+antiblock_cdn_hosts_prune: false
+
+antiblock_cdn_host_port: 443
+antiblock_cdn_host_alpn: "h2,http/1.1"
+antiblock_cdn_host_fingerprint: "firefox"
+antiblock_cdn_host_security_layer: "TLS"
+antiblock_cdn_host_is_disabled: false
+antiblock_cdn_host_is_hidden: false
+antiblock_cdn_host_override_sni_from_address: false
+antiblock_cdn_host_keep_sni_blank: false
+antiblock_cdn_host_shuffle_host: false
+antiblock_cdn_host_mihomo_x25519: false
+
+# Shared current-API xhttpExtraParams. Do not copy this object per Host.
+# Do not send legacy Host extra-param spellings or allowInsecure.
+antiblock_cdn_host_xhttp_extra_params:
+  noGRPCHeader: true
+  noSSEHeader: true
+  scMaxBufferedPosts: 100
+  scMaxEachPostBytes: 3000000
+  scMinPostsIntervalMs: "30"
+  seqKey: "chunk_id"
+  seqPlacement: "query"
+  serverMaxHeaderBytes: 32768
+  sessionIDKey: "auth"
+  sessionIDLength: "16-32"
+  sessionIDPlacement: "query"
+  sessionKey: "auth"
+  sessionPlacement: "query"
+  uplinkDataPlacement: "body"
+  uplinkHTTPMethod: "GET"
+  xPaddingBytes: "50-150"
+  xPaddingHeader: "X-Padding"
+  xPaddingKey: "x_padding"
+  xPaddingMethod: "tokenish"
+  xPaddingObfsMode: true
+  xPaddingPlacement: "header"
 
 antiblock_cdn_internal_squad: "AntiBlock-Squad"
 

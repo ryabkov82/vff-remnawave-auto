@@ -510,6 +510,10 @@ class PlaybookMakefileTests(unittest.TestCase):
             names.index("AntiBlock CDN | Ensure Yandex Origin Group and CDN Resource"),
             names.index("AntiBlock CDN | Ensure public CDN CNAME"),
         )
+        self.assertLess(
+            names.index("AntiBlock CDN | Ensure public CDN CNAME"),
+            names.index("AntiBlock CDN | Reconcile Remnawave CDN Hosts"),
+        )
         yandex = next(
             task
             for name, task in _includes(play)

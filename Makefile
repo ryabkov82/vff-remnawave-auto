@@ -127,19 +127,25 @@ antiblock-cdn-plan: ## Local AntiBlock CDN validation (syntax-check only; no API
 	@#   make antiblock-cdn-plan
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_ANTIBLOCK_CDN) --syntax-check
 
-antiblock-cdn: ## Apply AntiBlock inbound, origin, HAProxy, Yandex CDN, public CNAME
-	@# Does not manage Remnawave Hosts. Does not change make inbounds / make nodes.
+antiblock-cdn: ## Apply AntiBlock inbound, origin, HAProxy, Yandex CDN, public CNAME, Hosts
+	@# Hosts default allow_writes=false; this apply playbook sets true. No DELETE.
+	@# Does not change make inbounds / make nodes / remnawave_add_host.
 	@# Примеры:
 	@#   make antiblock-cdn
 	@#   make antiblock-cdn TAGS=antiblock_cdn_inbound
 	@#   make antiblock-cdn TAGS=antiblock_cdn_nodes
+	@#   make antiblock-cdn TAGS=antiblock_cdn_hosts EXTRA='-e antiblock_cdn_hosts_allow_writes=false'
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_ANTIBLOCK_CDN) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
 
-antiblock-cdn-node: ## Provision one CDN node: panel + origin + HAProxy + Yandex CDN + public CNAME
+antiblock-cdn-node: ## Provision one CDN node: panel + origin + HAProxy + Yandex CDN + CNAME + Hosts
 	@# HOST is required and must be in [antiblock_cdn_nodes]. Limit is panel:HOST so
 	@# the panel play is not skipped. Yandex CDN uses delegate_to localhost (limit-safe).
+	@# TAGS=antiblock_cdn_hosts skips Yandex / Cloudflare / HAProxy / inbound/squads.
+	@# Hosts plan: EXTRA='-e antiblock_cdn_hosts_allow_writes=false' (GET + diff only).
 	@# Примеры:
 	@#   make antiblock-cdn-node HOST=de-fra-2
+	@#   make antiblock-cdn-node HOST=de-fra-2 TAGS=antiblock_cdn_hosts EXTRA='-e antiblock_cdn_hosts_allow_writes=false'
+	@#   make antiblock-cdn-node HOST=de-fra-2 TAGS=antiblock_cdn_hosts
 	@test -n "$(HOST)" || { echo "HOST is required, e.g. make antiblock-cdn-node HOST=de-fra-2"; exit 1; }
 	@awk '/^\[antiblock_cdn_nodes\]/{p=1;next} /^\[/{p=0} p && $$1=="$(HOST)"{found=1} END{if(!found){print "$(HOST) is not in group antiblock_cdn_nodes" > "/dev/stderr"; exit 1}}' $(INVENTORY)
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_ANTIBLOCK_CDN) --limit panel:$(HOST) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
