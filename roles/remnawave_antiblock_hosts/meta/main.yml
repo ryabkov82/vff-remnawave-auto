@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  author: vff-remnawave-auto
+  role_name: remnawave_antiblock_hosts
+  description: Adopt/reconcile Remnawave AntiBlock CDN Hosts (current Host API)
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

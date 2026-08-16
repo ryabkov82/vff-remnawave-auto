@@ -1,0 +1,241 @@
+---
+# Stage 6A: plan / adopt / create Remnawave AntiBlock Hosts.
+# Safe identity: address + port + configProfileUuid + configProfileInboundUuid.
+# Default allow_writes=false: GET + diff only. Host removal is not implemented.
+
+- name: AntiBlock Hosts | Assert Stage 6A prune is disabled
+  ansible.builtin.assert:
+    that:
+      - not (antiblock_cdn_hosts_prune | bool)
+    fail_msg: >-
+      antiblock_cdn_hosts_prune is not supported in Stage 6A.
+      Host removal is not implemented. Safe prune is Stage 6B.
+  tags: [antiblock_cdn_hosts]
+
+- name: AntiBlock Hosts | Assert required inputs
+  ansible.builtin.assert:
+    that:
+      - remnawave_panel_api_base | length > 0
+      - remnawave_panel_api_token | length > 0
+      - (antiblock_cdn_node.public_hostname | default('') | length) > 0
+      - (antiblock_cdn_inbound_tag | default('') | length) > 0
+      - (antiblock_cdn_path | default('') | length) > 0
+      - (antiblock_cdn_host_owner_tag | default('') | length) > 0
+      - antiblock_cdn_host_xhttp_extra_params is mapping
+      - antiblock_cdn_host_xhttp_extra_params.uplinkHTTPMethod | default('') == 'GET'
+    fail_msg: >-
+      Set remnawave_panel_url/token, antiblock_cdn_node.public_hostname,
+      antiblock_cdn_inbound_tag, antiblock_cdn_path, and
+      antiblock_cdn_host_xhttp_extra_params (with uplinkHTTPMethod=GET).
+  tags: [antiblock_cdn_hosts]
+
+- name: AntiBlock Hosts | Compose API headers
+  ansible.builtin.set_fact:
+    _abh_headers:
+      Authorization: "Bearer {{ remnawave_panel_api_token }}"
+      Accept: "application/json"
+      Content-Type: "application/json"
+  tags: [antiblock_cdn_hosts]
+
+- name: AntiBlock Hosts | Use remnawave_node_uuid fact when present
+  when: (remnawave_node_uuid | default('') | length) > 0
+  ansible.builtin.set_fact:
+    _abh_node_uuid: "{{ remnawave_node_uuid }}"
+  tags: [antiblock_cdn_hosts]
+
+- name: AntiBlock Hosts | Resolve node UUID by name (read-only GET)
+  when: (_abh_node_uuid | default('') | length) == 0
+  tags: [antiblock_cdn_hosts]
+  block:
+    - name: AntiBlock Hosts | GET /api/nodes
+      check_mode: false
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}/nodes"
+        method: GET
+        headers: "{{ _abh_headers }}"
+        return_content: true
+        status_code: [200]
+      register: _abh_nodes_resp
+      changed_when: false
+
+    - name: AntiBlock Hosts | Pick node by exact name
+      vars:
+        _abh_node_name: "{{ remnawave_node_name | default(inventory_hostname) }}"
+        _abh_node_candidates: >-
+          {{
+            (_abh_nodes_resp.json.response | default([]))
+            | selectattr('name', 'equalto', _abh_node_name)
+            | list
+          }}
+      ansible.builtin.set_fact:
+        _abh_node_uuid: "{{ (_abh_node_candidates | first).uuid if (_abh_node_candidates | length) == 1 else '' }}"
+      failed_when: (_abh_node_candidates | length) != 1
+
+- name: AntiBlock Hosts | Assert node UUID resolved
+  ansible.builtin.assert:
+    that:
+      - (_abh_node_uuid | default('') | length) > 0
+    fail_msg: Failed to resolve current node UUID for AntiBlock Hosts.
+  tags: [antiblock_cdn_hosts]
+
+- name: AntiBlock Hosts | Ensure inbound cache (read-only GET)
+  ansible.builtin.include_role:
+    name: remnawave_inbounds_cache
+    apply:
+      tags:
+        - antiblock_cdn
+        - antiblock_cdn_nodes
+        - antiblock_cdn_hosts
+  vars:
+    remnawave_inbounds_cache_api_base: "{{ remnawave_panel_api_base }}"
+    remnawave_inbounds_cache_api_token: "{{ remnawave_panel_api_token }}"
+    remnawave_inbounds_cache_export_facts: true
+  tags: [antiblock_cdn_hosts]
+
+- name: AntiBlock Hosts | Resolve inbound/profile by tag
+  vars:
+    _abh_inbound_map: "{{ remnawave_inbounds_by_tag | default({}) }}"
+  ansible.builtin.set_fact:
+    _abh_profile_uuid: "{{ (_abh_inbound_map[antiblock_cdn_inbound_tag] | default({})).profile_uuid | default('') }}"
+    _abh_inbound_uuid: "{{ (_abh_inbound_map[antiblock_cdn_inbound_tag] | default({})).inbound_uuid | default('') }}"
+  tags: [antiblock_cdn_hosts]
+
+- name: AntiBlock Hosts | Assert inbound/profile resolved by tag
+  ansible.builtin.assert:
+    that:
+      - (_abh_profile_uuid | default('') | length) > 0
+      - (_abh_inbound_uuid | default('') | length) > 0
+    fail_msg: >-
+      inbound_tag={{ antiblock_cdn_inbound_tag }} not found in
+      remnawave_inbounds_by_tag. UUID is resolved at runtime; it is not inventoried.
+  tags: [antiblock_cdn_hosts]
+
+- name: AntiBlock Hosts | GET /api/hosts
+  check_mode: false
+  ansible.builtin.uri:
+    url: "{{ remnawave_panel_api_base }}/hosts"
+    method: GET
+    headers: "{{ _abh_headers }}"
+    return_content: true
+    status_code: [200]
+  register: _abh_hosts_resp
+  changed_when: false
+  tags: [antiblock_cdn_hosts]
+
+- name: AntiBlock Hosts | Build desired Hosts and plan
+  vars:
+    _abh_ctx:
+      public_hostname: "{{ antiblock_cdn_node.public_hostname }}"
+      ingress_ips: "{{ antiblock_cdn_ingress_ips | default([]) }}"
+      port: "{{ antiblock_cdn_host_port | int }}"
+      path: "{{ antiblock_cdn_path }}"
+      sni: "{{ antiblock_cdn_node.public_hostname }}"
+      host: "{{ antiblock_cdn_node.public_hostname }}"
+      alpn: "{{ antiblock_cdn_host_alpn }}"
+      fingerprint: "{{ antiblock_cdn_host_fingerprint }}"
+      security_layer: "{{ antiblock_cdn_host_security_layer }}"
+      xhttp_extra_params: "{{ antiblock_cdn_host_xhttp_extra_params }}"
+      owner_tag: "{{ antiblock_cdn_host_owner_tag }}"
+      node_uuid: "{{ _abh_node_uuid }}"
+      profile_uuid: "{{ _abh_profile_uuid }}"
+      inbound_uuid: "{{ _abh_inbound_uuid }}"
+      inventory_hostname: "{{ inventory_hostname }}"
+      is_disabled: "{{ antiblock_cdn_host_is_disabled | bool }}"
+      is_hidden: "{{ antiblock_cdn_host_is_hidden | bool }}"
+      override_sni_from_address: "{{ antiblock_cdn_host_override_sni_from_address | bool }}"
+      keep_sni_blank: "{{ antiblock_cdn_host_keep_sni_blank | bool }}"
+      shuffle_host: "{{ antiblock_cdn_host_shuffle_host | bool }}"
+      mihomo_x25519: "{{ antiblock_cdn_host_mihomo_x25519 | bool }}"
+    _abh_opts:
+      owner_tag: "{{ antiblock_cdn_host_owner_tag }}"
+      allow_writes: "{{ antiblock_cdn_hosts_allow_writes | bool }}"
+      prune: false
+  ansible.builtin.set_fact:
+    _abh_existing: "{{ (_abh_hosts_resp.json.response | default([])) | list }}"
+    _abh_desired: "{{ _abh_ctx | remnawave_antiblock_hosts_desired }}"
+    _abh_plan_opts: "{{ _abh_opts }}"
+  tags: [antiblock_cdn_hosts]
+
+- name: AntiBlock Hosts | Calculate plan
+  ansible.builtin.set_fact:
+    _abh_plan: "{{ _abh_existing | remnawave_antiblock_hosts_plan(_abh_desired, _abh_plan_opts) }}"
+  tags: [antiblock_cdn_hosts]
+
+- name: AntiBlock Hosts | Fail on ambiguous match or unmanaged transport drift
+  when: not (_abh_plan.ok | bool)
+  ansible.builtin.fail:
+    msg: "{{ _abh_plan.error }}"
+  tags: [antiblock_cdn_hosts]
+
+- name: AntiBlock Hosts | Show plan summary
+  ansible.builtin.debug:
+    msg:
+      summary: "{{ _abh_plan.summary }}"
+      allow_writes: "{{ antiblock_cdn_hosts_allow_writes | bool }}"
+      drift_fields: "{{ _abh_plan['items'] | map(attribute='drift_fields') | list }}"
+      actions: "{{ _abh_plan['items'] | map(attribute='action') | list }}"
+      addresses: "{{ _abh_plan['items'] | map(attribute='address') | list }}"
+  changed_when: false
+  tags: [antiblock_cdn_hosts]
+
+- name: AntiBlock Hosts | Apply POST/PATCH
+  when:
+    - antiblock_cdn_hosts_allow_writes | bool
+    - not ansible_check_mode
+    - (_abh_plan.writes | default([]) | length) > 0
+  tags: [antiblock_cdn_hosts]
+  block:
+    - name: AntiBlock Hosts | Write one Host
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}/hosts"
+        method: "{{ abh_write.method }}"
+        headers: "{{ _abh_headers }}"
+        body_format: json
+        body: "{{ abh_write.body }}"
+        status_code: "{{ [201] if abh_write.method == 'POST' else [200] }}"
+        return_content: true
+      loop: "{{ _abh_plan.writes }}"
+      loop_control:
+        loop_var: abh_write
+        label: "{{ abh_write.action }} {{ abh_write.drift_fields }} {{ abh_write.body.uuid | default(abh_write.body.address) }}"
+      register: _abh_write_results
+      changed_when: true
+
+    - name: AntiBlock Hosts | Re-GET /api/hosts after write
+      check_mode: false
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}/hosts"
+        method: GET
+        headers: "{{ _abh_headers }}"
+        return_content: true
+        status_code: [200]
+      register: _abh_hosts_verify_resp
+      changed_when: false
+
+    - name: AntiBlock Hosts | Verify after write
+      vars:
+        _abh_verify_opts: >-
+          {{
+            {
+              'owner_tag': antiblock_cdn_host_owner_tag
+            }
+            | combine(
+                {
+                  'expected_uuids': _abh_plan['items'] | map(attribute='uuid') | list
+                }
+                if (_abh_plan.create | int) == 0
+                else {}
+              )
+          }}
+      ansible.builtin.set_fact:
+        _abh_verify: >-
+          {{
+            (_abh_hosts_verify_resp.json.response | default([]))
+            | remnawave_antiblock_hosts_verify(_abh_desired, _abh_verify_opts)
+          }}
+
+    - name: AntiBlock Hosts | Assert verify after write
+      ansible.builtin.assert:
+        that:
+          - _abh_verify.ok | bool
+        fail_msg: "AntiBlock Host verify failed: {{ _abh_verify.errors }}"

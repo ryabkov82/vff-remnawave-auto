@@ -24,6 +24,7 @@ PER NODE  (one node = one Origin Group = one origin = one CDN Resource)
   Yandex Origin Group (exactly one origin, no backup, no round-robin)
   Yandex CDN Resource (cname = public hostname)
   public Cloudflare CNAME  →  resource.provider_cname
+  Remnawave Hosts (VFF:ANTIBLOCK, current Host API)
 ```
 
 Никакого общего origin pool. Никакого backup origin. Никакого round-robin между VPN nodes.
@@ -47,6 +48,7 @@ make antiblock-cdn
   +-- HAProxy extra SNI route (validate + reload)
   +-- Yandex Origin Group + CDN Resource (delegate_to localhost)
   +-- public Cloudflare CNAME → provider_cname
+  +-- Remnawave Hosts adopt/reconcile (VFF:ANTIBLOCK)
 ```
 
 Порядок plays обязателен: inbound должен существовать, прежде чем
@@ -104,8 +106,8 @@ make nodes LIMIT=de-fra-2 TAGS=register_node
 | Target | Что делает |
 |--------|------------|
 | `make antiblock-cdn-plan` | Только `ansible-playbook --syntax-check`. Без API. Ansible `--check` **не** используется: `uri` в Remnawave-ролях не является безопасным check-mode. |
-| `make antiblock-cdn` | Apply inbound + squads + origin DNS + HAProxy + Yandex CDN + public CNAME. |
-| `make antiblock-cdn-node HOST=…` | То же для одной ноды: `--limit panel:HOST`. HOST обязан быть в `[antiblock_cdn_nodes]`. Yandex CDN идёт через `delegate_to: localhost`, поэтому limit не пропускает cloud provisioning. `TAGS=antiblock_cdn_yandex` гоняет Yandex reconcile **и** public CNAME (`include_role apply.tags`); origin A / HAProxy / Remnawave не входят. |
+| `make antiblock-cdn` | Apply inbound + squads + origin DNS + HAProxy + Yandex CDN + public CNAME + Hosts. |
+| `make antiblock-cdn-node HOST=…` | То же для одной ноды: `--limit panel:HOST`. HOST обязан быть в `[antiblock_cdn_nodes]`. Yandex CDN идёт через `delegate_to: localhost`, поэтому limit не пропускает cloud provisioning. `TAGS=antiblock_cdn_yandex` гоняет Yandex reconcile **и** public CNAME (`include_role apply.tags`); origin A / HAProxy / Remnawave Hosts не входят. `TAGS=antiblock_cdn_hosts` — только Hosts (GET + plan; apply playbook ставит `allow_writes=true`). Plan: `EXTRA='-e antiblock_cdn_hosts_allow_writes=false'`. |
 | `make antiblock-cdn-node-plan HOST=…` | Membership check + syntax-check + **read-only** Yandex GET plan (`yandex_cdn_allow_writes=false`). Нет Cloudflare / HAProxy / Remnawave writes. Ansible `--check` не используется. |
 | `make antiblock-cdn-bootstrap-plan` | Syntax-check + dump desired certificate state. Без Yandex/Cloudflare writes. `--check` не используется. |
 | `make antiblock-cdn-bootstrap` | Apply: managed wildcard cert + Cloudflare DNS challenge. |
@@ -317,12 +319,30 @@ Wildcard certificate для новых нод должен быть `ISSUED`. Ab
 «Run make antiblock-cdn-bootstrap». VALIDATING/RENEWING → fail/pending,
 новый cert не создаётся.
 
-## Ещё не реализовано (этап 6)
+## Stage 6A — Remnawave AntiBlock Hosts
 
-Remnawave CDN Hosts пока **не** автоматизированы:
+Dedicated role `roles/remnawave_antiblock_hosts`. Обычный `remnawave_add_host`
+/ `make nodes` не меняется (`VFF:MANAGED` остаётся обычным ownership).
 
-- Host adoption / public hostname Host / Yandex ingress IP Hosts
-- маркер `VFF:ANTIBLOCK` / safe prune
+- Ownership: `antiblock_cdn_host_owner_tag: VFF:ANTIBLOCK` (не `VFF:MANAGED`).
+- Safe identity: `address + port + configProfileUuid + configProfileInboundUuid`.
+- Write guard: `antiblock_cdn_hosts_allow_writes` default `false`. Apply
+  playbook передаёт `true`. Plan = GET + diff, без POST/PATCH/DELETE.
+- Unmanaged exact transport → PATCH только `tags` (adoption).
+- Unmanaged transport drift → hard fail, без mutate.
+- `antiblock_cdn_hosts_prune: false`. DELETE в Stage 6A не реализован.
+- Desired addresses: `public_hostname` + `antiblock_cdn_ingress_ips`.
+- Shared `antiblock_cdn_host_xhttp_extra_params` (`xhttpExtraParams`,
+  `uplinkHTTPMethod`). Legacy `tag` / `xHttpExtraParams` / `allowInsecure`
+  не отправляются.
+- Узкий запуск: `make antiblock-cdn-node HOST=de-fra-2 TAGS=antiblock_cdn_hosts`.
+  `include_role apply.tags` обязателен. Node/inbound UUID резолвятся read-only
+  внутри роли, если tagged run пропустил `register_node`.
+
+## Ещё не реализовано (этап 6B+)
+
+- Safe prune stale `VFF:ANTIBLOCK` Hosts
+- Dynamic ingress discovery (сейчас static `antiblock_cdn_ingress_ips`)
 - CDN transport smoke / full xHTTP/VLESS smoke
 - удаление stale CDN resources / origin groups
 - миграция de-fra-2 certificate на shared wildcard
