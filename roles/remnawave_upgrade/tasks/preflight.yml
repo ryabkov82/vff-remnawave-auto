@@ -1,4 +1,9 @@
 ---
+# PRE-UPGRADE docker/compose preflight.
+# This cannot prove Remnawave 3.2.3 API scopes while the panel is still 2.7.4.
+# After Panel is on 3.2.3 and tokens have scopes, run: make remnawave-api-preflight
+# That post-upgrade preflight is NOT this file and is not wired into upgrade.
+
 - name: Require remnawave_release
   ansible.builtin.assert:
     that:

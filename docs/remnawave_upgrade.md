@@ -24,6 +24,69 @@ Remnawave Panel и Remnawave Nodes с учётом архитектурной о
 
 ---
 
+## Cutover 2.7.4 → 3.2.3 (API tokens / scopes)
+
+Remnawave 3.x вводит `ScopesGuard`. Токен без нужных resource scopes получит **403**
+на ACTIVE automation (`make nodes`, inbounds, hosts, squads, subpage configs).
+
+`make upgrade-remnawave` **не** выдаёт scopes и **не** запускает scope preflight.
+`roles/remnawave_upgrade/tasks/preflight.yml` — это docker/compose проверка **до** upgrade;
+на панели 2.7.4 она не может доказать 3.2.3 scopes.
+`make verify-remnawave` проверяет только `GET /system/health`, `GET /nodes`,
+`GET /system/nodes/metrics` — этого недостаточно для hosts / config-profiles / squads / subpage.
+
+### Обязательный порядок
+
+1. Backup DB / compose / env / snapshot.
+2. Upgrade Panel → 3.2.3 (`make upgrade-remnawave`).
+3. Убедиться, что DB migrations панели завершились.
+4. В Remnawave выдать **используемым API token** необходимые scopes (см. ниже).
+5. Выполнить `make remnawave-api-preflight`.
+6. Только после успешного preflight запускать новую automation (`make nodes`, inbounds, …).
+7. Затем smoke tests.
+
+**DO NOT run new vff-remnawave-auto mutations before token scopes are configured.**
+
+### Required production scopes
+
+Официальные имена: `remnawave/backend` tag 3.2.3
+`libs/contract/api/controllers-info.ts` + `buildResourceScope()` → `<resource>:*`.
+
+`resource:*` выбран сознательно: automation делает несколько read/write endpoint
+внутри ресурса. Успешный GET доказывает только read/list доступ
+(например `hosts:read` / `hosts:list` достаточно для `GET /hosts`).
+Write scope математически не доказывается без mutation — поэтому checklist обязателен.
+
+| token variable | required scopes |
+|---|---|
+| `remnawave_panel_api_token` | `hosts:*` `nodes:*` `config-profiles:*` `internal-squads:*` `system:read` |
+| `remnawave_inbounds_cache_api_token` | `config-profiles:*` |
+| `remnawave_external_squads_api_token` | `external-squads:*` `subscription-page-configs:*` |
+| `remnawave_subpage_config_api_token` | `subscription-page-configs:*` |
+
+`remnawave_external_squads` использует **один** token для `GET /external-squads`
+и `GET /subscription-page-configs`. `remnawave_subpage_config_api_token` — другая
+ACTIVE role/variable; её тоже нужно проверять отдельно.
+
+`remnawave_inbounds_cache_api_token` по умолчанию наследует panel token, но может
+быть переопределена — preflight делает отдельный `GET /config-profiles/inbounds`.
+
+Не предполагать, что разные variables содержат один и тот же secret.
+Если inventory мапит несколько vars на один physical token, этому token нужно
+**объединение scopes всех этих vars**. Preflight всё равно проверяет каждую
+variable отдельным GET.
+
+`system:read` покрывает `GET /system/health` (endpoint slug `system:remnawave-health`)
+и `GET /system/nodes/metrics` в upgrade verify.
+
+```bash
+make remnawave-api-preflight LIMIT=panel
+```
+
+Только GET. Не создаёт токены и не меняет Vault.
+
+---
+
 ## Общий сценарий обновления (upgrade flow)
 
 Обновление выполняется строго в следующем порядке:

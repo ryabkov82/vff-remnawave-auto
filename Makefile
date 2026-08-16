@@ -45,6 +45,7 @@ PLAY_MIGRATE_INBOUND ?= playbooks/migrate_inbound.yml
 PLAY_MIGRATE_HOSTS ?= playbooks/migrate_hosts.yml
 PLAY_MIGRATE_USERS ?= playbooks/migrate_users.yml
 PLAY_AUDIT_HOSTS ?= playbooks/audit_hosts.yml
+PLAY_API_PREFLIGHT ?= playbooks/remnawave_api_preflight.yml
 
 # Доп. флаги для ansible/ansible-playbook (например: --ask-vault-pass, -e var=val)
 ANSIBLE_FLAGS ?=
@@ -65,7 +66,7 @@ include .env
 export $(shell sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' .env)
 endif
 
-.PHONY: help bootstrap dns dns-plan dns-absent panel nodes hosts-audit hosts-plan haproxy up smoke smoke-docker site lint vault ping facts destroy upgrade upgrade-remnawave sub-next sub-next-check sub-next-nginx sub-next-nginx-check sub-next-config-check sub-next-config-plan sub-next-config-apply sub-next-full sub-portalbase sub-portalbase-check sub-cutover-check sub-cutover sub-rollback-check sub-rollback subpage-brands-check subpage-brands external-squads-check external-squads subscription-branding-check subscription-branding antiblock-cdn-plan antiblock-cdn antiblock-cdn-bootstrap-plan antiblock-cdn-bootstrap antiblock-cdn-node antiblock-cdn-node-plan
+.PHONY: help bootstrap dns dns-plan dns-absent panel nodes hosts-audit hosts-plan remnawave-api-preflight haproxy up smoke smoke-docker site lint vault ping facts destroy upgrade upgrade-remnawave sub-next sub-next-check sub-next-nginx sub-next-nginx-check sub-next-config-check sub-next-config-plan sub-next-config-apply sub-next-full sub-portalbase sub-portalbase-check sub-cutover-check sub-cutover sub-rollback-check sub-rollback subpage-brands-check subpage-brands external-squads-check external-squads subscription-branding-check subscription-branding antiblock-cdn-plan antiblock-cdn antiblock-cdn-bootstrap-plan antiblock-cdn-bootstrap antiblock-cdn-node antiblock-cdn-node-plan
 
 help: ## Показать справку по целям
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*##/: /' | sort
@@ -191,6 +192,12 @@ hosts-audit: ## Read-only аудит API Host (только GET; отчёты в
 	@#   make hosts-audit LIMIT=panel
 	@#   make hosts-audit LIMIT=panel ANSIBLE_FLAGS="--vault-password-file ~/.ansible/vault.pass"
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_AUDIT_HOSTS) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
+
+remnawave-api-preflight: ## Read-only Remnawave 3.2.3 API token/scope preflight (GET only)
+	@# После upgrade Panel до 3.2.3 и выдачи scopes — ДО mutating automation.
+	@#   make remnawave-api-preflight LIMIT=panel
+	@#   make remnawave-api-preflight LIMIT=panel ANSIBLE_FLAGS="--vault-password-file ~/.ansible/vault.pass"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_API_PREFLIGHT) $(LIMIT_FLAG) $(TAGS_FLAG) $(ANSIBLE_FLAGS) $(EXTRA)
 
 hosts-plan: ## Dry-run register_host (Ansible --check --diff; без production update)
 	@# Примеры:

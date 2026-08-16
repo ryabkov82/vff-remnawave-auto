@@ -1,0 +1,34 @@
+---
+# Read-only Remnawave 3.2.3 API scope/auth preflight.
+# Never POST/PATCH/DELETE. Never prints token values.
+
+remnawave_panel_api_base: "{{ (remnawave_panel_url | default('')) | ternary(remnawave_panel_url ~ '/api', '') }}"
+remnawave_panel_api_token: ""
+
+# Separate vars: do not assume they resolve to the same secret.
+# Match ACTIVE role defaults: external_squads and inbounds_cache inherit
+# the panel token; subscription_page_config does not (empty default).
+# remnawave_external_squads uses this token for BOTH
+# GET /external-squads and GET /subscription-page-configs.
+remnawave_external_squads_api_token: "{{ remnawave_panel_api_token | default('') }}"
+# remnawave_subscription_page_config uses this token (distinct role/variable).
+# Empty on purpose: do not mask a missing inventory/vault value with the panel token.
+remnawave_subpage_config_api_token: ""
+# remnawave_inbounds_cache may override this independently of the panel token.
+remnawave_inbounds_cache_api_token: "{{ remnawave_panel_api_token | default('') }}"
+
+remnawave_validate_certs: true
+
+# Official 3.2.3 resource names: remnawave/backend tag 3.2.3
+# libs/contract/api/controllers-info.ts + buildResourceScope() => "<resource>:*"
+# GET /system/health endpoint slug is system:remnawave-health (kind: read);
+# checklist uses system:read (action-level) because automation also GETs
+# /system/nodes/metrics on upgrade verify.
+rw_api_preflight_required_scopes:
+  - hosts:*
+  - nodes:*
+  - config-profiles:*
+  - internal-squads:*
+  - external-squads:*
+  - subscription-page-configs:*
+  - system:read
