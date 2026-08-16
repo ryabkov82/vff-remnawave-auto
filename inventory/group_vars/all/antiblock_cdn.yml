@@ -30,7 +30,11 @@ antiblock_cdn_origin_listen_timeout: 90
 
 antiblock_cdn_path: "/static/main/video/segment.ts/m0ce971085771"
 
-antiblock_cdn_ingress_ips:
+# Curated/manual AntiBlock CDN edge IP pool. This is the single source of
+# truth for every antiblock_cdn_nodes host. It is NOT DNS discovery and
+# NOT providerCname A records. Changing this list changes desired
+# Remnawave IP Hosts for all AntiBlock CDN nodes.
+antiblock_cdn_trusted_ingress_ips:
   - "188.72.111.7"
   - "188.72.111.19"
   - "188.72.111.35"

@@ -13,6 +13,7 @@ Stage 6A never DELETEs. Ownership is VFF:ANTIBLOCK, not VFF:MANAGED.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 from typing import Any
@@ -299,6 +300,35 @@ def select_address_port_candidates(
     return [host for host in existing if address_port_key(host) == key]
 
 
+def validate_trusted_ingress_ips(value: Any) -> list[str]:
+    """Fail-fast check for the curated IPv4 pool. No DNS, order preserved."""
+    if isinstance(value, (str, bytes)) or value is None:
+        raise ValueError("antiblock_cdn_trusted_ingress_ips must be a list")
+    if not isinstance(value, (list, tuple)):
+        # ansible-lint JinjaRule may pass a non-list mock; do not crash the linter.
+        return []
+    if len(value) == 0:
+        raise ValueError("antiblock_cdn_trusted_ingress_ips must not be empty")
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        if item is None:
+            raise ValueError("antiblock_cdn_trusted_ingress_ips contains an empty value")
+        text = str(item).strip()
+        try:
+            parsed = ipaddress.IPv4Address(text)
+        except (ipaddress.AddressValueError, ValueError) as exc:
+            raise ValueError(
+                f"antiblock_cdn_trusted_ingress_ips must contain only IPv4 addresses: {text!r}"
+            ) from exc
+        ip = str(parsed)
+        if ip in seen:
+            raise ValueError(f"antiblock_cdn_trusted_ingress_ips has duplicate IP: {ip}")
+        out.append(ip)
+        seen.add(ip)
+    return out
+
+
 def desired_remark(inventory_hostname: str, address: str, public_hostname: str, index: int) -> str:
     """Deterministic remark for future Hosts. Adoption never renames existing ones."""
     host = str(inventory_hostname or "").strip() or str(public_hostname or "").strip() or address
@@ -312,7 +342,9 @@ def build_desired_antiblock_hosts(ctx: dict[str, Any]) -> list[dict[str, Any]]:
     public_hostname = str(ctx.get("public_hostname") or "").strip()
     if not public_hostname:
         raise ValueError("public_hostname is required")
-    ingress_ips = [str(item).strip() for item in _as_list(ctx.get("ingress_ips")) if str(item).strip()]
+    if "ingress_ips" in ctx:
+        raise ValueError("ingress_ips is not supported; use trusted_ingress_ips")
+    ingress_ips = validate_trusted_ingress_ips(ctx.get("trusted_ingress_ips"))
     addresses: list[str] = []
     seen: set[str] = set()
     for address in [public_hostname, *ingress_ips]:

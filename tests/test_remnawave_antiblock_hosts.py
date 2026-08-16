@@ -30,7 +30,16 @@ ADD_HOST_DEFAULTS = yaml.safe_load((ADD_HOST / "defaults/main.yml").read_text(en
 ADD_HOST_MAIN = (ADD_HOST / "tasks/main.yml").read_text(encoding="utf-8")
 ADD_HOST_ENSURE = (ADD_HOST / "tasks/ensure_host.yml").read_text(encoding="utf-8")
 ANTIBLOCK_VARS = yaml.safe_load(ANTIBLOCK_VARS_PATH.read_text(encoding="utf-8"))
+GROUP_CDN = yaml.safe_load(GROUP_CDN_NODES.read_text(encoding="utf-8"))
+HOST_DE_FRA_2_VARS = yaml.safe_load(HOST_DE_FRA_2.read_text(encoding="utf-8"))
 PLAY_RAW = PLAY.read_text(encoding="utf-8")
+SCRIPT = (REPO / "scripts/remnawave_antiblock_hosts.py").read_text(encoding="utf-8")
+TRUSTED_POOL = [
+    "188.72.111.7",
+    "188.72.111.19",
+    "188.72.111.35",
+    "188.72.103.4",
+]
 FILTER_PLUGIN = (
     ROLE / "filter_plugins/remnawave_antiblock_hosts.py"
 ).read_text(encoding="utf-8")
@@ -81,7 +90,7 @@ XHTTP = ANTIBLOCK_VARS["antiblock_cdn_host_xhttp_extra_params"]
 def _ctx(**overrides: object) -> dict:
     data = {
         "public_hostname": "cdn-lab.digitalstreamers.xyz",
-        "ingress_ips": [
+        "trusted_ingress_ips": [
             "188.72.111.7",
             "188.72.111.19",
             "188.72.111.35",
@@ -504,17 +513,11 @@ class InventoryAndRoleContractTests(unittest.TestCase):
         self.assertFalse(ANTIBLOCK_VARS["antiblock_cdn_hosts_prune"])
         self.assertEqual(ANTIBLOCK_VARS["antiblock_cdn_host_owner_tag"], OWNER)
 
-    def test_desired_addresses_hostname_then_ingress_ips(self) -> None:
+    def test_desired_addresses_hostname_then_trusted_pool(self) -> None:
         desired = _desired()
         self.assertEqual(
             [item["address"] for item in desired],
-            [
-                "cdn-lab.digitalstreamers.xyz",
-                "188.72.111.7",
-                "188.72.111.19",
-                "188.72.111.35",
-                "188.72.103.4",
-            ],
+            ["cdn-lab.digitalstreamers.xyz", *TRUSTED_POOL],
         )
         self.assertTrue(all(item["port"] == 443 for item in desired))
         self.assertTrue(all(item["sni"] == "cdn-lab.digitalstreamers.xyz" for item in desired))
@@ -539,6 +542,131 @@ class InventoryAndRoleContractTests(unittest.TestCase):
     def test_empty_tags_are_not_owned(self) -> None:
         self.assertFalse(abh.is_antiblock_owned({"tags": []}, OWNER))
         self.assertFalse(abh.is_antiblock_owned({"tag": OWNER}, OWNER))
+
+
+def _repo_files_containing(needle: str) -> list[str]:
+    skip_dirs = {".git", ".venv", ".ansible", "__pycache__", "node_modules"}
+    suffixes = {".yml", ".yaml", ".py", ".md", ".j2"}
+    hits: list[str] = []
+    for path in REPO.rglob("*"):
+        if not path.is_file():
+            continue
+        if any(part in skip_dirs for part in path.parts):
+            continue
+        if path.suffix not in suffixes and path.name != "Makefile":
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        if needle in text:
+            hits.append(str(path.relative_to(REPO)))
+    return hits
+
+
+class TrustedIngressPoolTests(unittest.TestCase):
+    def test_01_global_source_of_truth_name(self) -> None:
+        self.assertEqual(ANTIBLOCK_VARS["antiblock_cdn_trusted_ingress_ips"], TRUSTED_POOL)
+        self.assertNotIn("antiblock_cdn_ingress_ips", ANTIBLOCK_VARS)
+        self.assertIn("antiblock_cdn_trusted_ingress_ips", ROLE_TASKS)
+        self.assertIn("trusted_ingress_ips", ROLE_TASKS)
+        self.assertIn("remnawave_antiblock_trusted_ingress_ips", ROLE_TASKS)
+
+    def test_02_old_ingress_ips_name_unused(self) -> None:
+        leftovers = [
+            path
+            for path in _repo_files_containing("antiblock_cdn_ingress_ips")
+            if path != "tests/test_remnawave_antiblock_hosts.py"
+        ]
+        self.assertEqual(leftovers, [])
+        self.assertNotIn("antiblock_cdn_ingress_ips", ROLE_TASKS)
+        with self.assertRaises(ValueError) as ctx:
+            _desired(ingress_ips=TRUSTED_POOL)
+        self.assertIn("trusted_ingress_ips", str(ctx.exception))
+
+    def test_03_de_fra_2_desired_addresses_exact(self) -> None:
+        self.assertEqual(
+            HOST_DE_FRA_2_VARS["antiblock_cdn_node"]["public_hostname"],
+            "cdn-lab.digitalstreamers.xyz",
+        )
+        self.assertNotIn("antiblock_cdn_trusted_ingress_ips", HOST_DE_FRA_2_VARS)
+        self.assertEqual(
+            [item["address"] for item in _desired()],
+            [
+                "cdn-lab.digitalstreamers.xyz",
+                "188.72.111.7",
+                "188.72.111.19",
+                "188.72.111.35",
+                "188.72.103.4",
+            ],
+        )
+
+    def test_04_generic_node_uses_derived_hostname_and_central_pool(self) -> None:
+        self.assertEqual(
+            GROUP_CDN["antiblock_cdn_node"]["public_hostname"],
+            "{{ inventory_hostname }}.cdn.digitalstreamers.xyz",
+        )
+        self.assertNotIn("antiblock_cdn_trusted_ingress_ips", GROUP_CDN)
+        desired = _desired(
+            public_hostname="de-fra-3.cdn.digitalstreamers.xyz",
+            sni="de-fra-3.cdn.digitalstreamers.xyz",
+            host="de-fra-3.cdn.digitalstreamers.xyz",
+            inventory_hostname="de-fra-3",
+            trusted_ingress_ips=ANTIBLOCK_VARS["antiblock_cdn_trusted_ingress_ips"],
+        )
+        self.assertEqual(
+            [item["address"] for item in desired],
+            ["de-fra-3.cdn.digitalstreamers.xyz", *TRUSTED_POOL],
+        )
+
+    def test_05_duplicate_ip_fails(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            abh.validate_trusted_ingress_ips(["188.72.111.7", "188.72.111.7"])
+        self.assertIn("duplicate", str(ctx.exception))
+        with self.assertRaises(ValueError):
+            _desired(trusted_ingress_ips=["188.72.111.7", "188.72.111.19", "188.72.111.7"])
+
+    def test_06_invalid_ipv4_fails(self) -> None:
+        for bad in ("cdn-lab.digitalstreamers.xyz", "188.72.111", "2001:db8::1", "not-an-ip"):
+            with self.assertRaises(ValueError, msg=bad):
+                abh.validate_trusted_ingress_ips([bad])
+
+    def test_07_empty_pool_fails(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            abh.validate_trusted_ingress_ips([])
+        self.assertIn("empty", str(ctx.exception))
+        with self.assertRaises(ValueError):
+            abh.validate_trusted_ingress_ips(None)
+        with self.assertRaises(ValueError):
+            _desired(trusted_ingress_ips=[])
+
+    def test_08_order_preserved(self) -> None:
+        self.assertEqual(
+            abh.validate_trusted_ingress_ips(list(TRUSTED_POOL)),
+            TRUSTED_POOL,
+        )
+        desired = _desired(trusted_ingress_ips=TRUSTED_POOL)
+        self.assertEqual([item["address"] for item in desired][1:], TRUSTED_POOL)
+
+    def test_09_no_providercname_or_dns_discovery(self) -> None:
+        for blob in (ROLE_TASKS, SCRIPT, FILTER_PLUGIN):
+            self.assertNotIn("providerCname", blob)
+            self.assertNotIn("provider_cname", blob)
+            self.assertNotIn("getaddrinfo", blob)
+            self.assertNotIn("gethostbyname", blob)
+            self.assertNotIn("dns.resolver", blob)
+        self.assertIn("curated", ANTIBLOCK_VARS_PATH.read_text(encoding="utf-8").lower())
+
+    def test_10_prune_remains_disabled(self) -> None:
+        self.assertFalse(ANTIBLOCK_VARS["antiblock_cdn_hosts_prune"])
+        self.assertFalse(ROLE_DEFAULTS["antiblock_cdn_hosts_prune"])
+        self.assertNotIn("method: DELETE", ROLE_TASKS)
+        adopted = _de_fra_2_existing(tags=[OWNER])
+        plan = abh.plan_antiblock_hosts(_desired(), adopted, owner_tag=OWNER)
+        self.assertEqual(plan["delete"], 0)
+        self.assertEqual(plan["update"], 0)
+        self.assertEqual(plan["summary"],
+            "desired=5 matched=5 create=0 update=0 adopt=0 delete=0 ambiguous=0")
 
 
 DICT_METHOD_KEYS = ("items", "keys", "values", "get", "update", "copy")
