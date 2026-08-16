@@ -1,17 +1,9 @@
 ---
-# Stage 6A/6B.1: plan / adopt / create Remnawave AntiBlock Hosts.
+# Stage 6A/6B.2: plan / adopt / create Remnawave AntiBlock Hosts,
+# then optionally DELETE prune_eligible stale Hosts.
 # Safe identity: address + port + configProfileUuid + configProfileInboundUuid.
-# Default allow_writes=false: GET + diff only. Host removal is not implemented.
-# Stage 6B.1 classifies stale owned Hosts; DELETE is not implemented.
-
-- name: AntiBlock Hosts | Assert Stage 6A prune is disabled
-  ansible.builtin.assert:
-    that:
-      - not (antiblock_cdn_hosts_prune | bool)
-    fail_msg: >-
-      antiblock_cdn_hosts_prune is not supported in Stage 6B.1.
-      Host removal is not implemented. Safe DELETE is Stage 6B.2.
-  tags: [antiblock_cdn_hosts]
+# Default allow_writes=false: GET + diff only. DELETE also needs prune=true.
+# Desired verify is the DELETE gate. No third user-facing flag.
 
 - name: AntiBlock Hosts | Assert required inputs
   ansible.builtin.assert:
@@ -160,7 +152,7 @@
     _abh_opts:
       owner_tag: "{{ antiblock_cdn_host_owner_tag }}"
       allow_writes: "{{ antiblock_cdn_hosts_allow_writes | bool }}"
-      prune: false
+      prune: "{{ antiblock_cdn_hosts_prune | bool }}"
       node_uuid: "{{ _abh_node_uuid }}"
       profile_uuid: "{{ _abh_profile_uuid }}"
       inbound_uuid: "{{ _abh_inbound_uuid }}"
@@ -187,6 +179,7 @@
     msg:
       summary: "{{ _abh_plan.summary }}"
       allow_writes: "{{ antiblock_cdn_hosts_allow_writes | bool }}"
+      prune: "{{ antiblock_cdn_hosts_prune | bool }}"
       drift_fields: "{{ _abh_plan['items'] | map(attribute='drift_fields') | list }}"
       actions: "{{ _abh_plan['items'] | map(attribute='action') | list }}"
       addresses: "{{ _abh_plan['items'] | map(attribute='address') | list }}"
@@ -198,6 +191,7 @@
           | map(attribute='address')
           | list
         }}
+      delete_addresses: "{{ _abh_plan['delete_items'] | map(attribute='address') | list }}"
       prune_blocked: >-
         {{
           _abh_plan['stale_items']
@@ -217,10 +211,9 @@
     - name: AntiBlock Hosts | Refuse any DELETE write
       ansible.builtin.assert:
         that:
-          - (_abh_plan.delete | default(0) | int) == 0
           - (_abh_plan.writes | selectattr('method', 'equalto', 'DELETE') | list | length) == 0
           - (_abh_plan.writes | selectattr('method', 'equalto', 'delete') | list | length) == 0
-        fail_msg: Stage 6B.1 must never emit DELETE writes.
+        fail_msg: AntiBlock Host writes must stay POST/PATCH. DELETE uses delete_items.
 
     - name: AntiBlock Hosts | Write one Host
       ansible.builtin.uri:
@@ -249,7 +242,29 @@
       register: _abh_hosts_verify_resp
       changed_when: false
 
-    - name: AntiBlock Hosts | Verify after write
+    - name: AntiBlock Hosts | Use post-write Host list for desired verify
+      ansible.builtin.set_fact:
+        _abh_desired_verify_hosts: "{{ _abh_hosts_verify_resp.json.response | default([]) }}"
+
+- name: AntiBlock Hosts | Reuse initial GET for prune-only desired verify
+  when:
+    - antiblock_cdn_hosts_allow_writes | bool
+    - not ansible_check_mode
+    - (_abh_plan.writes | default([]) | length) == 0
+    - antiblock_cdn_hosts_prune | bool
+    - (_abh_plan['delete_items'] | default([]) | length) > 0
+  ansible.builtin.set_fact:
+    _abh_desired_verify_hosts: "{{ _abh_existing }}"
+  tags: [antiblock_cdn_hosts]
+
+- name: AntiBlock Hosts | Verify desired Hosts
+  when:
+    - antiblock_cdn_hosts_allow_writes | bool
+    - not ansible_check_mode
+    - _abh_desired_verify_hosts is defined
+  tags: [antiblock_cdn_hosts]
+  block:
+    - name: AntiBlock Hosts | Calculate desired verify
       vars:
         _abh_verify_opts: >-
           {{
@@ -265,14 +280,117 @@
               )
           }}
       ansible.builtin.set_fact:
-        _abh_verify: >-
+        _abh_desired_verify: >-
           {{
-            (_abh_hosts_verify_resp.json.response | default([]))
+            _abh_desired_verify_hosts
             | remnawave_antiblock_hosts_verify(_abh_desired, _abh_verify_opts)
           }}
 
-    - name: AntiBlock Hosts | Assert verify after write
+    - name: AntiBlock Hosts | Assert desired Hosts verified
       ansible.builtin.assert:
         that:
-          - _abh_verify.ok | bool
-        fail_msg: "AntiBlock Host verify failed: {{ _abh_verify.errors }}"
+          - _abh_desired_verify.ok | bool
+        fail_msg: "AntiBlock Host desired verify failed: {{ _abh_desired_verify.errors }}"
+
+- name: AntiBlock Hosts | Delete stale Hosts
+  when:
+    - antiblock_cdn_hosts_allow_writes | bool
+    - antiblock_cdn_hosts_prune | bool
+    - not ansible_check_mode
+    - (_abh_plan['delete_items'] | default([]) | length) > 0
+    - _abh_desired_verify is defined
+    - _abh_desired_verify.ok | bool
+  tags: [antiblock_cdn_hosts]
+  block:
+    - name: AntiBlock Hosts | Assert delete item invariants
+      vars:
+        _abh_delete_opts:
+          owner_tag: "{{ antiblock_cdn_host_owner_tag }}"
+          node_uuid: "{{ _abh_node_uuid }}"
+          public_hostname: "{{ antiblock_cdn_node.public_hostname }}"
+      ansible.builtin.set_fact:
+        _abh_delete_items: "{{ _abh_plan['delete_items'] | remnawave_antiblock_hosts_assert_delete(_abh_delete_opts) }}"
+
+    - name: AntiBlock Hosts | Assert delete item fields
+      ansible.builtin.assert:
+        that:
+          - (abh_delete.uuid | default('') | length) > 0
+          - abh_delete.prune_eligible | bool
+          - abh_delete.address != antiblock_cdn_node.public_hostname
+          - abh_delete.tags == [antiblock_cdn_host_owner_tag]
+          - abh_delete.nodes == [_abh_node_uuid]
+        fail_msg: >-
+          Refusing DELETE for {{ abh_delete.address }} {{ abh_delete.uuid }}:
+          delete item failed classification invariants.
+      loop: "{{ _abh_plan['delete_items'] }}"
+      loop_control:
+        loop_var: abh_delete
+        label: "{{ abh_delete.address }} {{ abh_delete.uuid }}"
+
+    - name: AntiBlock Hosts | Delete stale Host
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}/hosts/{{ item.uuid }}"
+        method: DELETE
+        headers: "{{ _abh_headers }}"
+        status_code: [204]
+      loop: "{{ _abh_plan['delete_items'] }}"
+      loop_control:
+        label: "delete {{ item.address }} {{ item.uuid }}"
+      register: _abh_delete_results
+      changed_when: true
+
+    - name: AntiBlock Hosts | Re-GET /api/hosts after delete
+      check_mode: false
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}/hosts"
+        method: GET
+        headers: "{{ _abh_headers }}"
+        return_content: true
+        status_code: [200]
+      register: _abh_hosts_final_resp
+      changed_when: false
+
+    - name: AntiBlock Hosts | Verify after delete
+      vars:
+        _abh_final_hosts: "{{ _abh_hosts_final_resp.json.response | default([]) }}"
+        _abh_final_verify_opts: >-
+          {{
+            {
+              'owner_tag': antiblock_cdn_host_owner_tag
+            }
+            | combine(
+                {
+                  'expected_uuids': _abh_plan['items'] | map(attribute='uuid') | list
+                }
+                if (_abh_plan.create | int) == 0
+                else {}
+              )
+          }}
+      ansible.builtin.set_fact:
+        _abh_final_hosts: "{{ _abh_final_hosts }}"
+        _abh_final_verify: "{{ _abh_final_hosts | remnawave_antiblock_hosts_verify(_abh_desired, _abh_final_verify_opts) }}"
+        _abh_final_deleted: "{{ _abh_final_hosts | remnawave_antiblock_hosts_verify_deleted(_abh_plan['delete_items']) }}"
+        _abh_final_plan: "{{ _abh_final_hosts | remnawave_antiblock_hosts_plan(_abh_desired, _abh_plan_opts) }}"
+
+    - name: AntiBlock Hosts | Assert post-delete verification
+      ansible.builtin.assert:
+        that:
+          - _abh_final_verify.ok | bool
+          - _abh_final_deleted.ok | bool
+          - (_abh_final_plan.prune_eligible | int) == 0
+        fail_msg: >-
+          AntiBlock Host post-delete verify failed:
+          desired={{ _abh_final_verify.errors }}
+          deleted={{ _abh_final_deleted.errors }}
+          prune_eligible={{ _abh_final_plan.prune_eligible }}
+
+    - name: AntiBlock Hosts | Show final summary after delete
+      ansible.builtin.debug:
+        msg:
+          summary: "{{ _abh_final_plan.summary }}"
+          deleted_addresses: "{{ _abh_plan['delete_items'] | map(attribute='address') | list }}"
+          deleted_uuids: "{{ _abh_plan['delete_items'] | map(attribute='uuid') | list }}"
+          stale_addresses: "{{ _abh_final_plan['stale_items'] | map(attribute='address') | list }}"
+          prune_eligible: "{{ _abh_final_plan.prune_eligible }}"
+          prune_blocked: "{{ _abh_final_plan.prune_blocked }}"
+      changed_when: false

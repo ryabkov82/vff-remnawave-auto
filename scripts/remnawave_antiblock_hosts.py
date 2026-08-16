@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
-"""Remnawave AntiBlock Host plan / adopt / create helpers (current Host API).
+"""Remnawave AntiBlock Host plan / adopt / create / prune helpers (current Host API).
 
 Current Remnawave Host contract (not 2.7.4):
   ownership field: tags[]  (never singular tag)
   xHTTP params:    xhttpExtraParams  (never xHttpExtraParams / XHttpExtraParams)
   PATCH /api/hosts is partial: uuid required, other fields optional
   POST  /api/hosts creates
+  DELETE /api/hosts/{uuid} removes one Host (204 No Content, no body)
   allowInsecure is not part of the current Create/Update Host schema
 
-Stage 6A/6B.1 never DELETEs. Ownership is VFF:ANTIBLOCK, not VFF:MANAGED.
-Stage 6B.1 classifies stale owned Hosts; prune=true is still rejected.
+Ownership is VFF:ANTIBLOCK, not VFF:MANAGED.
+Stage 6B.1 classifies stale owned Hosts (prune_eligible / prune_blocked).
+Stage 6B.2 plans DELETE of prune_eligible rows when prune=true.
+Actual HTTP DELETE is executed only by the role when allow_writes and prune
+are both true, and only after desired Host verification succeeds.
+Writes stay POST/PATCH; delete_items is a separate collection.
 """
 
 from __future__ import annotations
@@ -494,7 +499,7 @@ def classify_prune_eligibility(
     node_uuid: str,
     public_hostname: str,
 ) -> tuple[bool, str | None]:
-    """Conservative future-prune eligibility. Never implies a DELETE write."""
+    """Conservative prune eligibility. Does not emit a DELETE by itself."""
     uuid = str(host.get("uuid") or "").strip()
     if not uuid:
         return False, "missing_uuid"
@@ -520,7 +525,7 @@ def classify_stale_hosts(
     inbound_uuid: str,
     public_hostname: str,
 ) -> list[dict[str, Any]]:
-    """Stale VFF:ANTIBLOCK Hosts for the current node/inbound only. No DELETE."""
+    """Stale VFF:ANTIBLOCK Hosts for the current node/inbound only."""
     desired_identities = {identity_key(item) for item in desired}
     stale_items: list[dict[str, Any]] = []
     for host in existing:
@@ -564,6 +569,114 @@ def _format_identity(key: tuple[str, int, str, str]) -> str:
     )
 
 
+def build_delete_items(stale_items: list[dict[str, Any]], *, prune: bool) -> list[dict[str, Any]]:
+    """prune_eligible rows only. Empty when prune=false. Never includes prune_blocked."""
+    if not prune:
+        return []
+    delete_items: list[dict[str, Any]] = []
+    for row in stale_items:
+        if not row.get("prune_eligible"):
+            continue
+        uuid = str(row.get("uuid") or "").strip()
+        delete_items.append(
+            {
+                "uuid": uuid,
+                "address": row.get("address"),
+                "port": row.get("port"),
+                "identity": row.get("identity"),
+                "tags": list(row.get("tags") or []),
+                "nodes": list(row.get("nodes") or []),
+                "prune_eligible": True,
+                "block_reason": None,
+                "method": "DELETE",
+                "path": f"/api/hosts/{uuid}",
+            }
+        )
+    return delete_items
+
+
+def assert_delete_item_invariants(
+    item: dict[str, Any],
+    *,
+    owner_tag: str,
+    node_uuid: str,
+    public_hostname: str,
+) -> None:
+    """Defense-in-depth before DELETE. Raises ValueError on any violation."""
+    uuid = str(item.get("uuid") or "").strip()
+    if not uuid:
+        raise ValueError("delete item missing uuid")
+    if item.get("prune_eligible") is not True:
+        raise ValueError(f"delete item uuid={uuid} is not prune_eligible")
+    address = str(item.get("address") or "").strip()
+    if not is_ipv4_address(address):
+        raise ValueError(f"delete item uuid={uuid} address={address!r} is not IPv4")
+    if public_hostname and address == str(public_hostname).strip():
+        raise ValueError(f"delete item uuid={uuid} address is public_hostname")
+    tags = normalize_host_tags({"tags": item.get("tags")})
+    if tags != [owner_tag]:
+        raise ValueError(f"delete item uuid={uuid} tags={tags} are not exactly [{owner_tag}]")
+    nodes = normalize_node_uuids(item.get("nodes"))
+    if nodes != [node_uuid]:
+        raise ValueError(f"delete item uuid={uuid} nodes={nodes} are not exactly [{node_uuid}]")
+
+
+def assert_delete_items_from_filter(
+    items: Any,
+    opts: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Validate planned delete_items. ansible-lint mocks that are not a list become []."""
+    if not isinstance(items, (list, tuple)):
+        return []
+    options = opts or {}
+    owner_tag = str(options.get("owner_tag") or OWNER_TAG_DEFAULT)
+    node_uuid = str(options.get("node_uuid") or "")
+    public_hostname = str(options.get("public_hostname") or "")
+    validated: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            raise ValueError("delete item must be a mapping")
+        assert_delete_item_invariants(
+            item,
+            owner_tag=owner_tag,
+            node_uuid=node_uuid,
+            public_hostname=public_hostname,
+        )
+        validated.append(item)
+    return validated
+
+
+def verify_deleted_uuids_absent(
+    existing: list[dict[str, Any]],
+    delete_items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Fail if any planned delete UUID is still present after DELETE."""
+    remaining = {str(host.get("uuid") or "").strip() for host in existing}
+    remaining.discard("")
+    present: list[str] = []
+    for item in delete_items:
+        uuid = str(item.get("uuid") or "").strip()
+        if uuid and uuid in remaining:
+            present.append(uuid)
+    errors = [f"deleted uuid still present: {uuid}" for uuid in present]
+    return {
+        "ok": not errors,
+        "errors": errors,
+        "present_uuids": present,
+    }
+
+
+def verify_deleted_from_filter(
+    existing: Any,
+    delete_items: Any,
+    opts: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    del opts
+    if not isinstance(existing, (list, tuple)) or not isinstance(delete_items, (list, tuple)):
+        return {"ok": True, "errors": [], "present_uuids": []}
+    return verify_deleted_uuids_absent(list(existing), list(delete_items))
+
+
 def plan_antiblock_hosts(
     desired: list[dict[str, Any]],
     existing: list[dict[str, Any]],
@@ -576,10 +689,7 @@ def plan_antiblock_hosts(
     inbound_uuid: str = "",
     public_hostname: str = "",
 ) -> dict[str, Any]:
-    """Plan adopt / create / managed reconcile. Classify stale Hosts. Never DELETE."""
-    if prune:
-        raise ValueError("antiblock_cdn_hosts_prune is not supported in Stage 6B.1")
-
+    """Plan adopt / create / managed reconcile and optional prune_eligible DELETE."""
     items: list[dict[str, Any]] = []
     errors: list[str] = []
     writes: list[dict[str, Any]] = []
@@ -712,7 +822,7 @@ def plan_antiblock_hosts(
 
     for write in writes:
         if str(write.get("method") or "").upper() == "DELETE":
-            raise ValueError("AntiBlock Host plan must never emit DELETE")
+            raise ValueError("AntiBlock Host plan writes must never include DELETE")
         assert_current_api_payload(write["body"], kind=write["action"])
 
     stale_items = classify_stale_hosts(
@@ -726,17 +836,19 @@ def plan_antiblock_hosts(
     )
     prune_eligible = sum(1 for row in stale_items if row.get("prune_eligible"))
     prune_blocked = len(stale_items) - prune_eligible
+    delete_items = build_delete_items(stale_items, prune=prune)
+    delete_count = len(delete_items)
 
     ok = not errors
     summary = (
         f"desired={len(desired)} matched={matched} create={create} "
         f"update={update} adopt={adopt} stale={len(stale_items)} "
         f"prune_eligible={prune_eligible} prune_blocked={prune_blocked} "
-        f"delete=0 ambiguous={ambiguous}"
+        f"delete={delete_count} ambiguous={ambiguous}"
     )
     safe_writes = writes if (allow_writes and ok) else []
     if any(str(item.get("method") or "").upper() == "DELETE" for item in safe_writes):
-        raise ValueError("AntiBlock Host plan must never emit DELETE")
+        raise ValueError("AntiBlock Host plan writes must never include DELETE")
     return {
         "ok": ok,
         "error": "; ".join(errors) if errors else None,
@@ -750,13 +862,14 @@ def plan_antiblock_hosts(
         "stale": len(stale_items),
         "prune_eligible": prune_eligible,
         "prune_blocked": prune_blocked,
-        "delete": 0,
+        "delete": delete_count,
         "ambiguous": ambiguous,
         "items": items,
         "stale_items": stale_items,
+        "delete_items": delete_items,
         "writes": safe_writes,
         "allow_writes": bool(allow_writes),
-        "prune": False,
+        "prune": bool(prune),
     }
 
 

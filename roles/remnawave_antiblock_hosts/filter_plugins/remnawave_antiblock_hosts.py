@@ -14,7 +14,7 @@ import remnawave_antiblock_hosts as _lib  # noqa: E402
 
 
 class FilterModule:
-    """Current-API AntiBlock Host helpers. No DELETE. Stage 6B.1 classifies stale only."""
+    """Current-API AntiBlock Host helpers. DELETE stays in the role after desired verify."""
 
     def filters(self) -> dict[str, Any]:
         return {
@@ -22,4 +22,6 @@ class FilterModule:
             "remnawave_antiblock_hosts_desired": _lib.build_desired_antiblock_hosts,
             "remnawave_antiblock_hosts_plan": _lib.plan_from_filter,
             "remnawave_antiblock_hosts_verify": _lib.verify_from_filter,
+            "remnawave_antiblock_hosts_assert_delete": _lib.assert_delete_items_from_filter,
+            "remnawave_antiblock_hosts_verify_deleted": _lib.verify_deleted_from_filter,
         }

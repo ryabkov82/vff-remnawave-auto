@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage 6A regression tests for Remnawave AntiBlock Hosts (current API)."""
+"""Stage 6A/6B regression tests for Remnawave AntiBlock Hosts (current API)."""
 
 from __future__ import annotations
 
@@ -463,14 +463,17 @@ class PlanPruneOwnershipTests(unittest.TestCase):
         plan = abh.plan_antiblock_hosts(_desired(), _de_fra_2_existing(), owner_tag=OWNER)
         self.assertEqual(plan["delete"], 0)
         self.assertFalse(plan["prune"])
-        self.assertNotIn("method: DELETE", ROLE_TASKS)
-        self.assertNotIn("method: delete", ROLE_TASKS.lower())
+        self.assertEqual(plan["delete_items"], [])
         self.assertIn("antiblock_cdn_hosts_prune", ROLE_TASKS)
-        self.assertIn("not (antiblock_cdn_hosts_prune | bool)", ROLE_TASKS)
-        with self.assertRaises(ValueError) as ctx:
-            abh.plan_antiblock_hosts(_desired(), [], owner_tag=OWNER, prune=True)
-        self.assertIn("Stage 6B.1", str(ctx.exception))
-        self.assertNotIn("method: DELETE", SCRIPT)
+        zero = abh.plan_antiblock_hosts(
+            _desired(),
+            _de_fra_2_existing(tags=[OWNER]),
+            owner_tag=OWNER,
+            prune=True,
+        )
+        self.assertTrue(zero["prune"])
+        self.assertEqual(zero["delete"], 0)
+        self.assertEqual(zero["delete_items"], [])
 
     def test_20_vff_managed_is_never_antiblock_ownership(self) -> None:
         host = _existing_host(DE_FRA_2_HOSTS[0], tags=[MANAGED])
@@ -558,6 +561,7 @@ class InventoryAndRoleContractTests(unittest.TestCase):
         node = MAKEFILE[MAKEFILE.find("antiblock-cdn-node:") : MAKEFILE.find("antiblock-cdn-node-plan:")]
         self.assertIn("TAGS=antiblock_cdn_hosts", node)
         self.assertIn("antiblock_cdn_hosts_allow_writes=false", node)
+        self.assertIn("antiblock_cdn_hosts_prune=true", node)
         self.assertNotIn("remnawave_add_host", node)
 
     def test_second_plan_after_adopt_is_noop(self) -> None:
@@ -693,7 +697,7 @@ class TrustedIngressPoolTests(unittest.TestCase):
     def test_10_prune_remains_disabled(self) -> None:
         self.assertFalse(ANTIBLOCK_VARS["antiblock_cdn_hosts_prune"])
         self.assertFalse(ROLE_DEFAULTS["antiblock_cdn_hosts_prune"])
-        self.assertNotIn("method: DELETE", ROLE_TASKS)
+        self.assertNotIn("antiblock_cdn_hosts_allow_delete", ROLE_TASKS)
         adopted = _de_fra_2_existing(tags=[OWNER])
         plan = abh.plan_antiblock_hosts(_desired(), adopted, owner_tag=OWNER)
         self.assertEqual(plan["delete"], 0)
@@ -884,13 +888,20 @@ class StalePrunePlanTests(unittest.TestCase):
         self.assertEqual(ROLE_DEFAULTS["antiblock_cdn_host_owner_tag"], OWNER)
         self.assertEqual(ADD_HOST_DEFAULTS["rw_host_managed_tag"], MANAGED)
 
-    def test_17_no_delete_method_in_role_or_helper(self) -> None:
-        self.assertNotIn("method: DELETE", ROLE_TASKS)
-        self.assertNotIn("method: DELETE", SCRIPT)
-        self.assertNotRegex(ROLE_TASKS, r"^\s+method:\s*DELETE\s*$", msg=ROLE_TASKS)
-        self.assertIn("must never emit DELETE", SCRIPT)
+    def test_17_writes_collection_never_contains_delete(self) -> None:
+        self.assertIn("writes must never include DELETE", SCRIPT)
         self.assertIn("Refuse any DELETE write", ROLE_TASKS)
         self.assertIn("selectattr('method', 'equalto', 'DELETE')", ROLE_TASKS)
+        pool = [ip for ip in TRUSTED_POOL if ip != REMOVED_IP]
+        plan = _plan(
+            _de_fra_2_existing(tags=[OWNER]),
+            _desired(trusted_ingress_ips=pool),
+            allow_writes=True,
+            prune=True,
+        )
+        self.assertEqual(plan["delete"], 1)
+        self.assertTrue(all(write["method"] in {"POST", "PATCH"} for write in plan["writes"]))
+        self.assertEqual(plan["writes"], [])
 
     def test_18_allow_writes_true_still_no_delete(self) -> None:
         pool = [ip for ip in TRUSTED_POOL if ip != REMOVED_IP]
@@ -926,6 +937,553 @@ class StalePrunePlanTests(unittest.TestCase):
         self.assertNotIn("antiblock_cdn_hosts", NODES_PLAY.read_text(encoding="utf-8"))
 
 
+NEW_IP = "198.51.100.20"
+
+
+def _removed_ip_desired() -> list[dict]:
+    return _desired(trusted_ingress_ips=[ip for ip in TRUSTED_POOL if ip != REMOVED_IP])
+
+
+def _replaced_ip_desired() -> list[dict]:
+    pool = [NEW_IP if ip == REMOVED_IP else ip for ip in TRUSTED_POOL]
+    return _desired(trusted_ingress_ips=pool)
+
+
+def _task_block(source: str, name: str) -> str:
+    marker = f"- name: {name}"
+    start = source.find(marker)
+    if start < 0:
+        raise AssertionError(f"missing task: {name}")
+    rest = source[start:]
+    nxt = rest.find("\n- name:", len(marker))
+    return rest if nxt < 0 else rest[:nxt]
+
+
+class ApplyFailure(Exception):
+    """Simulator stop before or during DELETE."""
+
+
+def _apply_writes(hosts: list[dict], writes: list[dict]) -> list[dict]:
+    result = [dict(host) for host in hosts]
+    for write in writes:
+        method = str(write.get("method") or "").upper()
+        body = dict(write.get("body") or {})
+        if method == "DELETE":
+            raise AssertionError("writes must not contain DELETE")
+        if method == "POST":
+            created = dict(body)
+            created.setdefault("uuid", f"created-{created.get('address')}")
+            result.append(created)
+            continue
+        if method == "PATCH":
+            uuid = body.get("uuid")
+            for host in result:
+                if host.get("uuid") == uuid:
+                    host.update({key: value for key, value in body.items() if key != "uuid"})
+    return result
+
+
+def _simulate_run(
+    existing: list[dict],
+    desired: list[dict],
+    *,
+    allow_writes: bool,
+    prune: bool,
+    fail_writes: bool = False,
+    fail_verify: bool = False,
+    fail_delete_at: int | None = None,
+) -> dict:
+    hosts = [dict(item) for item in existing]
+    plan = _plan(hosts, desired, allow_writes=allow_writes, prune=prune)
+    mutations: list[dict] = []
+    deleted: list[str] = []
+    verified_before_delete = False
+    failed = None
+
+    if allow_writes and plan["writes"]:
+        if fail_writes:
+            return {
+                "plan": plan,
+                "hosts": hosts,
+                "mutations": mutations,
+                "deleted": deleted,
+                "verified_before_delete": False,
+                "failed": "writes",
+                "final_plan": None,
+                "final_verify": None,
+                "deleted_verify": None,
+            }
+        hosts = _apply_writes(hosts, plan["writes"])
+        mutations.extend(
+            {
+                "method": write["method"],
+                "path": write.get("path"),
+                "address": (write.get("body") or {}).get("address"),
+            }
+            for write in plan["writes"]
+        )
+
+    need_verify = bool(allow_writes and (plan["writes"] or (prune and plan["delete_items"])))
+    if need_verify:
+        verify = abh.verify_antiblock_hosts(desired, hosts, owner_tag=OWNER)
+        verified_before_delete = True
+        if fail_verify or not verify["ok"]:
+            return {
+                "plan": plan,
+                "hosts": hosts,
+                "mutations": mutations,
+                "deleted": deleted,
+                "verified_before_delete": True,
+                "failed": "verify",
+                "final_plan": None,
+                "final_verify": verify,
+                "deleted_verify": None,
+            }
+
+    if allow_writes and prune and plan["delete_items"]:
+        if not verified_before_delete:
+            raise ApplyFailure("DELETE without desired verify")
+        for index, item in enumerate(plan["delete_items"]):
+            if fail_delete_at is not None and index >= fail_delete_at:
+                failed = "delete"
+                break
+            abh.assert_delete_item_invariants(
+                item,
+                owner_tag=OWNER,
+                node_uuid=NODE,
+                public_hostname=PUBLIC_HOSTNAME,
+            )
+            hosts = [host for host in hosts if str(host.get("uuid") or "") != item["uuid"]]
+            deleted.append(item["uuid"])
+            mutations.append(
+                {
+                    "method": "DELETE",
+                    "path": item["path"],
+                    "uuid": item["uuid"],
+                    "address": item["address"],
+                }
+            )
+
+    final_verify = abh.verify_antiblock_hosts(desired, hosts, owner_tag=OWNER)
+    deleted_verify = abh.verify_deleted_uuids_absent(hosts, plan["delete_items"] if failed != "delete" else [
+        item for item in plan["delete_items"] if item["uuid"] in deleted
+    ])
+    final_plan = _plan(hosts, desired, allow_writes=False, prune=prune)
+    return {
+        "plan": plan,
+        "hosts": hosts,
+        "mutations": mutations,
+        "deleted": deleted,
+        "verified_before_delete": verified_before_delete,
+        "failed": failed,
+        "final_plan": final_plan,
+        "final_verify": final_verify,
+        "deleted_verify": deleted_verify,
+    }
+
+
+class GuardedDeleteTests(unittest.TestCase):
+    def test_01_prune_false_delete_zero(self) -> None:
+        plan = _plan(_de_fra_2_existing(tags=[OWNER]), _removed_ip_desired(), prune=False)
+        self.assertEqual(plan["stale"], 1)
+        self.assertEqual(plan["prune_eligible"], 1)
+        self.assertEqual(plan["delete"], 0)
+        self.assertEqual(plan["delete_items"], [])
+        self.assertFalse(plan["prune"])
+
+    def test_02_prune_true_eligible_delete_one(self) -> None:
+        plan = _plan(_de_fra_2_existing(tags=[OWNER]), _removed_ip_desired(), prune=True)
+        self.assertEqual(plan["desired"], 4)
+        self.assertEqual(plan["matched"], 4)
+        self.assertEqual(plan["stale"], 1)
+        self.assertEqual(plan["prune_eligible"], 1)
+        self.assertEqual(plan["prune_blocked"], 0)
+        self.assertEqual(plan["delete"], 1)
+        self.assertEqual([item["address"] for item in plan["delete_items"]], [REMOVED_IP])
+        self.assertEqual(plan["delete_items"][0]["uuid"], DE_FRA_2_HOSTS[3]["uuid"])
+
+    def test_03_prune_true_allow_writes_false_no_mutation(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        desired = _removed_ip_desired()
+        plan = _plan(existing, desired, allow_writes=False, prune=True)
+        self.assertEqual(plan["delete"], 1)
+        self.assertEqual(plan["writes"], [])
+        self.assertEqual(
+            plan["summary"],
+            "desired=4 matched=4 create=0 update=0 adopt=0 stale=1 "
+            "prune_eligible=1 prune_blocked=0 delete=1 ambiguous=0",
+        )
+        result = _simulate_run(existing, desired, allow_writes=False, prune=True)
+        self.assertEqual(result["mutations"], [])
+        self.assertEqual(result["deleted"], [])
+        self.assertFalse(result["verified_before_delete"])
+
+    def test_04_prune_true_allow_writes_true_deletes_uuid(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        desired = _removed_ip_desired()
+        result = _simulate_run(existing, desired, allow_writes=True, prune=True)
+        old_uuid = DE_FRA_2_HOSTS[3]["uuid"]
+        self.assertEqual(result["plan"]["delete"], 1)
+        self.assertEqual(result["deleted"], [old_uuid])
+        self.assertEqual(
+            [item for item in result["mutations"] if item["method"] == "DELETE"],
+            [{"method": "DELETE", "path": f"/api/hosts/{old_uuid}", "uuid": old_uuid, "address": REMOVED_IP}],
+        )
+        self.assertTrue(result["final_verify"]["ok"])
+        self.assertTrue(result["deleted_verify"]["ok"])
+        self.assertEqual(result["final_plan"]["prune_eligible"], 0)
+
+    def test_05_exact_delete_endpoint_and_status(self) -> None:
+        block = _task_block(ROLE_TASKS, "AntiBlock Hosts | Delete stale Host")
+        self.assertIn("url: \"{{ remnawave_panel_api_base }}/hosts/{{ item.uuid }}\"", block)
+        self.assertIn("method: DELETE", block)
+        self.assertIn("status_code: [204]", block)
+        self.assertNotIn("body:", block)
+        self.assertNotIn("bulk/delete", block)
+        self.assertIn("loop: \"{{ _abh_plan['delete_items'] }}\"", block)
+        self.assertIn("delete {{ item.address }} {{ item.uuid }}", block)
+        self.assertIn("changed_when: true", block)
+
+    def test_06_delete_by_uuid_only(self) -> None:
+        plan = _plan(_de_fra_2_existing(tags=[OWNER]), _removed_ip_desired(), prune=True)
+        item = plan["delete_items"][0]
+        self.assertEqual(item["path"], f"/api/hosts/{item['uuid']}")
+        self.assertNotIn(item["address"], item["path"])
+        self.assertNotIn("remark", item["path"])
+        delete = _task_block(ROLE_TASKS, "AntiBlock Hosts | Delete stale Host")
+        self.assertIn("/hosts/{{ item.uuid }}", delete)
+        self.assertNotIn("/hosts/{{ item.address }}", delete)
+        self.assertNotIn("bulk/delete", ROLE_TASKS)
+
+    def test_07_public_hostname_never_deleted(self) -> None:
+        desired = [item for item in _desired() if item["address"] != PUBLIC_HOSTNAME]
+        plan = _plan(_de_fra_2_existing(tags=[OWNER]), desired, allow_writes=True, prune=True)
+        self.assertEqual(plan["stale"], 1)
+        self.assertEqual(plan["prune_blocked"], 1)
+        self.assertEqual(plan["delete"], 0)
+        self.assertEqual(plan["delete_items"], [])
+
+    def test_08_extra_tag_never_deleted(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[3]["tags"] = [OWNER, "FOO"]
+        existing[3]["address"] = "198.51.100.10"
+        plan = _plan(existing, _desired(), allow_writes=True, prune=True)
+        self.assertEqual(plan["stale"], 1)
+        self.assertEqual(plan["prune_blocked"], 1)
+        self.assertEqual(plan["delete_items"], [])
+
+    def test_09_managed_combination_never_deleted(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[3]["tags"] = [OWNER, MANAGED]
+        existing[3]["address"] = "198.51.100.10"
+        plan = _plan(existing, _desired(), allow_writes=True, prune=True)
+        self.assertEqual(plan["stale"], 1)
+        self.assertEqual(plan["delete_items"], [])
+
+    def test_10_multi_node_never_deleted(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[3]["address"] = "198.51.100.10"
+        existing[3]["nodes"] = [NODE, OTHER_NODE]
+        plan = _plan(existing, _desired(), allow_writes=True, prune=True)
+        self.assertEqual(plan["stale_items"][0]["block_reason"], "multiple_nodes")
+        self.assertEqual(plan["delete_items"], [])
+
+    def test_11_other_node_ignored(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[3]["address"] = "198.51.100.10"
+        existing[3]["nodes"] = [OTHER_NODE]
+        plan = _plan(existing, _desired(), prune=True)
+        self.assertEqual(plan["stale"], 0)
+        self.assertEqual(plan["delete"], 0)
+
+    def test_12_other_profile_ignored(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[3]["address"] = "198.51.100.10"
+        existing[3]["inbound"] = {
+            "configProfileUuid": OTHER_PROFILE,
+            "configProfileInboundUuid": INBOUND,
+        }
+        plan = _plan(existing, _desired(), prune=True)
+        self.assertEqual(plan["stale"], 0)
+        self.assertEqual(plan["delete"], 0)
+
+    def test_13_other_inbound_ignored(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[3]["address"] = "198.51.100.10"
+        existing[3]["inbound"] = {
+            "configProfileUuid": PROFILE,
+            "configProfileInboundUuid": OTHER_INBOUND,
+        }
+        plan = _plan(existing, _desired(), prune=True)
+        self.assertEqual(plan["stale"], 0)
+        self.assertEqual(plan["delete"], 0)
+
+    def test_14_non_ipv4_never_deleted(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[3]["address"] = "edge-extra.digitalstreamers.xyz"
+        plan = _plan(existing, _desired(), allow_writes=True, prune=True)
+        self.assertEqual(plan["stale_items"][0]["block_reason"], "non_ipv4_address")
+        self.assertEqual(plan["delete_items"], [])
+
+    def test_15_missing_uuid_never_deleted(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[3]["address"] = "198.51.100.10"
+        existing[3]["uuid"] = ""
+        plan = _plan(existing, _desired(), allow_writes=True, prune=True)
+        self.assertEqual(plan["stale_items"][0]["block_reason"], "missing_uuid")
+        self.assertEqual(plan["delete_items"], [])
+
+    def test_16_prune_blocked_never_in_delete_items(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[3]["tags"] = [OWNER, "FOO"]
+        existing[3]["address"] = "198.51.100.10"
+        plan = _plan(existing, _desired(), prune=True)
+        self.assertTrue(all(item["prune_eligible"] for item in plan["delete_items"]))
+        self.assertTrue(all(not item["prune_eligible"] for item in plan["stale_items"]))
+        self.assertEqual(plan["delete_items"], [])
+
+    def test_17_create_succeeds_before_stale_delete(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        desired = _replaced_ip_desired()
+        result = _simulate_run(existing, desired, allow_writes=True, prune=True)
+        methods = [item["method"] for item in result["mutations"]]
+        self.assertEqual(methods, ["POST", "DELETE"])
+        self.assertEqual(result["mutations"][0]["address"], NEW_IP)
+        self.assertEqual(result["mutations"][1]["address"], REMOVED_IP)
+        self.assertTrue(result["verified_before_delete"])
+        self.assertIn(NEW_IP, [host["address"] for host in result["hosts"]])
+        self.assertNotIn(REMOVED_IP, [host["address"] for host in result["hosts"]])
+
+    def test_18_patch_succeeds_before_stale_delete(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[0]["path"] = "/old"
+        desired = _removed_ip_desired()
+        result = _simulate_run(existing, desired, allow_writes=True, prune=True)
+        methods = [item["method"] for item in result["mutations"]]
+        self.assertEqual(methods, ["PATCH", "DELETE"])
+        self.assertTrue(result["verified_before_delete"])
+        self.assertTrue(result["final_verify"]["ok"])
+
+    def test_19_write_failure_prevents_delete(self) -> None:
+        result = _simulate_run(
+            _de_fra_2_existing(tags=[OWNER]),
+            _replaced_ip_desired(),
+            allow_writes=True,
+            prune=True,
+            fail_writes=True,
+        )
+        self.assertEqual(result["failed"], "writes")
+        self.assertEqual(result["deleted"], [])
+        self.assertFalse(any(item["method"] == "DELETE" for item in result["mutations"]))
+
+    def test_20_desired_verify_failure_prevents_delete(self) -> None:
+        result = _simulate_run(
+            _de_fra_2_existing(tags=[OWNER]),
+            _removed_ip_desired(),
+            allow_writes=True,
+            prune=True,
+            fail_verify=True,
+        )
+        self.assertEqual(result["failed"], "verify")
+        self.assertTrue(result["verified_before_delete"])
+        self.assertEqual(result["deleted"], [])
+
+    def test_21_prune_only_still_verifies_desired_before_delete(self) -> None:
+        result = _simulate_run(
+            _de_fra_2_existing(tags=[OWNER]),
+            _removed_ip_desired(),
+            allow_writes=True,
+            prune=True,
+        )
+        self.assertEqual(result["plan"]["writes"], [])
+        self.assertTrue(result["verified_before_delete"])
+        self.assertEqual(result["deleted"], [DE_FRA_2_HOSTS[3]["uuid"]])
+        verify_pos = ROLE_TASKS.find("AntiBlock Hosts | Assert desired Hosts verified")
+        delete_pos = ROLE_TASKS.find("AntiBlock Hosts | Delete stale Host")
+        self.assertGreater(verify_pos, 0)
+        self.assertGreater(delete_pos, verify_pos)
+        self.assertIn("_abh_desired_verify is defined", ROLE_TASKS)
+        self.assertIn("_abh_desired_verify.ok | bool", ROLE_TASKS)
+        self.assertIn("Reuse initial GET for prune-only desired verify", ROLE_TASKS)
+
+    def test_22_post_delete_get_uuid_absent(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        desired = _removed_ip_desired()
+        result = _simulate_run(existing, desired, allow_writes=True, prune=True)
+        old_uuid = DE_FRA_2_HOSTS[3]["uuid"]
+        self.assertNotIn(old_uuid, [host.get("uuid") for host in result["hosts"]])
+        self.assertTrue(result["deleted_verify"]["ok"])
+        self.assertIn("remnawave_antiblock_hosts_verify_deleted", ROLE_TASKS)
+        self.assertIn("Re-GET /api/hosts after delete", ROLE_TASKS)
+
+    def test_23_post_delete_desired_verify_passes(self) -> None:
+        result = _simulate_run(
+            _de_fra_2_existing(tags=[OWNER]),
+            _removed_ip_desired(),
+            allow_writes=True,
+            prune=True,
+        )
+        self.assertTrue(result["final_verify"]["ok"])
+        self.assertIn("remnawave_antiblock_hosts_verify", _task_block(ROLE_TASKS, "AntiBlock Hosts | Verify after delete"))
+
+    def test_24_post_delete_classification_prune_eligible_zero(self) -> None:
+        result = _simulate_run(
+            _de_fra_2_existing(tags=[OWNER]),
+            _removed_ip_desired(),
+            allow_writes=True,
+            prune=True,
+        )
+        self.assertEqual(result["final_plan"]["stale"], 0)
+        self.assertEqual(result["final_plan"]["prune_eligible"], 0)
+        self.assertIn("(_abh_final_plan.prune_eligible | int) == 0", ROLE_TASKS)
+
+    def test_25_blocked_stale_may_remain(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing.append(
+            _existing_host(
+                {"uuid": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "remark": "blocked", "address": "198.51.100.10"},
+                tags=[OWNER, "FOO"],
+            )
+        )
+        result = _simulate_run(existing, _removed_ip_desired(), allow_writes=True, prune=True)
+        self.assertEqual(result["plan"]["stale"], 2)
+        self.assertEqual(result["plan"]["prune_eligible"], 1)
+        self.assertEqual(result["plan"]["prune_blocked"], 1)
+        self.assertEqual(result["plan"]["delete"], 1)
+        self.assertEqual(result["final_plan"]["stale"], 1)
+        self.assertEqual(result["final_plan"]["prune_eligible"], 0)
+        self.assertEqual(result["final_plan"]["prune_blocked"], 1)
+        self.assertIn("198.51.100.10", [host["address"] for host in result["hosts"]])
+        self.assertNotIn("stale == 0", ROLE_TASKS)
+        self.assertNotIn("stale | int) == 0", ROLE_TASKS)
+
+    def test_26_partial_delete_is_rerunnable(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        extra = _existing_host(
+            {"uuid": "ffffffff-ffff-4fff-8fff-ffffffffffff", "remark": "extra", "address": "198.51.100.11"},
+            tags=[OWNER],
+        )
+        existing.append(extra)
+        desired = _removed_ip_desired()
+        first = _simulate_run(existing, desired, allow_writes=True, prune=True, fail_delete_at=1)
+        self.assertEqual(first["failed"], "delete")
+        self.assertEqual(len(first["deleted"]), 1)
+        self.assertEqual(first["final_plan"]["prune_eligible"], 1)
+        second = _simulate_run(first["hosts"], desired, allow_writes=True, prune=True)
+        self.assertIsNone(second["failed"])
+        self.assertEqual(len(second["deleted"]), 1)
+        self.assertEqual(second["final_plan"]["prune_eligible"], 0)
+        self.assertTrue(second["final_verify"]["ok"])
+
+    def test_27_de_fra_2_fixture_zero_drift(self) -> None:
+        plan = _plan(_de_fra_2_existing(tags=[OWNER]), prune=True, allow_writes=True)
+        self.assertEqual(plan["desired"], 5)
+        self.assertEqual(plan["matched"], 5)
+        self.assertEqual(plan["create"], 0)
+        self.assertEqual(plan["update"], 0)
+        self.assertEqual(plan["adopt"], 0)
+        self.assertEqual(plan["stale"], 0)
+        self.assertEqual(plan["prune_eligible"], 0)
+        self.assertEqual(plan["prune_blocked"], 0)
+        self.assertEqual(plan["delete"], 0)
+        self.assertEqual(plan["ambiguous"], 0)
+        self.assertEqual(plan["writes"], [])
+        self.assertEqual(
+            plan["summary"],
+            "desired=5 matched=5 create=0 update=0 adopt=0 stale=0 "
+            "prune_eligible=0 prune_blocked=0 delete=0 ambiguous=0",
+        )
+
+    def test_28_stage_6a_create_adopt_update_remain(self) -> None:
+        adopt = _plan(_de_fra_2_existing(), allow_writes=True)
+        self.assertEqual(adopt["adopt"], 5)
+        create = _plan([], allow_writes=True)
+        self.assertEqual(create["create"], 5)
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[0]["path"] = "/old"
+        update = _plan([existing[0]], [_desired()[0]], allow_writes=True)
+        self.assertEqual(update["writes"][0]["method"], "PATCH")
+        _assert_no_delete(adopt)
+        _assert_no_delete(create)
+        _assert_no_delete(update)
+
+    def test_29_stage_6b1_classification_unchanged(self) -> None:
+        plan = _plan(_de_fra_2_existing(tags=[OWNER]), _removed_ip_desired())
+        self.assertEqual(plan["stale"], 1)
+        self.assertEqual(plan["prune_eligible"], 1)
+        self.assertEqual(plan["delete"], 0)
+        blocked = _de_fra_2_existing(tags=[OWNER])
+        blocked[3]["tags"] = [OWNER, "FOO"]
+        blocked[3]["address"] = "198.51.100.10"
+        blocked_plan = _plan(blocked, _desired(), prune=True)
+        self.assertEqual(blocked_plan["prune_blocked"], 1)
+        self.assertEqual(blocked_plan["delete"], 0)
+
+    def test_30_no_third_allow_delete_variable(self) -> None:
+        for blob in (ROLE_TASKS, SCRIPT, FILTER_PLUGIN, PLAY_RAW, MAKEFILE):
+            self.assertNotIn("antiblock_cdn_hosts_allow_delete", blob)
+            self.assertNotIn("allow_delete:", blob)
+        self.assertIn("antiblock_cdn_hosts_allow_writes", ROLE_TASKS)
+        self.assertIn("antiblock_cdn_hosts_prune", ROLE_TASKS)
+        self.assertNotIn("antiblock_cdn_hosts_prune: true", PLAY_RAW)
+
+    def test_31_ordinary_add_host_unchanged(self) -> None:
+        self.assertNotIn("VFF:ANTIBLOCK", ADD_HOST_MAIN)
+        self.assertNotIn("delete_items", ADD_HOST_MAIN)
+        self.assertNotIn("antiblock_cdn_hosts_prune", ADD_HOST_MAIN)
+
+    def test_32_ordinary_make_nodes_unchanged(self) -> None:
+        nodes = NODES_PLAY.read_text(encoding="utf-8")
+        self.assertIn("remnawave_add_host", nodes)
+        self.assertNotIn("remnawave_antiblock_hosts", nodes)
+        nodes_make = MAKEFILE[MAKEFILE.find("nodes:") : MAKEFILE.find("hosts-audit:")]
+        self.assertNotIn("antiblock_cdn_hosts", nodes_make)
+        self.assertNotIn("PLAY_ANTIBLOCK_CDN", nodes_make)
+
+    def test_33_invariants_reject_unsafe_delete_item(self) -> None:
+        with self.assertRaises(ValueError):
+            abh.assert_delete_item_invariants(
+                {
+                    "uuid": "11111111-1111-4111-8111-111111111111",
+                    "address": PUBLIC_HOSTNAME,
+                    "prune_eligible": True,
+                    "tags": [OWNER],
+                    "nodes": [NODE],
+                },
+                owner_tag=OWNER,
+                node_uuid=NODE,
+                public_hostname=PUBLIC_HOSTNAME,
+            )
+        with self.assertRaises(ValueError):
+            abh.assert_delete_item_invariants(
+                {
+                    "uuid": "11111111-1111-4111-8111-111111111111",
+                    "address": REMOVED_IP,
+                    "prune_eligible": False,
+                    "tags": [OWNER],
+                    "nodes": [NODE],
+                },
+                owner_tag=OWNER,
+                node_uuid=NODE,
+                public_hostname=PUBLIC_HOSTNAME,
+            )
+
+    def test_34_same_run_replacement_order(self) -> None:
+        result = _simulate_run(
+            _de_fra_2_existing(tags=[OWNER]),
+            _replaced_ip_desired(),
+            allow_writes=True,
+            prune=True,
+        )
+        self.assertEqual([item["method"] for item in result["mutations"]], ["POST", "DELETE"])
+        self.assertTrue(result["verified_before_delete"])
+        self.assertTrue(result["final_verify"]["ok"])
+        self.assertTrue(result["deleted_verify"]["ok"])
+        self.assertEqual(result["final_plan"]["prune_eligible"], 0)
+        self.assertIn(NEW_IP, [host["address"] for host in result["hosts"]])
+        self.assertNotIn(DE_FRA_2_HOSTS[3]["uuid"], [host.get("uuid") for host in result["hosts"]])
+
+
 DICT_METHOD_KEYS = ("items", "keys", "values", "get", "update", "copy")
 _DOT_PLAN_METHOD = re.compile(
     r"_abh_(?:plan|verify)\.(" + "|".join(DICT_METHOD_KEYS) + r")\b"
@@ -938,8 +1496,10 @@ class JinjaDictKeyCollisionTests(unittest.TestCase):
         self.assertEqual(hits, [], msg=f"Jinja dict-method collisions: {hits}")
         self.assertIn("_abh_plan['items']", ROLE_TASKS)
         self.assertIn("_abh_plan['stale_items']", ROLE_TASKS)
+        self.assertIn("_abh_plan['delete_items']", ROLE_TASKS)
         self.assertNotIn("_abh_plan.items", ROLE_TASKS)
         self.assertNotIn("_abh_plan.stale_items", ROLE_TASKS)
+        self.assertNotIn("_abh_plan.delete_items", ROLE_TASKS)
 
     def test_plan_summary_renders_items_key_not_dict_method(self) -> None:
         env = Environment()

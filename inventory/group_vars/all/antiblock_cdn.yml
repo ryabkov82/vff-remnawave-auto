@@ -42,6 +42,8 @@ antiblock_cdn_trusted_ingress_ips:
 
 # Remnawave Host ownership for CDN/xHTTP. Not VFF:MANAGED.
 # Writes stay off unless dedicated apply orchestration sets true.
+# prune=true only plans DELETE of prune_eligible stale Hosts.
+# Actual DELETE also requires allow_writes=true. No third flag.
 antiblock_cdn_host_owner_tag: "VFF:ANTIBLOCK"
 antiblock_cdn_hosts_allow_writes: false
 antiblock_cdn_hosts_prune: false
