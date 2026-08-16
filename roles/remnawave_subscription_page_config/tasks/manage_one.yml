@@ -208,13 +208,13 @@
     body:
       name: "{{ _spc_name }}"
     return_content: true
-    status_code: [200, 201]
+    status_code: [201]
     validate_certs: true
     timeout: 30
   register: _spc_create_result
   no_log: true
   failed_when: false
-  changed_when: _spc_create_result.status | default(0) in [200, 201]
+  changed_when: _spc_create_result.status | default(0) == 201
   when:
     - _spc_needs_create | bool
     - not ansible_check_mode
@@ -224,7 +224,7 @@
 - name: Fail with sanitized Subpage Config create error
   ansible.builtin.assert:
     that:
-      - _spc_create_result.status | default(0) in [200, 201]
+      - _spc_create_result.status | default(0) == 201
     fail_msg: >-
       Remnawave Subpage Config POST failed for {{ _spc_name | quote }}:
       HTTP {{ _spc_create_result.status | default('unknown') }},

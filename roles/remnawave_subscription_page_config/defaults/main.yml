@@ -24,7 +24,7 @@ remnawave_subpage_config_source_file: ""
 remnawave_subpage_config_name: "VPN for friends"
 
 # Declarative multi-brand configs. Relative file paths resolve under role files/.
-# uuid may be empty: role finds by exact name or creates via POST (API 2.7.4).
+# uuid may be empty: role finds by exact name or creates via POST (API 3.2.3, 201).
 remnawave_subpage_configs: []
 
 # Python interpreter for local build/validate (controller).

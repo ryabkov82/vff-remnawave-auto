@@ -111,6 +111,8 @@ class AntiblockCdnPlaybookTests(unittest.TestCase):
         item = memberships[0]
         self.assertEqual(item["inbound_tag"], "{{ antiblock_cdn_inbound_tag }}")
         self.assertEqual(item["present_in"], ["{{ antiblock_cdn_internal_squad }}"])
+        self.assertNotIn("Default-Squad", item["present_in"])
+        self.assertNotIn("{{ antiblock_cdn_forbidden_internal_squads }}", item["present_in"])
         self.assertEqual(
             item["absent_from"],
             "{{ antiblock_cdn_forbidden_internal_squads }}",

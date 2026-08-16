@@ -197,6 +197,8 @@ class RoleStructureTests(unittest.TestCase):
         self.assertNotIn("when: _ri_squad_reconciled.changed", patch)
         self.assertIn("method: PATCH", patch)
         self.assertIn("inbounds: \"{{ _ri_squad_reconciled.members }}\"", patch)
+        self.assertIn("status_code: 200", patch)
+        self.assertIn("uuid:", patch)
 
         skipped = _task_block(
             RECONCILE_ONE,
