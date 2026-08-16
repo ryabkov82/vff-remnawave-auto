@@ -49,8 +49,11 @@ MANAGED = "VFF:MANAGED"
 PROFILE = "a281fe1b-d9b6-4874-b34a-2832481cc60f"
 INBOUND = "d7340374-7968-4240-9528-8c617af963ee"
 NODE = "f5477129-378e-4c0d-830c-b3ed3ce58a7a"
+OTHER_NODE = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 OTHER_INBOUND = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 OTHER_PROFILE = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+PUBLIC_HOSTNAME = "cdn-lab.digitalstreamers.xyz"
+REMOVED_IP = "188.72.111.35"
 
 DE_FRA_2_HOSTS = (
     {
@@ -116,6 +119,32 @@ def _ctx(**overrides: object) -> dict:
 
 def _desired(**overrides: object) -> list[dict]:
     return abh.build_desired_antiblock_hosts(_ctx(**overrides))
+
+
+def _scope(**overrides: object) -> dict:
+    data = {
+        "owner_tag": OWNER,
+        "node_uuid": NODE,
+        "profile_uuid": PROFILE,
+        "inbound_uuid": INBOUND,
+        "public_hostname": PUBLIC_HOSTNAME,
+    }
+    data.update(overrides)
+    return data
+
+
+def _plan(existing: list[dict], desired: list[dict] | None = None, **opts: object):
+    kwargs = _scope()
+    kwargs.update(opts)
+    return abh.plan_antiblock_hosts(desired if desired is not None else _desired(), existing, **kwargs)
+
+
+def _assert_no_delete(plan: dict) -> None:
+    self = unittest.TestCase()
+    self.assertEqual(plan["delete"], 0)
+    for write in plan.get("writes") or []:
+        self.assertNotEqual(str(write.get("method") or "").upper(), "DELETE")
+        self.assertIn(str(write.get("method") or "").upper(), {"POST", "PATCH", ""})
 
 
 def _existing_host(spec: dict, **overrides: object) -> dict:
@@ -353,7 +382,8 @@ class DeFra2FixtureTests(unittest.TestCase):
         self.assertEqual(plan["update"], 5)
         self.assertEqual(
             plan["summary"],
-            "desired=5 matched=5 create=0 update=5 adopt=5 delete=0 ambiguous=0",
+            "desired=5 matched=5 create=0 update=5 adopt=5 stale=0 "
+            "prune_eligible=0 prune_blocked=0 delete=0 ambiguous=0",
         )
         for item in plan["items"]:
             self.assertEqual(item["drift_fields"], ["tags"])
@@ -437,8 +467,10 @@ class PlanPruneOwnershipTests(unittest.TestCase):
         self.assertNotIn("method: delete", ROLE_TASKS.lower())
         self.assertIn("antiblock_cdn_hosts_prune", ROLE_TASKS)
         self.assertIn("not (antiblock_cdn_hosts_prune | bool)", ROLE_TASKS)
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ValueError) as ctx:
             abh.plan_antiblock_hosts(_desired(), [], owner_tag=OWNER, prune=True)
+        self.assertIn("Stage 6B.1", str(ctx.exception))
+        self.assertNotIn("method: DELETE", SCRIPT)
 
     def test_20_vff_managed_is_never_antiblock_ownership(self) -> None:
         host = _existing_host(DE_FRA_2_HOSTS[0], tags=[MANAGED])
@@ -536,7 +568,8 @@ class InventoryAndRoleContractTests(unittest.TestCase):
         self.assertEqual(plan["writes"], [])
         self.assertEqual(
             plan["summary"],
-            "desired=5 matched=5 create=0 update=0 adopt=0 delete=0 ambiguous=0",
+            "desired=5 matched=5 create=0 update=0 adopt=0 stale=0 "
+            "prune_eligible=0 prune_blocked=0 delete=0 ambiguous=0",
         )
 
     def test_empty_tags_are_not_owned(self) -> None:
@@ -665,8 +698,232 @@ class TrustedIngressPoolTests(unittest.TestCase):
         plan = abh.plan_antiblock_hosts(_desired(), adopted, owner_tag=OWNER)
         self.assertEqual(plan["delete"], 0)
         self.assertEqual(plan["update"], 0)
-        self.assertEqual(plan["summary"],
-            "desired=5 matched=5 create=0 update=0 adopt=0 delete=0 ambiguous=0")
+        self.assertEqual(
+            plan["summary"],
+            "desired=5 matched=5 create=0 update=0 adopt=0 stale=0 "
+            "prune_eligible=0 prune_blocked=0 delete=0 ambiguous=0",
+        )
+
+
+class StalePrunePlanTests(unittest.TestCase):
+    def test_01_de_fra_2_stale_zero(self) -> None:
+        plan = _plan(_de_fra_2_existing(tags=[OWNER]))
+        self.assertEqual(plan["desired"], 5)
+        self.assertEqual(plan["matched"], 5)
+        self.assertEqual(plan["stale"], 0)
+        self.assertEqual(plan["prune_eligible"], 0)
+        self.assertEqual(plan["prune_blocked"], 0)
+        self.assertEqual(plan["stale_items"], [])
+        _assert_no_delete(plan)
+        self.assertIn("stale=0", plan["summary"])
+
+    def test_02_removed_trusted_ip_is_prune_eligible_no_delete(self) -> None:
+        pool = [ip for ip in TRUSTED_POOL if ip != REMOVED_IP]
+        desired = _desired(trusted_ingress_ips=pool)
+        existing = _de_fra_2_existing(tags=[OWNER])
+        plan = _plan(existing, desired)
+        self.assertEqual(plan["desired"], 4)
+        self.assertEqual(plan["matched"], 4)
+        self.assertEqual(plan["create"], 0)
+        self.assertEqual(plan["update"], 0)
+        self.assertEqual(plan["adopt"], 0)
+        self.assertEqual(plan["stale"], 1)
+        self.assertEqual(plan["prune_eligible"], 1)
+        self.assertEqual(plan["prune_blocked"], 0)
+        _assert_no_delete(plan)
+        self.assertEqual(plan["writes"], [])
+        stale = plan["stale_items"][0]
+        self.assertEqual(stale["address"], REMOVED_IP)
+        self.assertTrue(stale["prune_eligible"])
+        self.assertIsNone(stale["block_reason"])
+
+        written = _plan(existing, desired, allow_writes=True)
+        self.assertEqual(written["stale"], 1)
+        self.assertEqual(written["prune_eligible"], 1)
+        _assert_no_delete(written)
+        self.assertEqual(written["writes"], [])
+
+    def test_03_empty_tags_ignored(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[3]["tags"] = []
+        existing[3]["address"] = "198.51.100.10"
+        plan = _plan(existing, _desired())
+        self.assertEqual(plan["stale"], 0)
+
+    def test_04_vff_managed_only_ignored(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[3]["tags"] = [MANAGED]
+        existing[3]["address"] = "198.51.100.10"
+        plan = _plan(existing, _desired())
+        self.assertEqual(plan["stale"], 0)
+        self.assertFalse(abh.is_antiblock_owned(existing[3], OWNER))
+
+    def test_05_antiblock_plus_managed_is_blocked(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[3]["tags"] = [OWNER, MANAGED]
+        existing[3]["address"] = "198.51.100.10"
+        plan = _plan(existing, _desired())
+        self.assertEqual(plan["stale"], 1)
+        self.assertEqual(plan["prune_eligible"], 0)
+        self.assertEqual(plan["prune_blocked"], 1)
+        self.assertEqual(plan["stale_items"][0]["block_reason"], "extra_tags")
+        _assert_no_delete(plan)
+
+    def test_06_extra_foo_tag_is_blocked(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[3]["tags"] = [OWNER, "FOO"]
+        existing[3]["address"] = "198.51.100.10"
+        plan = _plan(existing, _desired())
+        self.assertEqual(plan["stale"], 1)
+        self.assertEqual(plan["prune_blocked"], 1)
+        self.assertEqual(plan["stale_items"][0]["block_reason"], "extra_tags")
+
+    def test_07_other_node_ignored(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[3]["address"] = "198.51.100.10"
+        existing[3]["nodes"] = [OTHER_NODE]
+        plan = _plan(existing, _desired())
+        self.assertEqual(plan["stale"], 0)
+
+    def test_08_current_plus_other_node_blocked(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[3]["address"] = "198.51.100.10"
+        existing[3]["nodes"] = [NODE, OTHER_NODE]
+        plan = _plan(existing, _desired())
+        self.assertEqual(plan["stale"], 1)
+        self.assertEqual(plan["prune_eligible"], 0)
+        self.assertEqual(plan["prune_blocked"], 1)
+        self.assertEqual(plan["stale_items"][0]["block_reason"], "multiple_nodes")
+        _assert_no_delete(plan)
+
+    def test_09_different_inbound_ignored(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[3]["address"] = "198.51.100.10"
+        existing[3]["inbound"] = {
+            "configProfileUuid": PROFILE,
+            "configProfileInboundUuid": OTHER_INBOUND,
+        }
+        plan = _plan(existing, _desired())
+        self.assertEqual(plan["stale"], 0)
+
+    def test_10_different_profile_ignored(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[3]["address"] = "198.51.100.10"
+        existing[3]["inbound"] = {
+            "configProfileUuid": OTHER_PROFILE,
+            "configProfileInboundUuid": INBOUND,
+        }
+        plan = _plan(existing, _desired())
+        self.assertEqual(plan["stale"], 0)
+
+    def test_11_public_hostname_never_eligible(self) -> None:
+        desired = _desired(trusted_ingress_ips=TRUSTED_POOL)
+        existing = _de_fra_2_existing(tags=[OWNER])
+        # Drop hostname from desired while leaving the owned hostname Host.
+        desired = [item for item in desired if item["address"] != PUBLIC_HOSTNAME]
+        plan = _plan(existing, desired)
+        self.assertEqual(plan["stale"], 1)
+        self.assertEqual(plan["stale_items"][0]["address"], PUBLIC_HOSTNAME)
+        self.assertFalse(plan["stale_items"][0]["prune_eligible"])
+        self.assertEqual(plan["stale_items"][0]["block_reason"], "public_hostname")
+        _assert_no_delete(plan)
+
+    def test_12_non_ipv4_never_eligible(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[3]["address"] = "edge-extra.digitalstreamers.xyz"
+        plan = _plan(existing, _desired())
+        self.assertEqual(plan["stale"], 1)
+        self.assertFalse(plan["stale_items"][0]["prune_eligible"])
+        self.assertEqual(plan["stale_items"][0]["block_reason"], "non_ipv4_address")
+
+    def test_13_missing_uuid_blocked(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[3]["address"] = "198.51.100.10"
+        existing[3]["uuid"] = ""
+        plan = _plan(existing, _desired())
+        self.assertEqual(plan["stale"], 1)
+        self.assertEqual(plan["stale_items"][0]["block_reason"], "missing_uuid")
+        self.assertFalse(plan["stale_items"][0]["prune_eligible"])
+
+    def test_14_safe_identity_not_address_port_only(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        decoy = _existing_host(
+            {"uuid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "remark": "decoy", "address": REMOVED_IP},
+            tags=[OWNER],
+            inbound={
+                "configProfileUuid": PROFILE,
+                "configProfileInboundUuid": OTHER_INBOUND,
+            },
+        )
+        existing.append(decoy)
+        pool = [ip for ip in TRUSTED_POOL if ip != REMOVED_IP]
+        plan = _plan(existing, _desired(trusted_ingress_ips=pool))
+        self.assertEqual(plan["stale"], 1)
+        self.assertEqual(plan["stale_items"][0]["address"], REMOVED_IP)
+        self.assertEqual(plan["stale_items"][0]["uuid"], DE_FRA_2_HOSTS[3]["uuid"])
+
+    def test_15_wrong_port_is_stale_identity_no_delete(self) -> None:
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[3]["port"] = 8443
+        plan = _plan(existing, _desired(), allow_writes=True)
+        self.assertEqual(plan["desired"], 5)
+        self.assertEqual(plan["matched"], 4)
+        self.assertEqual(plan["create"], 1)
+        self.assertEqual(plan["stale"], 1)
+        self.assertEqual(plan["stale_items"][0]["address"], REMOVED_IP)
+        self.assertEqual(plan["stale_items"][0]["port"], 8443)
+        self.assertTrue(plan["stale_items"][0]["prune_eligible"])
+        _assert_no_delete(plan)
+        self.assertEqual([write["method"] for write in plan["writes"]], ["POST"])
+
+    def test_16_vff_managed_never_prune_ownership(self) -> None:
+        existing = _de_fra_2_existing(tags=[MANAGED])
+        existing[3]["address"] = "198.51.100.10"
+        plan = _plan(existing, _desired())
+        self.assertEqual(plan["stale"], 0)
+        self.assertEqual(ROLE_DEFAULTS["antiblock_cdn_host_owner_tag"], OWNER)
+        self.assertEqual(ADD_HOST_DEFAULTS["rw_host_managed_tag"], MANAGED)
+
+    def test_17_no_delete_method_in_role_or_helper(self) -> None:
+        self.assertNotIn("method: DELETE", ROLE_TASKS)
+        self.assertNotIn("method: DELETE", SCRIPT)
+        self.assertNotRegex(ROLE_TASKS, r"^\s+method:\s*DELETE\s*$", msg=ROLE_TASKS)
+        self.assertIn("must never emit DELETE", SCRIPT)
+        self.assertIn("Refuse any DELETE write", ROLE_TASKS)
+        self.assertIn("selectattr('method', 'equalto', 'DELETE')", ROLE_TASKS)
+
+    def test_18_allow_writes_true_still_no_delete(self) -> None:
+        pool = [ip for ip in TRUSTED_POOL if ip != REMOVED_IP]
+        plan = _plan(
+            _de_fra_2_existing(tags=[OWNER]),
+            _desired(trusted_ingress_ips=pool),
+            allow_writes=True,
+        )
+        self.assertEqual(plan["prune_eligible"], 1)
+        _assert_no_delete(plan)
+        self.assertTrue(all(write["method"] in {"POST", "PATCH"} for write in plan["writes"]))
+
+    def test_19_stage_6a_create_adopt_update_unchanged(self) -> None:
+        adopt = _plan(_de_fra_2_existing(), allow_writes=True)
+        self.assertEqual(adopt["adopt"], 5)
+        self.assertEqual(adopt["create"], 0)
+        self.assertEqual([write["method"] for write in adopt["writes"]], ["PATCH"] * 5)
+        create = _plan([], allow_writes=True)
+        self.assertEqual(create["create"], 5)
+        self.assertEqual([write["method"] for write in create["writes"]], ["POST"] * 5)
+        existing = _de_fra_2_existing(tags=[OWNER])
+        existing[0]["path"] = "/old"
+        update = _plan([existing[0]], [_desired()[0]], allow_writes=True)
+        self.assertEqual(update["update"], 1)
+        self.assertEqual(update["writes"][0]["method"], "PATCH")
+        _assert_no_delete(adopt)
+        _assert_no_delete(create)
+        _assert_no_delete(update)
+
+    def test_20_ordinary_add_host_untouched(self) -> None:
+        self.assertNotIn("VFF:ANTIBLOCK", ADD_HOST_MAIN)
+        self.assertNotIn("stale_items", ADD_HOST_MAIN)
+        self.assertNotIn("antiblock_cdn_hosts", NODES_PLAY.read_text(encoding="utf-8"))
 
 
 DICT_METHOD_KEYS = ("items", "keys", "values", "get", "update", "copy")
@@ -680,7 +937,9 @@ class JinjaDictKeyCollisionTests(unittest.TestCase):
         hits = _DOT_PLAN_METHOD.findall(ROLE_TASKS)
         self.assertEqual(hits, [], msg=f"Jinja dict-method collisions: {hits}")
         self.assertIn("_abh_plan['items']", ROLE_TASKS)
+        self.assertIn("_abh_plan['stale_items']", ROLE_TASKS)
         self.assertNotIn("_abh_plan.items", ROLE_TASKS)
+        self.assertNotIn("_abh_plan.stale_items", ROLE_TASKS)
 
     def test_plan_summary_renders_items_key_not_dict_method(self) -> None:
         env = Environment()

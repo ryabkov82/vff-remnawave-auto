@@ -8,7 +8,8 @@ Current Remnawave Host contract (not 2.7.4):
   POST  /api/hosts creates
   allowInsecure is not part of the current Create/Update Host schema
 
-Stage 6A never DELETEs. Ownership is VFF:ANTIBLOCK, not VFF:MANAGED.
+Stage 6A/6B.1 never DELETEs. Ownership is VFF:ANTIBLOCK, not VFF:MANAGED.
+Stage 6B.1 classifies stale owned Hosts; prune=true is still rejected.
 """
 
 from __future__ import annotations
@@ -459,6 +460,102 @@ def build_partial_patch(
     return body
 
 
+def is_ipv4_address(value: Any) -> bool:
+    try:
+        ipaddress.IPv4Address(str(value or "").strip())
+    except (ipaddress.AddressValueError, ValueError):
+        return False
+    return True
+
+
+def host_in_antiblock_scope(
+    host: dict[str, Any],
+    *,
+    owner_tag: str,
+    node_uuid: str,
+    profile_uuid: str,
+    inbound_uuid: str,
+) -> bool:
+    """True when Host is owned and bound to this node + AntiBlock inbound."""
+    if not (node_uuid and profile_uuid and inbound_uuid):
+        return False
+    if not is_antiblock_owned(host, owner_tag):
+        return False
+    profile, inbound = inbound_uuids(host)
+    if profile != profile_uuid or inbound != inbound_uuid:
+        return False
+    return node_uuid in normalize_node_uuids(host.get("nodes"))
+
+
+def classify_prune_eligibility(
+    host: dict[str, Any],
+    *,
+    owner_tag: str,
+    node_uuid: str,
+    public_hostname: str,
+) -> tuple[bool, str | None]:
+    """Conservative future-prune eligibility. Never implies a DELETE write."""
+    uuid = str(host.get("uuid") or "").strip()
+    if not uuid:
+        return False, "missing_uuid"
+    address = str(host.get("address") or "").strip()
+    if public_hostname and address == str(public_hostname).strip():
+        return False, "public_hostname"
+    if not is_ipv4_address(address):
+        return False, "non_ipv4_address"
+    if normalize_host_tags(host) != [owner_tag]:
+        return False, "extra_tags"
+    if normalize_node_uuids(host.get("nodes")) != [node_uuid]:
+        return False, "multiple_nodes"
+    return True, None
+
+
+def classify_stale_hosts(
+    existing: list[dict[str, Any]],
+    desired: list[dict[str, Any]],
+    *,
+    owner_tag: str,
+    node_uuid: str,
+    profile_uuid: str,
+    inbound_uuid: str,
+    public_hostname: str,
+) -> list[dict[str, Any]]:
+    """Stale VFF:ANTIBLOCK Hosts for the current node/inbound only. No DELETE."""
+    desired_identities = {identity_key(item) for item in desired}
+    stale_items: list[dict[str, Any]] = []
+    for host in existing:
+        if not host_in_antiblock_scope(
+            host,
+            owner_tag=owner_tag,
+            node_uuid=node_uuid,
+            profile_uuid=profile_uuid,
+            inbound_uuid=inbound_uuid,
+        ):
+            continue
+        key = identity_key(host)
+        if key in desired_identities:
+            continue
+        eligible, reason = classify_prune_eligibility(
+            host,
+            owner_tag=owner_tag,
+            node_uuid=node_uuid,
+            public_hostname=public_hostname,
+        )
+        stale_items.append(
+            {
+                "uuid": str(host.get("uuid") or "") or None,
+                "address": host.get("address"),
+                "port": int(host.get("port") or 0),
+                "identity": _format_identity(key),
+                "tags": normalize_host_tags(host),
+                "nodes": normalize_node_uuids(host.get("nodes")),
+                "prune_eligible": eligible,
+                "block_reason": reason,
+            }
+        )
+    return stale_items
+
+
 def _format_identity(key: tuple[str, int, str, str]) -> str:
     address, port, profile_uuid, inbound_uuid = key
     return (
@@ -474,10 +571,14 @@ def plan_antiblock_hosts(
     owner_tag: str = OWNER_TAG_DEFAULT,
     allow_writes: bool = False,
     prune: bool = False,
+    node_uuid: str = "",
+    profile_uuid: str = "",
+    inbound_uuid: str = "",
+    public_hostname: str = "",
 ) -> dict[str, Any]:
-    """Plan adopt / create / managed reconcile. Never emits DELETE."""
+    """Plan adopt / create / managed reconcile. Classify stale Hosts. Never DELETE."""
     if prune:
-        raise ValueError("antiblock_cdn_hosts_prune is not supported in Stage 6A")
+        raise ValueError("antiblock_cdn_hosts_prune is not supported in Stage 6B.1")
 
     items: list[dict[str, Any]] = []
     errors: list[str] = []
@@ -610,13 +711,32 @@ def plan_antiblock_hosts(
         items.append(row)
 
     for write in writes:
+        if str(write.get("method") or "").upper() == "DELETE":
+            raise ValueError("AntiBlock Host plan must never emit DELETE")
         assert_current_api_payload(write["body"], kind=write["action"])
+
+    stale_items = classify_stale_hosts(
+        existing,
+        desired,
+        owner_tag=owner_tag,
+        node_uuid=str(node_uuid or ""),
+        profile_uuid=str(profile_uuid or ""),
+        inbound_uuid=str(inbound_uuid or ""),
+        public_hostname=str(public_hostname or ""),
+    )
+    prune_eligible = sum(1 for row in stale_items if row.get("prune_eligible"))
+    prune_blocked = len(stale_items) - prune_eligible
 
     ok = not errors
     summary = (
         f"desired={len(desired)} matched={matched} create={create} "
-        f"update={update} adopt={adopt} delete=0 ambiguous={ambiguous}"
+        f"update={update} adopt={adopt} stale={len(stale_items)} "
+        f"prune_eligible={prune_eligible} prune_blocked={prune_blocked} "
+        f"delete=0 ambiguous={ambiguous}"
     )
+    safe_writes = writes if (allow_writes and ok) else []
+    if any(str(item.get("method") or "").upper() == "DELETE" for item in safe_writes):
+        raise ValueError("AntiBlock Host plan must never emit DELETE")
     return {
         "ok": ok,
         "error": "; ".join(errors) if errors else None,
@@ -627,10 +747,14 @@ def plan_antiblock_hosts(
         "create": create,
         "update": update,
         "adopt": adopt,
+        "stale": len(stale_items),
+        "prune_eligible": prune_eligible,
+        "prune_blocked": prune_blocked,
         "delete": 0,
         "ambiguous": ambiguous,
         "items": items,
-        "writes": writes if (allow_writes and ok) else [],
+        "stale_items": stale_items,
+        "writes": safe_writes,
         "allow_writes": bool(allow_writes),
         "prune": False,
     }
@@ -697,6 +821,10 @@ def plan_from_filter(
         owner_tag=str(options.get("owner_tag") or OWNER_TAG_DEFAULT),
         allow_writes=bool(options.get("allow_writes", False)),
         prune=bool(options.get("prune", False)),
+        node_uuid=str(options.get("node_uuid") or ""),
+        profile_uuid=str(options.get("profile_uuid") or ""),
+        inbound_uuid=str(options.get("inbound_uuid") or ""),
+        public_hostname=str(options.get("public_hostname") or ""),
     )
 
 

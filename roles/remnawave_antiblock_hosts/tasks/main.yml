@@ -1,15 +1,16 @@
 ---
-# Stage 6A: plan / adopt / create Remnawave AntiBlock Hosts.
+# Stage 6A/6B.1: plan / adopt / create Remnawave AntiBlock Hosts.
 # Safe identity: address + port + configProfileUuid + configProfileInboundUuid.
 # Default allow_writes=false: GET + diff only. Host removal is not implemented.
+# Stage 6B.1 classifies stale owned Hosts; DELETE is not implemented.
 
 - name: AntiBlock Hosts | Assert Stage 6A prune is disabled
   ansible.builtin.assert:
     that:
       - not (antiblock_cdn_hosts_prune | bool)
     fail_msg: >-
-      antiblock_cdn_hosts_prune is not supported in Stage 6A.
-      Host removal is not implemented. Safe prune is Stage 6B.
+      antiblock_cdn_hosts_prune is not supported in Stage 6B.1.
+      Host removal is not implemented. Safe DELETE is Stage 6B.2.
   tags: [antiblock_cdn_hosts]
 
 - name: AntiBlock Hosts | Assert required inputs
@@ -160,6 +161,10 @@
       owner_tag: "{{ antiblock_cdn_host_owner_tag }}"
       allow_writes: "{{ antiblock_cdn_hosts_allow_writes | bool }}"
       prune: false
+      node_uuid: "{{ _abh_node_uuid }}"
+      profile_uuid: "{{ _abh_profile_uuid }}"
+      inbound_uuid: "{{ _abh_inbound_uuid }}"
+      public_hostname: "{{ antiblock_cdn_node.public_hostname }}"
   ansible.builtin.set_fact:
     _abh_existing: "{{ (_abh_hosts_resp.json.response | default([])) | list }}"
     _abh_desired: "{{ _abh_ctx | remnawave_antiblock_hosts_desired }}"
@@ -185,6 +190,20 @@
       drift_fields: "{{ _abh_plan['items'] | map(attribute='drift_fields') | list }}"
       actions: "{{ _abh_plan['items'] | map(attribute='action') | list }}"
       addresses: "{{ _abh_plan['items'] | map(attribute='address') | list }}"
+      stale_addresses: "{{ _abh_plan['stale_items'] | map(attribute='address') | list }}"
+      prune_eligible_addresses: >-
+        {{
+          _abh_plan['stale_items']
+          | selectattr('prune_eligible')
+          | map(attribute='address')
+          | list
+        }}
+      prune_blocked: >-
+        {{
+          _abh_plan['stale_items']
+          | rejectattr('prune_eligible')
+          | list
+        }}
   changed_when: false
   tags: [antiblock_cdn_hosts]
 
@@ -195,6 +214,14 @@
     - (_abh_plan.writes | default([]) | length) > 0
   tags: [antiblock_cdn_hosts]
   block:
+    - name: AntiBlock Hosts | Refuse any DELETE write
+      ansible.builtin.assert:
+        that:
+          - (_abh_plan.delete | default(0) | int) == 0
+          - (_abh_plan.writes | selectattr('method', 'equalto', 'DELETE') | list | length) == 0
+          - (_abh_plan.writes | selectattr('method', 'equalto', 'delete') | list | length) == 0
+        fail_msg: Stage 6B.1 must never emit DELETE writes.
+
     - name: AntiBlock Hosts | Write one Host
       ansible.builtin.uri:
         url: "{{ remnawave_panel_api_base }}/hosts"

@@ -14,7 +14,7 @@ import remnawave_antiblock_hosts as _lib  # noqa: E402
 
 
 class FilterModule:
-    """Current-API AntiBlock Host helpers. No DELETE. No VFF:MANAGED ownership."""
+    """Current-API AntiBlock Host helpers. No DELETE. Stage 6B.1 classifies stale only."""
 
     def filters(self) -> dict[str, Any]:
         return {
