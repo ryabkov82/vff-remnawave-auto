@@ -42,6 +42,7 @@ def _host(
     tag: object = _UNSET,
     nodes: list[str] | None = None,
     path: str = "",
+    isDisabled: bool = False,
 ) -> dict:
     data = {
         "uuid": uuid,
@@ -56,6 +57,7 @@ def _host(
         "serverDescription": "keep-me",
         "sni": "sni.example.com",
         "isHidden": False,
+        "isDisabled": isDisabled,
         "viewPosition": 10,
         "nodes": nodes or ["node-1111-1111-1111-111111111111"],
         "fingerprint": "chrome",
@@ -191,9 +193,17 @@ class RenamePayloadTests(unittest.TestCase):
         existing = _host(
             uuid="11111111-1111-1111-1111-111111111111",
             remark="old",
+            isDisabled=False,
         )
         payload = lib.build_remark_update_payload(existing, "🇩🇪 Germany 1")
-        self.assertEqual(payload, {"uuid": existing["uuid"], "remark": "🇩🇪 Germany 1"})
+        self.assertEqual(
+            payload,
+            {
+                "uuid": existing["uuid"],
+                "remark": "🇩🇪 Germany 1",
+                "isDisabled": False,
+            },
+        )
         # Ensure we did not copy other fields into the PATCH body.
         for forbidden in (
             "address",
@@ -211,6 +221,31 @@ class RenamePayloadTests(unittest.TestCase):
             "fingerprint",
         ):
             self.assertNotIn(forbidden, payload)
+
+    def test_payload_preserves_disabled_host(self) -> None:
+        existing = _host(
+            uuid="11111111-1111-1111-1111-111111111111",
+            remark="old",
+            isDisabled=True,
+        )
+        payload = lib.build_remark_update_payload(existing, "🇩🇪 Germany 1")
+        self.assertEqual(
+            payload,
+            {
+                "uuid": existing["uuid"],
+                "remark": "🇩🇪 Germany 1",
+                "isDisabled": True,
+            },
+        )
+
+    def test_payload_missing_isDisabled_raises(self) -> None:
+        existing = _host(
+            uuid="11111111-1111-1111-1111-111111111111",
+            remark="old",
+        )
+        del existing["isDisabled"]
+        with self.assertRaises(ValueError):
+            lib.build_remark_update_payload(existing, "🇩🇪 Germany 1")
 
     def test_assert_rename_response_ok(self) -> None:
         lib.assert_rename_response(
@@ -352,6 +387,89 @@ class RoleStructureTests(unittest.TestCase):
         self.assertNotIn("\n      tag:", create)
         self.assertNotIn("allowInsecure", create)
         self.assertNotIn("allowInsecure", ENSURE)
+
+    def _block_between(self, start_name: str, end_name: str) -> str:
+        start = ENSURE.find(f"- name: {start_name}")
+        self.assertGreaterEqual(start, 0, f"missing task: {start_name}")
+        end = ENSURE.find(f"- name: {end_name}", start + 1)
+        self.assertGreater(end, start, f"missing following task: {end_name}")
+        return ENSURE[start:end]
+
+    def test_no_legacy_bulk_host_endpoints(self) -> None:
+        self.assertNotIn("/hosts/bulk/set-inbound", ENSURE)
+        self.assertNotIn("/hosts/bulk/set-port", ENSURE)
+        self.assertNotIn("/hosts/bulk/set-inbound", PRUNE)
+        self.assertNotIn("/hosts/bulk/set-port", PRUNE)
+        self.assertNotIn("/hosts/bulk/update", ENSURE)
+        self.assertNotIn("/hosts/bulk/update", PRUNE)
+
+    def test_inbound_patch_preserves_isDisabled(self) -> None:
+        block = self._block_between(
+            "Reconcile inbound on existing host (PATCH /api/hosts)",
+            "Optionally set port on existing host (PATCH /api/hosts)",
+        )
+        self.assertIn("rw_host_set_inbound_if_exists", block)
+        self.assertIn("_rw_inbound_differs", block)
+        self.assertIn("uuid:", block)
+        self.assertIn("isDisabled:", block)
+        self.assertIn("_rw_existing.isDisabled", block)
+        self.assertIn("inbound:", block)
+        self.assertIn("configProfileUuid:", block)
+        self.assertIn("configProfileInboundUuid:", block)
+        self.assertIn("PATCH /api/hosts (inbound)", block)
+        self.assertNotIn("uuids:", block)
+        self.assertNotIn("bulk/set-inbound", block)
+
+    def test_port_patch_preserves_isDisabled(self) -> None:
+        block = self._block_between(
+            "Optionally set port on existing host (PATCH /api/hosts)",
+            "Guard rename requires confirmed API contract",
+        )
+        self.assertIn("rw_host_set_port_if_exists", block)
+        self.assertIn("_rw_port_differs", block)
+        self.assertIn("uuid:", block)
+        self.assertIn("isDisabled:", block)
+        self.assertIn("_rw_existing.isDisabled", block)
+        self.assertIn("port:", block)
+        self.assertIn("PATCH /api/hosts (port)", block)
+        self.assertNotIn("uuids:", block)
+        self.assertNotIn("bulk/set-port", block)
+
+    def test_remark_patch_preserves_isDisabled(self) -> None:
+        block = self._block_between(
+            '"PATCH /api/hosts (remark only)"',
+            "Output result",
+        )
+        self.assertIn("uuid:", block)
+        self.assertIn("remark:", block)
+        self.assertIn("isDisabled:", block)
+        self.assertIn("_rw_existing.isDisabled", block)
+        self.assertNotIn("inbound:", block)
+        self.assertNotIn("tags:", block)
+
+    def test_isDisabled_assert_runs_before_any_host_patch(self) -> None:
+        assert_pos = ENSURE.find("Assert existing Host.isDisabled is defined before PATCH")
+        inbound_pos = ENSURE.find("PATCH /api/hosts (inbound)")
+        port_pos = ENSURE.find("PATCH /api/hosts (port)")
+        remark_pos = ENSURE.find('"PATCH /api/hosts (remark only)"')
+        self.assertGreater(assert_pos, 0)
+        self.assertGreater(inbound_pos, assert_pos)
+        self.assertGreater(port_pos, assert_pos)
+        self.assertGreater(remark_pos, assert_pos)
+        self.assertIn("_rw_existing.isDisabled is defined", ENSURE)
+
+    def test_host_delete_expects_204(self) -> None:
+        delete = self._block_between("Delete host", "Clear existing after delete")
+        self.assertIn("method: DELETE", delete)
+        self.assertIn("status_code: [204]", delete)
+        self.assertNotIn("status_code: [200]", delete)
+        self.assertNotIn("status_code: [200, 204]", delete)
+        prune_delete = PRUNE[
+            PRUNE.find("Prune (DELETE) managed hosts bound to current node") :
+        ]
+        self.assertIn("method: DELETE", prune_delete)
+        self.assertIn("status_code: [204]", prune_delete)
+        self.assertNotIn("status_code: [200]", prune_delete)
 
 
 class RemarkRenameReportingTests(unittest.TestCase):

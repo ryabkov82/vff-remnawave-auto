@@ -218,7 +218,7 @@
         url: "{{ remnawave_panel_api_base }}/hosts/{{ _rw_existing.uuid }}"
         method: DELETE
         headers: "{{ _rw_headers }}"
-        status_code: [200]
+        status_code: [204]
       register: _rw_delete
 
     - name: Clear existing after delete
@@ -290,48 +290,13 @@
         or (_rw_existing.inbound.configProfileInboundUuid | default('')) != _inbound_uuid
       }}
 
-- name: Reconcile inbound on existing host (bulk set-inbound)
-  when:
-    - _rw_existing is not none
-    - rw_host_set_inbound_if_exists | bool
-    - _rw_inbound_differs | bool
-  ansible.builtin.uri:
-    url: "{{ remnawave_panel_api_base }}/hosts/bulk/set-inbound"
-    method: POST
-    headers: "{{ _rw_headers }}"
-    body_format: json
-    body:
-      uuids: ["{{ _rw_effective_uuid }}"]
-      configProfileUuid: "{{ _profile_uuid }}"
-      configProfileInboundUuid: "{{ _inbound_uuid }}"
-    status_code: [200]
-    return_content: true
-  register: _rw_bulk_inbound
-
 - name: Decide if port differs on existing host
   when: _rw_existing is not none
   ansible.builtin.set_fact:
     _rw_port_differs: "{{ (_rw_existing.port | int) != (rw_item.port | default(443) | int) }}"
 
-- name: Optionally set port on existing host (bulk set-port)
-  when:
-    - _rw_existing is not none
-    - rw_host_set_port_if_exists | bool
-    - _rw_port_differs | bool
-  ansible.builtin.uri:
-    url: "{{ remnawave_panel_api_base }}/hosts/bulk/set-port"
-    method: POST
-    headers: "{{ _rw_headers }}"
-    body_format: json
-    body:
-      uuids: ["{{ _rw_effective_uuid }}"]
-      port: "{{ (rw_item.port | default(443) | int) }}"
-    status_code: [200]
-    return_content: true
-  register: _rw_bulk_port
-
 # ---------------------------------------------------------
-# Optional remark rename (PATCH /api/hosts, partial {uuid,remark})
+# Optional remark rename (PATCH /api/hosts + current isDisabled)
 # Safe only with endpoint_inbound. Off by default.
 # ---------------------------------------------------------
 - name: Decide if remark differs on existing host
@@ -343,6 +308,107 @@
   when: _rw_existing is none
   ansible.builtin.set_fact:
     _rw_remark_differs: false
+
+- name: Assert existing Host.isDisabled is defined before PATCH
+  when:
+    - _rw_existing is not none
+    - (
+        (rw_host_set_inbound_if_exists | bool and _rw_inbound_differs | bool)
+        or (rw_host_set_port_if_exists | bool and _rw_port_differs | bool)
+        or (rw_host_set_remark_if_exists | bool and _rw_remark_differs | bool)
+      )
+  ansible.builtin.assert:
+    that:
+      - _rw_existing.isDisabled is defined
+      - _rw_existing.isDisabled is not none
+    fail_msg: >-
+      Refusing Host PATCH for uuid={{ _rw_existing.uuid }}:
+      existing Host has no isDisabled field.
+      Remnawave 3.2.3 defaults omitted isDisabled to false,
+      which would re-enable a disabled Host.
+
+- name: Reconcile inbound on existing host (PATCH /api/hosts)
+  when:
+    - _rw_existing is not none
+    - rw_host_set_inbound_if_exists | bool
+    - _rw_inbound_differs | bool
+  block:
+    - name: Build inbound update payload
+      ansible.builtin.set_fact:
+        _rw_inbound_patch_body:
+          uuid: "{{ _rw_existing.uuid }}"
+          isDisabled: "{{ _rw_existing.isDisabled | bool }}"
+          inbound:
+            configProfileUuid: "{{ _profile_uuid }}"
+            configProfileInboundUuid: "{{ _inbound_uuid }}"
+      changed_when: false
+
+    - name: PATCH /api/hosts (inbound)
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}{{ rw_host_update_api_path }}"
+        method: "{{ rw_host_update_api_method | upper }}"
+        headers: "{{ _rw_headers }}"
+        body_format: json
+        body: "{{ _rw_inbound_patch_body }}"
+        status_code: [200]
+        return_content: true
+      register: _rw_inbound_patch
+
+    - name: Validate inbound update response
+      vars:
+        _resp: "{{ _rw_inbound_patch.json.response | default({}) }}"
+      ansible.builtin.assert:
+        that:
+          - (_resp.uuid | default('')) == (_rw_existing.uuid | string)
+          - (_resp.inbound.configProfileUuid | default('')) == (_profile_uuid | string)
+          - (_resp.inbound.configProfileInboundUuid | default('')) == (_inbound_uuid | string)
+        fail_msg: >-
+          Inbound update response invalid:
+          uuid={{ _resp.uuid | default('') }}
+          inbound={{ _resp.inbound | default({}) }}
+          expected_uuid={{ _rw_existing.uuid }}
+          expected_profile={{ _profile_uuid }}
+          expected_inbound={{ _inbound_uuid }}.
+          Refusing create/delete fallback.
+
+- name: Optionally set port on existing host (PATCH /api/hosts)
+  when:
+    - _rw_existing is not none
+    - rw_host_set_port_if_exists | bool
+    - _rw_port_differs | bool
+  block:
+    - name: Build port update payload
+      ansible.builtin.set_fact:
+        _rw_port_patch_body:
+          uuid: "{{ _rw_existing.uuid }}"
+          isDisabled: "{{ _rw_existing.isDisabled | bool }}"
+          port: "{{ (rw_item.port | default(443) | int) }}"
+      changed_when: false
+
+    - name: PATCH /api/hosts (port)
+      ansible.builtin.uri:
+        url: "{{ remnawave_panel_api_base }}{{ rw_host_update_api_path }}"
+        method: "{{ rw_host_update_api_method | upper }}"
+        headers: "{{ _rw_headers }}"
+        body_format: json
+        body: "{{ _rw_port_patch_body }}"
+        status_code: [200]
+        return_content: true
+      register: _rw_port_patch
+
+    - name: Validate port update response
+      vars:
+        _resp: "{{ _rw_port_patch.json.response | default({}) }}"
+      ansible.builtin.assert:
+        that:
+          - (_resp.uuid | default('')) == (_rw_existing.uuid | string)
+          - (_resp.port | default(0) | int) == (rw_item.port | default(443) | int)
+        fail_msg: >-
+          Port update response invalid:
+          uuid={{ _resp.uuid | default('') }} port={{ _resp.port | default('') }}
+          expected_uuid={{ _rw_existing.uuid }}
+          expected_port={{ rw_item.port | default(443) }}.
+          Refusing create/delete fallback.
 
 - name: Guard rename requires confirmed API contract
   when:
@@ -356,7 +422,7 @@
       - rw_host_update_api_path == '/hosts'
     fail_msg: >-
       Remark rename refused: API update contract is not confirmed
-      (expected PATCH /hosts partial {uuid,remark} for Remnawave 2.7.4).
+      (expected PATCH /hosts with current isDisabled for Remnawave 3.2.3).
 
 - name: Guard rename requires safe match mode endpoint_inbound
   when:
@@ -421,6 +487,7 @@
         _rw_remark_patch_body:
           uuid: "{{ _rw_existing.uuid }}"
           remark: "{{ rw_item.remark }}"
+          isDisabled: "{{ _rw_existing.isDisabled | bool }}"
       changed_when: false
 
     - name: Update Host remark via confirmed PATCH contract
