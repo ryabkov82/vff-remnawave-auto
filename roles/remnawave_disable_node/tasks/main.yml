@@ -123,8 +123,7 @@
         headers: "{{ _rw_hdr }}"
         body_format: json
         body: { uuids: "{{ _hosts_of_node }}" }
-        return_content: true
-        status_code: [200, 400]
+        status_code: [204]
         timeout: "{{ remnawave_timeout }}"
       register: _bulk_hosts
 
@@ -146,7 +145,7 @@
     method: POST
     headers: "{{ _rw_hdr }}"
     return_content: true
-    status_code: [200, 400, 404]
+    status_code: [200]
     timeout: "{{ remnawave_timeout }}"
   register: _node_action
   changed_when: true
