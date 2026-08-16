@@ -1,6 +1,7 @@
 ---
 # Remnawave AntiBlock Hosts (current Host API). Stage 6A: adopt + create.
-# DELETE / prune is not implemented. Default is plan-only (no POST/PATCH).
+# Stage 6B.1: stale/prune classification only. DELETE is not implemented.
+# Default is plan-only (no POST/PATCH). prune=true is rejected.
 
 remnawave_panel_api_base: "{{ (remnawave_panel_url | default('')) | ternary(remnawave_panel_url ~ '/api', '') }}"
 remnawave_panel_api_token: ""

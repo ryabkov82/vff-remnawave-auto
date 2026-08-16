@@ -361,12 +361,45 @@ de-fra-2: `cdn-lab.digitalstreamers.xyz` + тот же global pool.
 Будущая de-fra-3: `de-fra-3.cdn.digitalstreamers.xyz` + тот же pool.
 Список в host_vars не копируется. Per-node extra/exclude пока нет.
 
-Удаление IP из пула **не** удаляет старый Host (`prune=false`). Stage 6A
-может только создать новые desired Hosts.
+Удаление IP из пула **не** удаляет старый Host. Stage 6B.1 только
+классифицирует stale / prune eligibility. DELETE ещё нет.
 
-## Ещё не реализовано (этап 6B+)
+### Stage 6B.1 — stale detection (no DELETE)
 
-- Safe prune stale `VFF:ANTIBLOCK` Hosts
+После desired reconcile роль смотрит global GET `/api/hosts`, но stale
+считается **только** для текущего scope:
+
+- tag `VFF:ANTIBLOCK`
+- текущие profile + inbound UUID
+- Host привязан к текущему node UUID
+- safe identity `(address, port, profile, inbound)` нет в desired
+
+`VFF:MANAGED` и `tags=[]` не являются AntiBlock ownership.
+
+prune_eligible (будущий DELETE) только если одновременно:
+
+- tags ровно `["VFF:ANTIBLOCK"]` (extra tags, включая `VFF:MANAGED`, блокируют)
+- nodes ровно `[current_node_uuid]` (multi-node → `multiple_nodes`)
+- address IPv4 и не равен `public_hostname`
+- UUID есть
+
+Public hostname Host **никогда** не prune_eligible. Чужие node/inbound/profile
+вне scope и не попадают в `stale` / `prune_blocked`.
+
+`antiblock_cdn_hosts_prune` остаётся `false`. `plan.delete` всегда 0.
+Writes только POST/PATCH desired Hosts.
+
+Будущий Stage 6B.2 (не реализован):
+
+1. calculate desired
+2. create/adopt/reconcile desired Hosts
+3. re-GET + verify desired Hosts
+4. smoke/gate
+5. только потом DELETE `prune_eligible` stale Hosts
+
+## Ещё не реализовано (этап 6B.2+)
+
+- Safe DELETE `prune_eligible` stale IPv4 Hosts
 - CDN transport smoke / full xHTTP/VLESS smoke
 - удаление stale CDN resources / origin groups
 - миграция de-fra-2 certificate на shared wildcard
