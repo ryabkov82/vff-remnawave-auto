@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """Remnawave Host audit / match helpers (read-only analysis, no API calls).
 
-API contract (Remnawave backend 2.7.4, confirmed from OpenAPI/contract):
-  GET  /api/hosts
+API contract (Remnawave backend 3.2.3):
+  GET  /api/hosts  — Host.tags: string[] (managed = marker in tags, not exclusive)
   PATCH /api/hosts  body: UpdateHostCommand { uuid (required), remark? (optional), ... }
   Partial PATCH with only {uuid, remark} is safe: HostsService.updateHost applies
-  only provided fields; nodes/inbound/tag/sni/etc. stay unchanged when omitted.
+  only provided fields; nodes/inbound/tags/sni/etc. stay unchanged when omitted.
   No bulk remark endpoint exists.
+
+  Write-path is 3.2.3 only (create uses tags: [managed_tag]).
+  Read-side: normalize_host_tags() also accepts legacy 2.7.4 Host.tag when tags is absent.
+  Report field ``tags`` is canonical; ``tag`` is a compatibility field (legacy
+  singular value if present, otherwise the first normalized tag).
 """
 
 from __future__ import annotations
@@ -60,6 +65,55 @@ def _as_list(value: Any) -> list[Any]:
     if isinstance(value, list):
         return value
     return [value]
+
+
+def normalize_host_tags(host: dict[str, Any] | None) -> list[str]:
+    """Return Host.tags as a list of non-empty strings (order preserved).
+
+    Remnawave 3.2.3: missing / null / [] / non-list → [].
+    Cheap 2.7.4 read compatibility: if ``tags`` is absent and singular ``tag``
+    is a non-empty string, return [tag]. If ``tags`` is present, do not fall
+    back to ``tag``.
+    """
+    if not host:
+        return []
+    if "tags" in host:
+        tags = host.get("tags")
+        if not isinstance(tags, list):
+            return []
+        out: list[str] = []
+        for item in tags:
+            if item is None:
+                continue
+            text = str(item)
+            if text:
+                out.append(text)
+        return out
+    tag = host.get("tag")
+    if tag is None or tag == "":
+        return []
+    return [str(tag)]
+
+
+def is_managed_host(
+    host: dict[str, Any] | None,
+    managed_tag: str = MANAGED_TAG_DEFAULT,
+) -> bool:
+    """True when ``managed_tag`` is present in normalized Host.tags."""
+    return managed_tag in normalize_host_tags(host)
+
+
+def _compat_host_tag(host: dict[str, Any], tags: list[str]) -> str | None:
+    """Compatibility singular tag: legacy Host.tag if set, else first tags[] item."""
+    if "tag" in host:
+        raw = host.get("tag")
+        if raw is not None and raw != "":
+            return str(raw)
+    return tags[0] if tags else None
+
+
+def _format_tags(tags: list[str] | None) -> str:
+    return ",".join(tags or [])
 
 
 def normalize_node_uuids(nodes: Any) -> list[str]:
@@ -135,8 +189,8 @@ def enrich_host(
     node_uuids = normalize_node_uuids(host.get("nodes"))
     node_names = [nodes_by_uuid.get(u, "") for u in node_uuids]
     inbound_tag = resolve_inbound_tag(host, inbound_by_uuid)
-    tag = host.get("tag")
-    managed = tag == managed_tag
+    tags = normalize_host_tags(host)
+    managed = managed_tag in tags
     remark = str(host.get("remark") or "")
     return {
         "uuid": host.get("uuid"),
@@ -148,7 +202,8 @@ def enrich_host(
         "inbound_tag": inbound_tag or None,
         "nodes": node_uuids,
         "node_names": [n for n in node_names if n],
-        "tag": tag,
+        "tags": tags,
+        "tag": _compat_host_tag(host, tags),
         "serverDescription": host.get("serverDescription"),
         "isHidden": host.get("isHidden"),
         "managed": managed,
@@ -322,6 +377,7 @@ def match_inventory_to_api(
             "inbound_tag": inbound_tag,
             "api_uuid": None,
             "api_remark": None,
+            "tags": [],
             "managed_tag": None,
             "match_by": match_by,
             "status": "missing",
@@ -376,12 +432,14 @@ def match_inventory_to_api(
         uuid = str(host.get("uuid"))
         claimed.add(uuid)
         api_remark = str(host.get("remark") or "")
-        tag = host.get("tag")
+        tags = normalize_host_tags(host)
         row["api_uuid"] = uuid
         row["api_remark"] = api_remark
-        row["managed_tag"] = tag
+        row["tags"] = tags
+        # Compatibility: previously this field stored the singular Host.tag.
+        row["managed_tag"] = _format_tags(tags) or None
 
-        if tag != managed_tag:
+        if managed_tag not in tags:
             row["status"] = "unmanaged_match"
             if api_remark != remark:
                 row["rename_blocked"] = True
@@ -397,13 +455,15 @@ def match_inventory_to_api(
         uuid = str(host.get("uuid"))
         if uuid in claimed:
             continue
+        tags = normalize_host_tags(host)
         api_only.append(
             {
                 "uuid": uuid,
                 "remark": host.get("remark"),
                 "address": host.get("address"),
                 "port": host.get("port"),
-                "tag": host.get("tag"),
+                "tags": tags,
+                "tag": _compat_host_tag(host, tags),
                 "status": "api_only",
             }
         )
@@ -545,6 +605,7 @@ def report_to_dict(report: AuditReport) -> dict[str, Any]:
                 "remark": h.get("remark"),
                 "address": h.get("address"),
                 "port": h.get("port"),
+                "tags": h.get("tags"),
                 "tag": h.get("tag"),
             }
             for h in report.unmanaged
@@ -580,20 +641,20 @@ def render_markdown(report: AuditReport) -> str:
     lines.append("## Hosts")
     lines.append("")
     lines.append(
-        "| uuid | remark | address | port | inbound_tag | nodes | tag | managed | xHTTP | vff |"
+        "| uuid | remark | address | port | inbound_tag | nodes | tags | managed | xHTTP | vff |"
     )
     lines.append("|---|---|---|---:|---|---|---|---|---|---|")
     for h in report.hosts:
         nodes = ",".join(h.get("node_names") or h.get("nodes") or []) or "-"
         lines.append(
-            "| {uuid} | {remark} | {address} | {port} | {itag} | {nodes} | {tag} | {managed} | {xhttp} | {vff} |".format(
+            "| {uuid} | {remark} | {address} | {port} | {itag} | {nodes} | {tags} | {managed} | {xhttp} | {vff} |".format(
                 uuid=h.get("uuid"),
                 remark=(h.get("remark") or "").replace("|", "\\|"),
                 address=h.get("address"),
                 port=h.get("port"),
                 itag=(h.get("inbound_tag") or "-").replace("|", "\\|"),
                 nodes=nodes.replace("|", "\\|"),
-                tag=h.get("tag") or "-",
+                tags=_format_tags(h.get("tags")) or "-",
                 managed=h.get("managed_status"),
                 xhttp="yes" if h.get("is_xhttp") else "no",
                 vff="yes" if h.get("remark_contains_vpn_for_friends") else "no",
@@ -627,12 +688,12 @@ def render_markdown(report: AuditReport) -> str:
     lines.append("## Inventory ↔ API")
     lines.append("")
     lines.append(
-        "| inventory | desired remark | address | port | inbound_tag | api uuid | api remark | tag | match | status |"
+        "| inventory | desired remark | address | port | inbound_tag | api uuid | api remark | tags | match | status |"
     )
     lines.append("|---|---|---|---:|---|---|---|---|---|---|")
     for m in report.inventory_matches:
         lines.append(
-            "| {inv} | {desired} | {address} | {port} | {itag} | {uuid} | {api_remark} | {tag} | {match} | {status} |".format(
+            "| {inv} | {desired} | {address} | {port} | {itag} | {uuid} | {api_remark} | {tags} | {match} | {status} |".format(
                 inv=m.get("inventory_host"),
                 desired=(m.get("desired_remark") or "").replace("|", "\\|"),
                 address=m.get("address"),
@@ -640,7 +701,7 @@ def render_markdown(report: AuditReport) -> str:
                 itag=(m.get("inbound_tag") or "-").replace("|", "\\|"),
                 uuid=m.get("api_uuid") or "-",
                 api_remark=(m.get("api_remark") or "-").replace("|", "\\|"),
-                tag=m.get("managed_tag") or "-",
+                tags=_format_tags(m.get("tags")) or m.get("managed_tag") or "-",
                 match=m.get("match_by"),
                 status=m.get("status"),
             )
@@ -650,12 +711,13 @@ def render_markdown(report: AuditReport) -> str:
         lines.append("")
         lines.append("## API-only Hosts")
         lines.append("")
-        lines.append("| uuid | remark | address | port | tag |")
+        lines.append("| uuid | remark | address | port | tags |")
         lines.append("|---|---|---|---:|---|")
         for h in report.api_only:
             lines.append(
                 f"| {h.get('uuid')} | {(h.get('remark') or '').replace('|', '\\|')} | "
-                f"{h.get('address')} | {h.get('port')} | {h.get('tag') or '-'} |"
+                f"{h.get('address')} | {h.get('port')} | "
+                f"{_format_tags(h.get('tags')) or h.get('tag') or '-'} |"
             )
 
     lines.append("")
@@ -679,7 +741,7 @@ def render_markdown(report: AuditReport) -> str:
         for h in report.unmanaged:
             lines.append(
                 f"- `{h.get('uuid')}` remark={h.get('remark')!r} "
-                f"tag={h.get('tag')!r} {h.get('address')}:{h.get('port')}"
+                f"tags={h.get('tags')!r} {h.get('address')}:{h.get('port')}"
             )
 
     lines.append("")

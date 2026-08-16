@@ -61,7 +61,7 @@ rw_host_update_api_path: "/hosts"
 # Preferred declarative list. If empty -> legacy rw_host_* is used.
 remnawave_hosts: []
 
-# Managed marker stored in Host.tag (safe; OpenAPI constraints: uppercase/digits/_/:, max 32)
+# Managed marker stored as one Host.tags[] element (3.2.3: uppercase/digits/_/:, max 36, max 10 tags)
 rw_host_managed_tag: "VFF:MANAGED"
 
 # Prune behaviour (managed-only)

@@ -30,15 +30,19 @@
   ansible.builtin.set_fact:
     _rw_desired_keys: "{{ tmp | from_json }}"
 
-- name: Select managed hosts (tag == rw_host_managed_tag)
+- name: Select managed hosts (rw_host_managed_tag in host.tags)
+  vars:
+    tmp: >-
+      {%- set out = [] -%}
+      {%- for h in _rw_hosts_existing -%}
+        {%- set tags = h.tags | default([], true) -%}
+        {%- if tags is sequence and not (tags is string) and rw_host_managed_tag in tags -%}
+          {%- set _ = out.append(h) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out | to_json }}
   ansible.builtin.set_fact:
-    _rw_managed_existing: >-
-      {{
-        _rw_hosts_existing
-        | selectattr('tag', 'defined')
-        | selectattr('tag', 'equalto', rw_host_managed_tag)
-        | list
-      }}
+    _rw_managed_existing: "{{ tmp | from_json }}"
 
 - name: Assert host DTO contains 'nodes' for per_node prune
   ansible.builtin.assert:

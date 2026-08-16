@@ -27,6 +27,9 @@ AUDIT_TASKS = (AUDIT_ROLE / "tasks/main.yml").read_text(encoding="utf-8")
 MAKEFILE = (REPO / "Makefile").read_text(encoding="utf-8")
 
 
+_UNSET = object()
+
+
 def _host(
     *,
     uuid: str,
@@ -35,11 +38,12 @@ def _host(
     port: int = 443,
     profile: str = "prof-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
     inbound: str = "inbd-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-    tag: str = "VFF:MANAGED",
+    tags: object = _UNSET,
+    tag: object = _UNSET,
     nodes: list[str] | None = None,
     path: str = "",
 ) -> dict:
-    return {
+    data = {
         "uuid": uuid,
         "remark": remark,
         "address": address,
@@ -49,7 +53,6 @@ def _host(
             "configProfileUuid": profile,
             "configProfileInboundUuid": inbound,
         },
-        "tag": tag,
         "serverDescription": "keep-me",
         "sni": "sni.example.com",
         "isHidden": False,
@@ -58,6 +61,13 @@ def _host(
         "fingerprint": "chrome",
         "securityLayer": "DEFAULT",
     }
+    if tags is not _UNSET:
+        data["tags"] = tags
+    elif tag is _UNSET:
+        data["tags"] = ["VFF:MANAGED"]
+    if tag is not _UNSET:
+        data["tag"] = tag
+    return data
 
 
 REALITY_INBOUND = "inbd-reality-0000-0000-000000000001"
@@ -181,7 +191,6 @@ class RenamePayloadTests(unittest.TestCase):
         existing = _host(
             uuid="11111111-1111-1111-1111-111111111111",
             remark="old",
-            tag="VFF:MANAGED",
         )
         payload = lib.build_remark_update_payload(existing, "🇩🇪 Germany 1")
         self.assertEqual(payload, {"uuid": existing["uuid"], "remark": "🇩🇪 Germany 1"})
@@ -193,6 +202,8 @@ class RenamePayloadTests(unittest.TestCase):
             "nodes",
             "sni",
             "tag",
+            "tags",
+            "allowInsecure",
             "serverDescription",
             "isHidden",
             "viewPosition",
@@ -233,7 +244,7 @@ class UnmanagedGuardTests(unittest.TestCase):
             _host(
                 uuid="11111111-1111-1111-1111-111111111111",
                 remark="old brand",
-                tag=None,
+                tags=["OTHER"],
                 inbound=REALITY_INBOUND,
                 profile=PROFILE,
             )
@@ -301,6 +312,14 @@ class AuditOnlyGetTests(unittest.TestCase):
 
 
 class RoleStructureTests(unittest.TestCase):
+    def _create_payload_block(self) -> str:
+        marker = "- name: Build create payload"
+        start = ENSURE.find(marker)
+        self.assertGreaterEqual(start, 0, "missing task: Build create payload")
+        rest = ENSURE[start:]
+        nxt = rest.find("\n- name: Create host if missing")
+        return rest if nxt < 0 else rest[:nxt]
+
     def test_defaults_modes_and_flags(self) -> None:
         self.assertEqual(DEFAULTS["rw_host_match_by"], "remark")
         self.assertFalse(DEFAULTS["rw_host_set_remark_if_exists"])
@@ -327,6 +346,12 @@ class RoleStructureTests(unittest.TestCase):
             "changed_when: (_rw_remark_patch.status | default(0) | int) == 200",
             ENSURE,
         )
+        create = self._create_payload_block()
+        self.assertIn("tags:", create)
+        self.assertIn('- "{{ rw_host_managed_tag }}"', create)
+        self.assertNotIn("\n      tag:", create)
+        self.assertNotIn("allowInsecure", create)
+        self.assertNotIn("allowInsecure", ENSURE)
 
 
 class RemarkRenameReportingTests(unittest.TestCase):
@@ -402,8 +427,10 @@ class RemarkRenameReportingTests(unittest.TestCase):
 
     def test_prune_still_managed_only(self) -> None:
         self.assertIn("rw_host_managed_tag", PRUNE)
+        self.assertIn("rw_host_managed_tag in tags", PRUNE)
         self.assertIn("endpoint_inbound", PRUNE)
         self.assertNotIn("rw_host_allow_unmanaged_update", PRUNE)
+        self.assertNotIn("selectattr('tag'", PRUNE)
 
     def test_makefile_hosts_audit(self) -> None:
         self.assertIn("hosts-audit:", MAKEFILE)
@@ -472,6 +499,125 @@ class CollisionAnalysisTests(unittest.TestCase):
         groups = report.collisions["B_address_port"]
         self.assertEqual(len(groups), 1)
         self.assertTrue(groups[0]["xhttp_related"])
+
+
+class ManagedTagsTests(unittest.TestCase):
+    """Host.tags membership: managed marker need not be the only tag."""
+
+    def test_normalize_and_is_managed_fixtures(self) -> None:
+        cases = [
+            ({"tags": ["VFF:MANAGED"]}, True, ["VFF:MANAGED"]),
+            ({"tags": ["OTHER", "VFF:MANAGED"]}, True, ["OTHER", "VFF:MANAGED"]),
+            ({"tags": []}, False, []),
+            ({"tags": None}, False, []),
+            ({}, False, []),
+            ({"tags": ["OTHER"]}, False, ["OTHER"]),
+            ({"tag": "VFF:MANAGED"}, True, ["VFF:MANAGED"]),
+        ]
+        for host, expected_managed, expected_tags in cases:
+            with self.subTest(host=host):
+                self.assertEqual(lib.normalize_host_tags(host), expected_tags)
+                self.assertEqual(lib.is_managed_host(host), expected_managed)
+
+    def test_multi_tags_preserved_in_enrich_and_report(self) -> None:
+        host = _host(
+            uuid="11111111-1111-1111-1111-111111111111",
+            remark="multi",
+            tags=["OTHER", "VFF:MANAGED"],
+            inbound=REALITY_INBOUND,
+            profile=PROFILE,
+        )
+        enriched = lib.enrich_host(
+            host,
+            nodes_by_uuid={},
+            inbound_by_uuid={},
+        )
+        self.assertEqual(enriched["tags"], ["OTHER", "VFF:MANAGED"])
+        self.assertTrue(enriched["managed"])
+        report = lib.build_audit_report(api_hosts=[host])
+        self.assertEqual(report.hosts[0]["tags"], ["OTHER", "VFF:MANAGED"])
+        self.assertEqual(report.unmanaged, [])
+        md = lib.render_markdown(report)
+        self.assertIn("OTHER,VFF:MANAGED", md)
+
+    def test_empty_and_foreign_tags_are_unmanaged_in_match(self) -> None:
+        inbound_by_tag = {
+            "VLESS TCP REALITY (DS)": {
+                "inbound_uuid": REALITY_INBOUND,
+                "profile_uuid": PROFILE,
+            }
+        }
+        desired = [
+            {
+                "inventory_host": "de-fra-1",
+                "remark": "🇩🇪 Germany 1",
+                "address": "edge.example.com",
+                "port": 443,
+                "inbound_tag": "VLESS TCP REALITY (DS)",
+            }
+        ]
+        for api_host in (
+            _host(
+                uuid="11111111-1111-1111-1111-111111111111",
+                remark="old brand",
+                tags=[],
+                inbound=REALITY_INBOUND,
+                profile=PROFILE,
+            ),
+            _host(
+                uuid="11111111-1111-1111-1111-111111111111",
+                remark="old brand",
+                tags=None,
+                inbound=REALITY_INBOUND,
+                profile=PROFILE,
+            ),
+            {
+                "uuid": "11111111-1111-1111-1111-111111111111",
+                "remark": "old brand",
+                "address": "edge.example.com",
+                "port": 443,
+                "inbound": {
+                    "configProfileUuid": PROFILE,
+                    "configProfileInboundUuid": REALITY_INBOUND,
+                },
+            },
+        ):
+            with self.subTest(tags=api_host.get("tags", "__missing__")):
+                matches, _ = lib.match_inventory_to_api(
+                    desired, [api_host], inbound_by_tag=inbound_by_tag
+                )
+                self.assertEqual(matches[0]["status"], "unmanaged_match")
+
+    def test_legacy_singular_tag_is_managed_in_match(self) -> None:
+        api = [
+            _host(
+                uuid="11111111-1111-1111-1111-111111111111",
+                remark="🇩🇪 Germany 1",
+                tag="VFF:MANAGED",
+                inbound=REALITY_INBOUND,
+                profile=PROFILE,
+            )
+        ]
+        desired = [
+            {
+                "inventory_host": "de-fra-1",
+                "remark": "🇩🇪 Germany 1",
+                "address": "edge.example.com",
+                "port": 443,
+                "inbound_tag": "VLESS TCP REALITY (DS)",
+            }
+        ]
+        inbound_by_tag = {
+            "VLESS TCP REALITY (DS)": {
+                "inbound_uuid": REALITY_INBOUND,
+                "profile_uuid": PROFILE,
+            }
+        }
+        matches, _ = lib.match_inventory_to_api(
+            desired, api, inbound_by_tag=inbound_by_tag
+        )
+        self.assertEqual(matches[0]["status"], "exact")
+        self.assertEqual(matches[0]["tags"], ["VFF:MANAGED"])
 
 
 class UnknownMatchModeTests(unittest.TestCase):
