@@ -1,7 +1,8 @@
 ---
 # Stage 6A/6B.2: plan / adopt / create Remnawave AntiBlock Hosts,
 # then optionally DELETE prune_eligible stale Hosts.
-# Safe identity: address + port + configProfileUuid + configProfileInboundUuid.
+# Safe identity: address + port + configProfileUuid + configProfileInboundUuid
+# + exact nodes tuple. Cross-node adopt/PATCH is forbidden.
 # Default allow_writes=false: GET + diff only. DELETE also needs prune=true.
 # Desired verify is the DELETE gate. No third user-facing flag.
 
@@ -20,11 +21,13 @@
       - antiblock_cdn_trusted_ingress_ips is sequence
       - not (antiblock_cdn_trusted_ingress_ips is string)
       - antiblock_cdn_trusted_ingress_ips | length > 0
+      - (antiblock_cdn_remark_prefix | default('') | trim | length) > 0
     fail_msg: >-
       Set remnawave_panel_url/token, antiblock_cdn_node.public_hostname,
       antiblock_cdn_inbound_tag, antiblock_cdn_path,
       antiblock_cdn_host_xhttp_extra_params (with uplinkHTTPMethod=GET),
-      and a non-empty antiblock_cdn_trusted_ingress_ips list.
+      a non-empty antiblock_cdn_trusted_ingress_ips list,
+      and antiblock_cdn_remark_prefix (display-name prefix, emoji allowed).
   tags: [antiblock_cdn_hosts]
 
 - name: AntiBlock Hosts | Validate curated trusted ingress IPv4 pool
@@ -142,6 +145,7 @@
       node_uuid: "{{ _abh_node_uuid }}"
       profile_uuid: "{{ _abh_profile_uuid }}"
       inbound_uuid: "{{ _abh_inbound_uuid }}"
+      remark_prefix: "{{ antiblock_cdn_remark_prefix | trim }}"
       inventory_hostname: "{{ inventory_hostname }}"
       is_disabled: "{{ antiblock_cdn_host_is_disabled | bool }}"
       is_hidden: "{{ antiblock_cdn_host_is_hidden | bool }}"

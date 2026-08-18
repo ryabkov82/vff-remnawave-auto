@@ -170,16 +170,24 @@ def inbound_uuids(host: dict[str, Any] | None) -> tuple[str, str]:
     )
 
 
-def identity_key(host: dict[str, Any] | None) -> tuple[str, int, str, str]:
-    """Safe identity: address + port + profile UUID + inbound UUID."""
+def identity_key(
+    host: dict[str, Any] | None,
+) -> tuple[str, int, str, str, tuple[str, ...]]:
+    """Safe identity: address + port + profile + inbound + exact nodes tuple.
+
+    Desired AntiBlock Hosts always bind exactly ``[current_node_uuid]``.
+    A Host with the same address/port/profile/inbound but a different nodes
+    tuple is a different identity: never a match, adopt, or PATCH target.
+    """
     if not host:
-        return "", 0, "", ""
+        return "", 0, "", "", ()
     profile_uuid, inbound_uuid = inbound_uuids(host)
     return (
         str(host.get("address") or ""),
         int(host.get("port") or 0),
         profile_uuid,
         inbound_uuid,
+        tuple(normalize_node_uuids(host.get("nodes"))),
     )
 
 
@@ -294,6 +302,7 @@ def select_identity_candidates(
     existing: list[dict[str, Any]],
     desired: dict[str, Any],
 ) -> list[dict[str, Any]]:
+    """Exact node-aware identity only. No address+port/profile/inbound fallback."""
     key = identity_key(desired)
     return [host for host in existing if identity_key(host) == key]
 
@@ -335,12 +344,14 @@ def validate_trusted_ingress_ips(value: Any) -> list[str]:
     return out
 
 
-def desired_remark(inventory_hostname: str, address: str, public_hostname: str, index: int) -> str:
-    """Deterministic remark for future Hosts. Adoption never renames existing ones."""
-    host = str(inventory_hostname or "").strip() or str(public_hostname or "").strip() or address
+def desired_remark(remark_prefix: str, index: int) -> str:
+    """Display name from explicit prefix. Never derived from inventory_hostname."""
+    prefix = str(remark_prefix or "").strip()
+    if not prefix:
+        raise ValueError("remark_prefix is required")
     if index <= 0:
-        return f"{host} (xHTTP, CDN)"
-    return f"{host} (xHTTP, CDN) {index + 1}"
+        return f"{prefix} (xHTTP, CDN)"
+    return f"{prefix} (xHTTP, CDN) {index + 1}"
 
 
 def build_desired_antiblock_hosts(ctx: dict[str, Any]) -> list[dict[str, Any]]:
@@ -363,7 +374,9 @@ def build_desired_antiblock_hosts(ctx: dict[str, Any]) -> list[dict[str, Any]]:
     node_uuid = str(ctx.get("node_uuid") or "")
     profile_uuid = str(ctx.get("profile_uuid") or "")
     inbound_uuid = str(ctx.get("inbound_uuid") or "")
-    inventory_hostname = str(ctx.get("inventory_hostname") or "")
+    remark_prefix = str(ctx.get("remark_prefix") or "").strip()
+    if not remark_prefix:
+        raise ValueError("remark_prefix is required")
     xhttp = ctx.get("xhttp_extra_params") or ctx.get("xhttpExtraParams") or {}
     if not isinstance(xhttp, dict):
         raise ValueError("xhttp_extra_params must be an object")
@@ -371,7 +384,7 @@ def build_desired_antiblock_hosts(ctx: dict[str, Any]) -> list[dict[str, Any]]:
     desired: list[dict[str, Any]] = []
     for index, address in enumerate(addresses):
         item = {
-            "remark": desired_remark(inventory_hostname, address, public_hostname, index),
+            "remark": desired_remark(remark_prefix, index),
             "address": address,
             "port": int(ctx.get("port") or 443),
             "path": str(ctx.get("path") or ""),
@@ -525,7 +538,12 @@ def classify_stale_hosts(
     inbound_uuid: str,
     public_hostname: str,
 ) -> list[dict[str, Any]]:
-    """Stale VFF:ANTIBLOCK Hosts for the current node/inbound only."""
+    """Stale VFF:ANTIBLOCK Hosts for the current node/inbound only.
+
+    Owned Hosts bound only to another node are out of scope (not stale,
+    never delete_items). Multi-node owned Hosts on the current node that
+    no longer match desired identity stay stale and prune_blocked.
+    """
     desired_identities = {identity_key(item) for item in desired}
     stale_items: list[dict[str, Any]] = []
     for host in existing:
@@ -561,11 +579,12 @@ def classify_stale_hosts(
     return stale_items
 
 
-def _format_identity(key: tuple[str, int, str, str]) -> str:
-    address, port, profile_uuid, inbound_uuid = key
+def _format_identity(key: tuple[str, int, str, str, tuple[str, ...]]) -> str:
+    address, port, profile_uuid, inbound_uuid, nodes = key
     return (
         f"address={address} port={port} "
-        f"configProfileUuid={profile_uuid} configProfileInboundUuid={inbound_uuid}"
+        f"configProfileUuid={profile_uuid} configProfileInboundUuid={inbound_uuid} "
+        f"nodes={','.join(nodes)}"
     )
 
 
@@ -750,6 +769,7 @@ def plan_antiblock_hosts(
         desired_tags = merge_owner_tags(existing_tags, owner_tag)
         tags_drift = existing_tags != desired_tags
         transport_drift = transport_drift_fields(existing_host, desired_host)
+        remark_drift = str(existing_host.get("remark") or "") != str(desired_host.get("remark") or "")
 
         row["uuid"] = str(existing_host.get("uuid") or "")
         row["existing_remark"] = existing_host.get("remark")
@@ -795,6 +815,8 @@ def plan_antiblock_hosts(
         drift_fields = list(transport_drift)
         if tags_drift:
             drift_fields.append("tags")
+        if remark_drift:
+            drift_fields.append("remark")
         if not drift_fields:
             row["action"] = "noop"
             items.append(row)
@@ -880,7 +902,11 @@ def verify_antiblock_hosts(
     owner_tag: str = OWNER_TAG_DEFAULT,
     expected_uuids: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Re-GET assertions: one Host per identity, owner tag, transport, UUIDs."""
+    """Re-GET assertions: one Host per node-aware identity, owner tag, transport, UUIDs.
+
+    Hosts of another node with the same address/port/profile/inbound are a
+    different identity and do not count as extra candidates or ambiguity.
+    """
     errors: list[str] = []
     seen_uuids: list[str] = []
 
@@ -908,6 +934,9 @@ def verify_antiblock_hosts(
             errors.append(f"nodes mismatch uuid={uuid}")
         if inbound_uuids(host) != inbound_uuids(desired_host):
             errors.append(f"inbound/profile mismatch uuid={uuid}")
+        if is_antiblock_owned(host, owner_tag):
+            if str(host.get("remark") or "") != str(desired_host.get("remark") or ""):
+                errors.append(f"remark mismatch uuid={uuid}")
 
     if expected_uuids is not None:
         if seen_uuids != list(expected_uuids):

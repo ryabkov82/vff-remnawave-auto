@@ -9,3 +9,6 @@ antiblock_cdn_node:
   origin_group_name: "common-origin-cdn-digitalstreamers-xyz"
   origin_group_use_next: true
   certificate_mode: legacy_existing
+
+# Display-name prefix for Remnawave AntiBlock Hosts. Required, no hostname fallback.
+antiblock_cdn_remark_prefix: "🇩🇪 Germany 2"

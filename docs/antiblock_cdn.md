@@ -325,7 +325,9 @@ Dedicated role `roles/remnawave_antiblock_hosts`. Обычный `remnawave_add_
 / `make nodes` не меняется (`VFF:MANAGED` остаётся обычным ownership).
 
 - Ownership: `antiblock_cdn_host_owner_tag: VFF:ANTIBLOCK` (не `VFF:MANAGED`).
-- Safe identity: `address + port + configProfileUuid + configProfileInboundUuid`.
+- Safe identity: `address + port + configProfileUuid + configProfileInboundUuid + exact nodes`.
+  Desired Hosts bind `[current_node_uuid]` only. Same IP on another node is a
+  different Host (create, never adopt/rebind).
 - Write guard: `antiblock_cdn_hosts_allow_writes` default `false`. Apply
   playbook передаёт `true`. Plan = GET + diff, без POST/PATCH/DELETE.
 - Unmanaged exact transport → PATCH только `tags` (adoption).
@@ -334,6 +336,11 @@ Dedicated role `roles/remnawave_antiblock_hosts`. Обычный `remnawave_add_
   `allow_writes=true` и `prune=true` (Stage 6B.2).
 - Desired addresses: `public_hostname` + global
   `antiblock_cdn_trusted_ingress_ips`.
+- `antiblock_cdn_remark_prefix` обязателен на CDN node (host_vars). Это
+  display-name prefix Remnawave Hosts, emoji допустим, например
+  `🇩🇪 Germany 2`. `inventory_hostname` не используется как fallback.
+  Remark managed только после ownership `VFF:ANTIBLOCK`; adoption не
+  переименовывает unowned Host.
 - Shared `antiblock_cdn_host_xhttp_extra_params` (`xhttpExtraParams`,
   `uplinkHTTPMethod`). Legacy `tag` / `xHttpExtraParams` / `allowInsecure`
   не отправляются.
@@ -375,7 +382,10 @@ de-fra-2: `cdn-lab.digitalstreamers.xyz` + тот же global pool.
 - tag `VFF:ANTIBLOCK`
 - текущие profile + inbound UUID
 - Host привязан к текущему node UUID
-- safe identity `(address, port, profile, inbound)` нет в desired
+- safe identity `(address, port, profile, inbound, exact nodes)` нет в desired
+
+Host другой node с тем же address/port/profile/inbound вне scope: не match,
+не stale, не `delete_items`.
 
 `VFF:MANAGED` и `tags=[]` не являются AntiBlock ownership.
 
