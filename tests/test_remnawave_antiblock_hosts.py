@@ -46,6 +46,8 @@ FILTER_PLUGIN = (
 
 OWNER = "VFF:ANTIBLOCK"
 MANAGED = "VFF:MANAGED"
+DE_PREFIX = "🇩🇪 Germany 2"
+SE_PREFIX = "🇸🇪 Sweden 1"
 PROFILE = "a281fe1b-d9b6-4874-b34a-2832481cc60f"
 INBOUND = "d7340374-7968-4240-9528-8c617af963ee"
 NODE = "f5477129-378e-4c0d-830c-b3ed3ce58a7a"
@@ -112,6 +114,7 @@ def _ctx(**overrides: object) -> dict:
         "profile_uuid": PROFILE,
         "inbound_uuid": INBOUND,
         "inventory_hostname": "de-fra-2",
+        "remark_prefix": DE_PREFIX,
     }
     data.update(overrides)
     return data
@@ -547,6 +550,11 @@ class InventoryAndRoleContractTests(unittest.TestCase):
         self.assertFalse(ANTIBLOCK_VARS["antiblock_cdn_hosts_allow_writes"])
         self.assertFalse(ANTIBLOCK_VARS["antiblock_cdn_hosts_prune"])
         self.assertEqual(ANTIBLOCK_VARS["antiblock_cdn_host_owner_tag"], OWNER)
+        self.assertEqual(HOST_DE_FRA_2_VARS["antiblock_cdn_remark_prefix"], DE_PREFIX)
+        self.assertNotIn("antiblock_cdn_remark_prefix", GROUP_CDN)
+        self.assertIn("antiblock_cdn_remark_prefix | default('') | trim | length", ROLE_TASKS)
+        self.assertIn("remark_prefix:", ROLE_TASKS)
+        self.assertIn("antiblock_cdn_remark_prefix | trim", ROLE_TASKS)
 
     def test_desired_addresses_hostname_then_trusted_pool(self) -> None:
         desired = _desired()
@@ -729,7 +737,8 @@ class StalePrunePlanTests(unittest.TestCase):
         self.assertEqual(plan["desired"], 4)
         self.assertEqual(plan["matched"], 4)
         self.assertEqual(plan["create"], 0)
-        self.assertEqual(plan["update"], 0)
+        self.assertEqual(plan["update"], 1)
+        self.assertEqual(plan["items"][-1]["drift_fields"], ["remark"])
         self.assertEqual(plan["adopt"], 0)
         self.assertEqual(plan["stale"], 1)
         self.assertEqual(plan["prune_eligible"], 1)
@@ -745,7 +754,10 @@ class StalePrunePlanTests(unittest.TestCase):
         self.assertEqual(written["stale"], 1)
         self.assertEqual(written["prune_eligible"], 1)
         _assert_no_delete(written)
-        self.assertEqual(written["writes"], [])
+        self.assertEqual(len(written["writes"]), 1)
+        self.assertEqual(written["writes"][0]["method"], "PATCH")
+        self.assertEqual(written["writes"][0]["drift_fields"], ["remark"])
+        self.assertEqual(set(written["writes"][0]["body"]), {"uuid", "remark"})
 
     def test_03_empty_tags_ignored(self) -> None:
         existing = _de_fra_2_existing(tags=[OWNER])
@@ -901,7 +913,8 @@ class StalePrunePlanTests(unittest.TestCase):
         )
         self.assertEqual(plan["delete"], 1)
         self.assertTrue(all(write["method"] in {"POST", "PATCH"} for write in plan["writes"]))
-        self.assertEqual(plan["writes"], [])
+        self.assertTrue(all(str(write.get("method") or "").upper() != "DELETE" for write in plan["writes"]))
+        self.assertEqual(plan["writes"][0]["drift_fields"], ["remark"])
 
     def test_18_allow_writes_true_still_no_delete(self) -> None:
         pool = [ip for ip in TRUSTED_POOL if ip != REMOVED_IP]
@@ -1110,7 +1123,7 @@ class GuardedDeleteTests(unittest.TestCase):
         self.assertEqual(plan["writes"], [])
         self.assertEqual(
             plan["summary"],
-            "desired=4 matched=4 create=0 update=0 adopt=0 stale=1 "
+            "desired=4 matched=4 create=0 update=1 adopt=0 stale=1 "
             "prune_eligible=1 prune_blocked=0 delete=1 ambiguous=0",
         )
         result = _simulate_run(existing, desired, allow_writes=False, prune=True)
@@ -1260,7 +1273,9 @@ class GuardedDeleteTests(unittest.TestCase):
         desired = _removed_ip_desired()
         result = _simulate_run(existing, desired, allow_writes=True, prune=True)
         methods = [item["method"] for item in result["mutations"]]
-        self.assertEqual(methods, ["PATCH", "DELETE"])
+        self.assertGreaterEqual(methods.count("PATCH"), 1)
+        self.assertEqual(methods[-1], "DELETE")
+        self.assertLess(methods.index("PATCH"), methods.index("DELETE"))
         self.assertTrue(result["verified_before_delete"])
         self.assertTrue(result["final_verify"]["ok"])
 
@@ -1295,7 +1310,8 @@ class GuardedDeleteTests(unittest.TestCase):
             allow_writes=True,
             prune=True,
         )
-        self.assertEqual(result["plan"]["writes"], [])
+        self.assertEqual(len(result["plan"]["writes"]), 1)
+        self.assertEqual(result["plan"]["writes"][0]["drift_fields"], ["remark"])
         self.assertTrue(result["verified_before_delete"])
         self.assertEqual(result["deleted"], [DE_FRA_2_HOSTS[3]["uuid"]])
         verify_pos = ROLE_TASKS.find("AntiBlock Hosts | Assert desired Hosts verified")
@@ -1482,6 +1498,476 @@ class GuardedDeleteTests(unittest.TestCase):
         self.assertEqual(result["final_plan"]["prune_eligible"], 0)
         self.assertIn(NEW_IP, [host["address"] for host in result["hosts"]])
         self.assertNotIn(DE_FRA_2_HOSTS[3]["uuid"], [host.get("uuid") for host in result["hosts"]])
+
+
+NODE_DE = NODE
+NODE_SE = "9c9c9c9c-9c9c-49c9-89c9-9c9c9c9c9c9c"
+SE_SNI = "se-sto-1.cdn.digitalstreamers.xyz"
+SHARED_INGRESS_IP = "188.72.111.7"
+SE_SHARED_UUID = "7a7a7a7a-7a7a-47a7-87a7-7a7a7a7a7a7a"
+SE_HOSTNAME_UUID = "8b8b8b8b-8b8b-48b8-88b8-8b8b8b8b8b8b"
+
+
+def _desired_for_node(
+    node_uuid: str,
+    *,
+    sni: str,
+    host: str,
+    public_hostname: str,
+    inventory_hostname: str,
+    remark_prefix: str,
+):
+    return _desired(
+        node_uuid=node_uuid,
+        sni=sni,
+        host=host,
+        public_hostname=public_hostname,
+        inventory_hostname=inventory_hostname,
+        remark_prefix=remark_prefix,
+    )
+
+
+def _desired_shared_ip(
+    *,
+    node_uuid: str,
+    sni: str,
+    host: str,
+    public_hostname: str,
+    inventory_hostname: str,
+    remark_prefix: str,
+):
+    items = _desired_for_node(
+        node_uuid,
+        sni=sni,
+        host=host,
+        public_hostname=public_hostname,
+        inventory_hostname=inventory_hostname,
+        remark_prefix=remark_prefix,
+    )
+    found = [item for item in items if item["address"] == SHARED_INGRESS_IP]
+    if len(found) != 1:
+        raise AssertionError(f"expected one desired {SHARED_INGRESS_IP}")
+    return found
+
+
+def _desired_de_shared_ip():
+    return _desired_shared_ip(
+        node_uuid=NODE_DE,
+        sni=PUBLIC_HOSTNAME,
+        host=PUBLIC_HOSTNAME,
+        public_hostname=PUBLIC_HOSTNAME,
+        inventory_hostname="de-fra-2",
+        remark_prefix=DE_PREFIX,
+    )
+
+
+def _desired_se_shared_ip():
+    return _desired_shared_ip(
+        node_uuid=NODE_SE,
+        sni=SE_SNI,
+        host=SE_SNI,
+        public_hostname=SE_SNI,
+        inventory_hostname="se-sto-1",
+        remark_prefix=SE_PREFIX,
+    )
+
+
+def _se_owned_shared_ip(**overrides: object) -> dict:
+    host = _existing_host(
+        {
+            "uuid": SE_SHARED_UUID,
+            "remark": "🇸🇪 Sweden 1 (xHTTP, CDN) 2",
+            "address": SHARED_INGRESS_IP,
+        },
+        nodes=[NODE_SE],
+        sni=SE_SNI,
+        host=SE_SNI,
+        tags=[OWNER],
+    )
+    host.update(overrides)
+    return host
+
+
+def _de_owned_shared_ip(**overrides: object) -> dict:
+    host = _existing_host(
+        DE_FRA_2_HOSTS[1],
+        nodes=[NODE_DE],
+        sni=PUBLIC_HOSTNAME,
+        host=PUBLIC_HOSTNAME,
+        tags=[OWNER],
+    )
+    host.update(overrides)
+    return host
+
+
+def _write_uuids(plan: dict) -> list[str]:
+    out: list[str] = []
+    for write in plan.get("writes") or []:
+        body = write.get("body") or {}
+        uuid = str(body.get("uuid") or "")
+        if uuid:
+            out.append(uuid)
+    return out
+
+
+class MultiNodeIdentityTests(unittest.TestCase):
+    def test_a_other_node_owned_host_is_create_not_rebind(self) -> None:
+        existing = [_se_owned_shared_ip()]
+        desired = _desired_de_shared_ip()
+        plan = _plan(
+            existing,
+            desired,
+            node_uuid=NODE_DE,
+            allow_writes=True,
+        )
+        self.assertEqual(plan["create"], 1)
+        self.assertEqual(plan["matched"], 0)
+        self.assertEqual(plan["update"], 0)
+        self.assertEqual(plan["adopt"], 0)
+        self.assertEqual(plan["items"][0]["action"], "create")
+        self.assertIsNone(plan["items"][0]["uuid"])
+        self.assertEqual(plan["writes"][0]["method"], "POST")
+        self.assertNotIn(SE_SHARED_UUID, _write_uuids(plan))
+        self.assertEqual(plan["stale"], 0)
+        self.assertEqual(plan["delete"], 0)
+        self.assertEqual(abh.select_identity_candidates(existing, desired[0]), [])
+
+    def test_b_same_node_exact_identity_is_noop(self) -> None:
+        existing = [_se_owned_shared_ip()]
+        desired = _desired_se_shared_ip()
+        plan = _plan(
+            existing,
+            desired,
+            node_uuid=NODE_SE,
+            public_hostname=SE_SNI,
+        )
+        self.assertEqual(plan["matched"], 1)
+        self.assertEqual(plan["create"], 0)
+        self.assertEqual(plan["update"], 0)
+        self.assertEqual(plan["items"][0]["action"], "noop")
+        self.assertEqual(plan["items"][0]["uuid"], SE_SHARED_UUID)
+        self.assertEqual(plan["stale"], 0)
+
+    def test_c_two_hosts_same_ip_selects_only_current_node(self) -> None:
+        existing = [_de_owned_shared_ip(), _se_owned_shared_ip()]
+        desired = _desired_de_shared_ip()
+        cands = abh.select_identity_candidates(existing, desired[0])
+        self.assertEqual([host["uuid"] for host in cands], [DE_FRA_2_HOSTS[1]["uuid"]])
+        plan = _plan(existing, desired, node_uuid=NODE_DE)
+        self.assertEqual(plan["ambiguous"], 0)
+        self.assertEqual(plan["matched"], 1)
+        self.assertEqual(plan["create"], 0)
+        self.assertEqual(plan["items"][0]["uuid"], DE_FRA_2_HOSTS[1]["uuid"])
+        self.assertEqual(plan["items"][0]["action"], "noop")
+        self.assertEqual(plan["stale"], 0)
+
+    def test_d_unowned_exact_current_node_host_is_still_adoptable(self) -> None:
+        existing = [_de_owned_shared_ip(tags=[])]
+        desired = _desired_de_shared_ip()
+        plan = _plan(existing, desired, node_uuid=NODE_DE, allow_writes=True)
+        self.assertEqual(plan["adopt"], 1)
+        self.assertEqual(plan["create"], 0)
+        self.assertEqual(plan["items"][0]["action"], "adopt")
+        self.assertEqual(plan["items"][0]["drift_fields"], ["tags"])
+        self.assertEqual(plan["writes"][0]["method"], "PATCH")
+        self.assertEqual(
+            plan["writes"][0]["body"],
+            {"uuid": DE_FRA_2_HOSTS[1]["uuid"], "tags": [OWNER]},
+        )
+
+    def test_e_unowned_other_node_host_is_not_adopted(self) -> None:
+        existing = [_se_owned_shared_ip(tags=[])]
+        desired = _desired_de_shared_ip()
+        plan = _plan(existing, desired, node_uuid=NODE_DE, allow_writes=True)
+        self.assertEqual(plan["create"], 1)
+        self.assertEqual(plan["adopt"], 0)
+        self.assertEqual(plan["matched"], 0)
+        self.assertEqual(plan["writes"][0]["method"], "POST")
+        self.assertNotIn(SE_SHARED_UUID, _write_uuids(plan))
+
+    def test_f_multi_node_host_is_not_exact_and_not_rebound(self) -> None:
+        existing = [_de_owned_shared_ip(nodes=[NODE_DE, NODE_SE])]
+        desired = _desired_de_shared_ip()
+        plan = _plan(existing, desired, node_uuid=NODE_DE, allow_writes=True, prune=True)
+        self.assertEqual(plan["create"], 1)
+        self.assertEqual(plan["matched"], 0)
+        self.assertEqual(plan["update"], 0)
+        self.assertEqual(plan["items"][0]["action"], "create")
+        self.assertEqual(plan["stale"], 1)
+        stale = plan["stale_items"][0]
+        self.assertEqual(stale["uuid"], DE_FRA_2_HOSTS[1]["uuid"])
+        self.assertEqual(stale["block_reason"], "multiple_nodes")
+        self.assertFalse(stale["prune_eligible"])
+        self.assertEqual(plan["delete"], 0)
+        self.assertEqual(plan["writes"][0]["method"], "POST")
+        self.assertNotIn(DE_FRA_2_HOSTS[1]["uuid"], _write_uuids(plan))
+
+    def test_g_verify_same_ip_different_nodes_is_not_ambiguous(self) -> None:
+        existing = [_de_owned_shared_ip(), _se_owned_shared_ip()]
+        desired = _desired_de_shared_ip()
+        verify = abh.verify_antiblock_hosts(
+            desired,
+            existing,
+            owner_tag=OWNER,
+            expected_uuids=[DE_FRA_2_HOSTS[1]["uuid"]],
+        )
+        self.assertTrue(verify["ok"], verify["errors"])
+        self.assertEqual(verify["uuids"], [DE_FRA_2_HOSTS[1]["uuid"]])
+        self.assertEqual(len(abh.select_identity_candidates(existing, desired[0])), 1)
+
+    def test_h_owned_other_node_host_never_stale_or_delete_for_current_node(self) -> None:
+        existing = [_se_owned_shared_ip()]
+        plan = _plan(
+            existing,
+            _desired(node_uuid=NODE_DE),
+            node_uuid=NODE_DE,
+            prune=True,
+            allow_writes=True,
+        )
+        self.assertEqual(plan["stale"], 0)
+        self.assertEqual(plan["delete"], 0)
+        self.assertEqual(plan["delete_items"], [])
+        self.assertEqual(plan["stale_items"], [])
+        self.assertNotIn(SE_SHARED_UUID, _write_uuids(plan))
+
+    def test_production_shared_pool_de_creates_without_patching_se(self) -> None:
+        hostname = _existing_host(DE_FRA_2_HOSTS[0], tags=[OWNER], nodes=[NODE_DE])
+        stolen = [
+            _existing_host(
+                spec,
+                tags=[OWNER],
+                nodes=[NODE_SE],
+                sni=SE_SNI,
+                host=SE_SNI,
+            )
+            for spec in DE_FRA_2_HOSTS[1:]
+        ]
+        existing = [hostname, *stolen]
+        plan = _plan(
+            existing,
+            _desired(node_uuid=NODE_DE),
+            node_uuid=NODE_DE,
+            allow_writes=True,
+        )
+        self.assertEqual(plan["desired"], 5)
+        self.assertEqual(plan["matched"], 1)
+        self.assertEqual(plan["create"], 4)
+        self.assertEqual(plan["update"], 0)
+        self.assertEqual(plan["adopt"], 0)
+        self.assertEqual(plan["stale"], 0)
+        self.assertEqual(plan["items"][0]["action"], "noop")
+        self.assertEqual([item["action"] for item in plan["items"][1:]], ["create"] * 4)
+        stolen_uuids = {spec["uuid"] for spec in DE_FRA_2_HOSTS[1:]}
+        self.assertTrue(all(write["method"] == "POST" for write in plan["writes"]))
+        self.assertEqual(set(_write_uuids(plan)) & stolen_uuids, set())
+
+    def test_production_shared_pool_se_all_noop(self) -> None:
+        existing = [
+            _existing_host(
+                {
+                    "uuid": SE_HOSTNAME_UUID,
+                    "remark": "🇸🇪 Sweden 1 (xHTTP, CDN)",
+                    "address": SE_SNI,
+                },
+                tags=[OWNER],
+                nodes=[NODE_SE],
+                sni=SE_SNI,
+                host=SE_SNI,
+            )
+        ]
+        existing.extend(
+            _existing_host(
+                spec,
+                tags=[OWNER],
+                nodes=[NODE_SE],
+                sni=SE_SNI,
+                host=SE_SNI,
+                remark=abh.desired_remark(SE_PREFIX, index),
+            )
+            for index, spec in enumerate(DE_FRA_2_HOSTS[1:], start=1)
+        )
+        desired = _desired_for_node(
+            NODE_SE,
+            sni=SE_SNI,
+            host=SE_SNI,
+            public_hostname=SE_SNI,
+            inventory_hostname="se-sto-1",
+            remark_prefix=SE_PREFIX,
+        )
+        plan = _plan(
+            existing,
+            desired,
+            node_uuid=NODE_SE,
+            public_hostname=SE_SNI,
+        )
+        self.assertEqual(plan["desired"], 5)
+        self.assertEqual(plan["matched"], 5)
+        self.assertEqual(plan["create"], 0)
+        self.assertEqual(plan["update"], 0)
+        self.assertEqual(plan["stale"], 0)
+        self.assertEqual([item["action"] for item in plan["items"]], ["noop"] * 5)
+
+    def test_identity_key_includes_exact_nodes_tuple(self) -> None:
+        de_key = abh.identity_key(_desired_de_shared_ip()[0])
+        se_key = abh.identity_key(_desired_se_shared_ip()[0])
+        self.assertEqual(de_key[0], SHARED_INGRESS_IP)
+        self.assertEqual(de_key[4], (NODE_DE,))
+        self.assertEqual(se_key[4], (NODE_SE,))
+        self.assertNotEqual(de_key, se_key)
+        self.assertIn("nodes=", abh._format_identity(de_key))
+
+
+class RemarkPrefixTests(unittest.TestCase):
+    def test_a_owned_remark_drift_patches_only_remark(self) -> None:
+        existing = [_de_owned_shared_ip(remark="de-fra-2 (xHTTP, CDN) 2")]
+        desired = _desired_de_shared_ip()
+        plan = _plan(existing, desired, node_uuid=NODE_DE, allow_writes=True)
+        self.assertEqual(plan["items"][0]["action"], "update")
+        self.assertEqual(plan["items"][0]["drift_fields"], ["remark"])
+        write = plan["writes"][0]
+        self.assertEqual(write["method"], "PATCH")
+        self.assertEqual(set(write["body"]), {"uuid", "remark"})
+        self.assertEqual(write["body"]["uuid"], DE_FRA_2_HOSTS[1]["uuid"])
+        self.assertEqual(write["body"]["remark"], desired[0]["remark"])
+        self.assertNotIn("nodes", write["body"])
+        self.assertNotIn("sni", write["body"])
+        self.assertNotIn("host", write["body"])
+
+    def test_b_owned_matching_remark_is_noop(self) -> None:
+        plan = _plan([_de_owned_shared_ip()], _desired_de_shared_ip(), node_uuid=NODE_DE)
+        self.assertEqual(plan["items"][0]["action"], "noop")
+        self.assertEqual(plan["update"], 0)
+
+    def test_c_unowned_remark_mismatch_adopts_tags_only(self) -> None:
+        existing = [_de_owned_shared_ip(tags=[], remark="de-fra-2 (xHTTP, CDN) 2")]
+        desired = _desired_de_shared_ip()
+        plan = _plan(existing, desired, node_uuid=NODE_DE, allow_writes=True)
+        self.assertEqual(plan["items"][0]["action"], "adopt")
+        self.assertEqual(plan["items"][0]["drift_fields"], ["tags"])
+        self.assertEqual(plan["writes"][0]["body"], {"uuid": DE_FRA_2_HOSTS[1]["uuid"], "tags": [OWNER]})
+        self.assertNotIn("remark", plan["writes"][0]["body"])
+
+    def test_d_owned_after_adoption_updates_remark(self) -> None:
+        existing = [_de_owned_shared_ip(remark="de-fra-2 (xHTTP, CDN) 2")]
+        desired = _desired_de_shared_ip()
+        plan = _plan(existing, desired, node_uuid=NODE_DE, allow_writes=True)
+        self.assertEqual(plan["items"][0]["action"], "update")
+        self.assertEqual(plan["items"][0]["drift_fields"], ["remark"])
+        self.assertEqual(plan["writes"][0]["body"]["remark"], "🇩🇪 Germany 2 (xHTTP, CDN) 2")
+
+    def test_e_se_wrong_remark_is_not_de_candidate(self) -> None:
+        existing = [_se_owned_shared_ip(remark="🇩🇪 Germany 2 (xHTTP, CDN) 2")]
+        desired = _desired_de_shared_ip()
+        plan = _plan(existing, desired, node_uuid=NODE_DE, allow_writes=True)
+        self.assertEqual(plan["create"], 1)
+        self.assertEqual(plan["matched"], 0)
+        self.assertEqual(plan["update"], 0)
+        self.assertNotIn(SE_SHARED_UUID, _write_uuids(plan))
+        self.assertEqual(abh.select_identity_candidates(existing, desired[0]), [])
+
+    def test_f_verify_requires_owned_remark(self) -> None:
+        desired = _desired_de_shared_ip()
+        wrong = _de_owned_shared_ip(remark="de-fra-2 (xHTTP, CDN) 2")
+        failed = abh.verify_antiblock_hosts(desired, [wrong], owner_tag=OWNER)
+        self.assertFalse(failed["ok"])
+        self.assertTrue(any("remark mismatch" in err for err in failed["errors"]))
+        ok = abh.verify_antiblock_hosts(desired, [_de_owned_shared_ip()], owner_tag=OWNER)
+        self.assertTrue(ok["ok"], ok["errors"])
+
+    def test_g_desired_remark_keeps_unicode_emoji(self) -> None:
+        self.assertEqual(
+            abh.desired_remark(SE_PREFIX, 1),
+            "🇸🇪 Sweden 1 (xHTTP, CDN) 2",
+        )
+        self.assertEqual(
+            abh.desired_remark(DE_PREFIX, 0),
+            "🇩🇪 Germany 2 (xHTTP, CDN)",
+        )
+        with self.assertRaises(ValueError):
+            abh.desired_remark("", 0)
+        with self.assertRaises(ValueError):
+            _desired(remark_prefix="  ")
+
+    def test_h_production_like_prefixes_do_not_change_identity(self) -> None:
+        de_desired = _desired(node_uuid=NODE_DE, remark_prefix=DE_PREFIX)
+        se_desired = _desired_for_node(
+            NODE_SE,
+            sni=SE_SNI,
+            host=SE_SNI,
+            public_hostname=SE_SNI,
+            inventory_hostname="se-sto-1",
+            remark_prefix=SE_PREFIX,
+        )
+        self.assertEqual(
+            [item["remark"] for item in de_desired],
+            [abh.desired_remark(DE_PREFIX, i) for i in range(5)],
+        )
+        self.assertEqual(
+            [item["remark"] for item in se_desired],
+            [abh.desired_remark(SE_PREFIX, i) for i in range(5)],
+        )
+        de_ip = next(item for item in de_desired if item["address"] == SHARED_INGRESS_IP)
+        se_ip = next(item for item in se_desired if item["address"] == SHARED_INGRESS_IP)
+        self.assertNotEqual(abh.identity_key(de_ip), abh.identity_key(se_ip))
+        self.assertEqual(abh.identity_key(de_ip)[4], (NODE_DE,))
+        self.assertEqual(abh.identity_key(se_ip)[4], (NODE_SE,))
+
+        hostname = _existing_host(DE_FRA_2_HOSTS[0], tags=[OWNER], nodes=[NODE_DE])
+        ugly = [
+            _existing_host(
+                spec,
+                tags=[OWNER],
+                nodes=[NODE_DE],
+                remark=f"de-fra-2 (xHTTP, CDN) {index + 1}",
+            )
+            for index, spec in enumerate(DE_FRA_2_HOSTS[1:], start=1)
+        ]
+        de_plan = _plan([hostname, *ugly], de_desired, node_uuid=NODE_DE, allow_writes=True)
+        self.assertEqual(de_plan["items"][0]["action"], "noop")
+        self.assertEqual([item["action"] for item in de_plan["items"][1:]], ["update"] * 4)
+        self.assertEqual([item["drift_fields"] for item in de_plan["items"][1:]], [["remark"]] * 4)
+        for write in de_plan["writes"]:
+            self.assertEqual(set(write["body"]), {"uuid", "remark"})
+            self.assertNotIn("nodes", write["body"])
+
+        se_hostname = _existing_host(
+            {
+                "uuid": SE_HOSTNAME_UUID,
+                "remark": abh.desired_remark(SE_PREFIX, 0),
+                "address": SE_SNI,
+            },
+            tags=[OWNER],
+            nodes=[NODE_SE],
+            sni=SE_SNI,
+            host=SE_SNI,
+        )
+        stolen = [
+            _existing_host(
+                spec,
+                tags=[OWNER],
+                nodes=[NODE_SE],
+                sni=SE_SNI,
+                host=SE_SNI,
+            )
+            for spec in DE_FRA_2_HOSTS[1:]
+        ]
+        se_plan = _plan(
+            [se_hostname, *stolen],
+            se_desired,
+            node_uuid=NODE_SE,
+            public_hostname=SE_SNI,
+            allow_writes=True,
+        )
+        self.assertEqual(se_plan["items"][0]["action"], "noop")
+        self.assertEqual([item["action"] for item in se_plan["items"][1:]], ["update"] * 4)
+        self.assertEqual([item["drift_fields"] for item in se_plan["items"][1:]], [["remark"]] * 4)
+        stolen_uuids = {spec["uuid"] for spec in DE_FRA_2_HOSTS[1:]}
+        for write in se_plan["writes"]:
+            self.assertEqual(set(write["body"]), {"uuid", "remark"})
+            self.assertIn(write["body"]["uuid"], stolen_uuids)
+            self.assertTrue(write["body"]["remark"].startswith(SE_PREFIX))
+            self.assertNotIn("nodes", write["body"])
+            self.assertNotIn("sni", write["body"])
 
 
 DICT_METHOD_KEYS = ("items", "keys", "values", "get", "update", "copy")

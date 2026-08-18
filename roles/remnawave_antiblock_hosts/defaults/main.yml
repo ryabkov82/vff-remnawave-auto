@@ -22,5 +22,9 @@ antiblock_cdn_host_keep_sni_blank: false
 antiblock_cdn_host_shuffle_host: false
 antiblock_cdn_host_mihomo_x25519: false
 
+# Required per CDN node in host_vars. Display-name prefix for Remnawave Hosts.
+# No inventory_hostname fallback. Example: "🇩🇪 Germany 2"
+# antiblock_cdn_remark_prefix: ""
+
 # Shared xHTTP extra params. Inventory overrides this object; do not copy per Host.
 antiblock_cdn_host_xhttp_extra_params: {}
