@@ -295,16 +295,21 @@ certificate при первом adoption. Миграция сертификат�
 
 ### CDN Resource managed fields
 
-Воспроизводится рабочий cdn-lab template (без «улучшения» cache/compression):
+Воспроизводится рабочий cdn-lab template (AntiBlock — transport/front,
+не content cache):
 
 - `origin_protocol: HTTPS`, `active: true`, `provider_type: ourcdn`
 - `tls.profile: PROFILE_COMPATIBLE`
+- CDN и browser cache выключены: `edgeCacheSettings.enabled=false`,
+  `browserCacheSettings.enabled=false`. Working de-fra-2 не отдаёт
+  `disableCache`; это поле не managed (deprecated, на reference отсутствует).
 - `ignore_query_string`, `host` = origin hostname, `custom_server_name` =
   origin hostname, `allowed_http_methods: GET/HEAD/OPTIONS`, `ignore_cookie`
 - `secure_key.type: DISABLE_IP_SIGNING`
 
-Пустые default objects (`edge_cache_settings: {}` и т.п.) **не** считаются
-drift. Unmanaged options сохраняются: PATCH шлёт merge current+managed.
+`{enabled: false}` и отсутствие cache-toggle **не** drift. Включённый
+edge cache (`enabled=true` + TTL) — drift `edgeCacheSettings`.
+Unmanaged options сохраняются: PATCH шлёт merge current+managed.
 CNAME resource — identity; rename через delete/recreate запрещён.
 
 `provider_cname` берётся только из GET resource (не deprecated
