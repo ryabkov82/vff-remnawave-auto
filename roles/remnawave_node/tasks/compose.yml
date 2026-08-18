@@ -19,18 +19,32 @@
     state: "{{ 'stopped' if remnawave_node_state == 'stopped' else 'present' }}"
   register: _state
 
-# Базовый "smoke": контейнер существует и up
-- name: Check container is running
+# Базовый "smoke": контейнер существует и действительно running.
+# docker ps считает Restarting как up — проверяем inspect State.
+- name: Inspect remnanode container state
   check_mode: false
-  ansible.builtin.command: docker ps --format '{{ "{{.Names}}" }}' --filter "name={{ remnawave_node_container_name }}"
-  register: _ps
+  ansible.builtin.command: >-
+    docker inspect {{ remnawave_node_container_name }}
+    --format {{ "'{{json .State}}'" }}
+  register: _rw_node_state_raw
   changed_when: false
+
+- name: Parse remnanode container state
+  ansible.builtin.set_fact:
+    _rw_node_container_state: "{{ _rw_node_state_raw.stdout | from_json }}"
 
 - name: Fail if container not running
   ansible.builtin.assert:
     that:
-      - _ps.stdout is search(remnawave_node_container_name)
-    fail_msg: "Remnawave node container is not running. Check docker compose logs."
+      - _rw_node_container_state.Running | bool
+      - not (_rw_node_container_state.Restarting | default(false) | bool)
+      - _rw_node_container_state.Status == 'running'
+    fail_msg: >-
+      Remnawave node container is not running.
+      Status={{ _rw_node_container_state.Status | default('unknown') }},
+      Running={{ _rw_node_container_state.Running | default(false) }},
+      Restarting={{ _rw_node_container_state.Restarting | default(false) }}.
+      Check docker compose logs.
 
 - name: Remnawave Node Plugins | Check CAP_NET_ADMIN
   check_mode: false

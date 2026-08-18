@@ -13,7 +13,9 @@
 ## Переменные (главные)
 
 - `remnawave_node_compose_raw` — *сырой* docker-compose из панели (приоритетнее шаблона).
-- `remnawave_node_write_env` + `remnawave_node_env_content` — если хочешь, чтобы роль записала `.env`.
+- `remnawave_node_write_env` + `remnawave_node_env_content` — если хочешь, чтобы роль записала `.env`. Существующий `.env` с непустым `SECRET_KEY` не перезаписывается (пока нет явного Vault-ключа).
+- `remnawave_secret_key` — явный ключ (Vault). Если пуст, роль берёт `SECRET_KEY` из существующего `.env` или один раз вызывает `GET /api/keygen`.
+- `remnawave_node_secret_key_auto` — разрешить keygen, когда Vault и `.env` пусты (default `true`).
 - `remnawave_node_enable_host_logs` (bool), `remnawave_node_log_dir`, `remnawave_node_manage_logrotate` — логи Xray на хосте.
 - `remnawave_node_geo_files` — список файлов `{src, dest_name}` для монтирования в `/usr/local/share/xray/…` (точечно).
 

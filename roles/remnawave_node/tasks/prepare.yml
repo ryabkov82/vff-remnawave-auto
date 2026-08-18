@@ -30,13 +30,16 @@
     mode: "{{ remnawave_node_mode }}"
 
 - name: Write .env if requested
-  when: remnawave_node_write_env
+  when:
+    - remnawave_node_write_env | bool
+    - not (_rw_node_preserve_existing_env | default(false) | bool)
   ansible.builtin.copy:
     dest: "{{ remnawave_node_dir }}/.env"
     content: "{{ remnawave_node_env_content }}"
     owner: "{{ remnawave_node_owner }}"
     group: "{{ remnawave_node_group }}"
     mode: "0640"
+  no_log: true
 
 - name: Place docker-compose.yml (raw from panel or Jinja template)
   when: remnawave_node_compose_raw | length > 0

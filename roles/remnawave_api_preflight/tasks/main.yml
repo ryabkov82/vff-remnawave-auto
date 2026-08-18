@@ -83,6 +83,13 @@
         endpoints inside each resource. A successful GET only proves that this
         token can reach that read endpoint (hosts:read / hosts:list is enough
         for GET /hosts). It does NOT prove write scopes.
+        GET /api/keygen intentionally is NOT probed; despite HTTP GET it
+        generates a new node certificate / SECRET_KEY; therefore keygen:get
+        must be verified manually in the API token scopes.
+      keygen_note: >-
+        GET /api/keygen intentionally is NOT probed; despite HTTP GET it
+        generates a new node certificate / SECRET_KEY; therefore keygen:get
+        must be verified manually in the API token scopes.
       official_source: remnawave/backend tag 3.2.3 libs/contract/api/controllers-info.ts
       scopes: "{{ rw_api_preflight_required_scopes }}"
       by_token_variable:
@@ -92,6 +99,7 @@
           - config-profiles:*
           - internal-squads:*
           - system:read
+          - keygen:get
         remnawave_inbounds_cache_api_token:
           - config-profiles:*
         remnawave_external_squads_api_token:

@@ -27,6 +27,16 @@ remnawave_node_env_content: |-
   # NODE_TOKEN=xxxxx
   # NODE_PORT=2222
 
+# SECRET_KEY source precedence (see tasks/secret_key.yml):
+# 1) explicit remnawave_secret_key (Vault / inventory) — .env may be rewritten
+# 2) existing {{ remnawave_node_dir }}/.env with non-empty SECRET_KEY —
+#    file is the source of truth and is never rewritten
+# 3) GET /api/keygen (only when auto=true and write_env=true)
+# GET /api/keygen generates a new key; never call it from --check or preflight.
+remnawave_node_secret_key_auto: true
+remnawave_node_secret_key_env_path: "{{ remnawave_node_dir }}/.env"
+remnawave_node_secret_key_api_path: "/api/keygen"
+
 # Опциональные geo-файлы (монтируются по одному файлу, как советуют доки)
 # Пример элемента: { src: "files/geo-zapret.dat", dest_name: "geo-zapret.dat" }
 remnawave_node_geo_files: []

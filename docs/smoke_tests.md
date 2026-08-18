@@ -45,8 +45,9 @@ echo | openssl s_client -connect IP:443 -servername www.cloudflare.com
 
 ### Docker состояние
 ```
-docker ps --format "table {{.Names}}	{{.Status}}"
+docker inspect remnanode --format '{{json .State}}'
 ```
+`Restarting` не считается running: нужны `State.Running=true` и `State.Status=running`.
 
 ---
 

@@ -24,6 +24,8 @@ remnawave_validate_certs: true
 # GET /system/health endpoint slug is system:remnawave-health (kind: read);
 # checklist uses system:read (action-level) because automation also GETs
 # /system/nodes/metrics on upgrade verify.
+# keygen:get is checklist-only: GET /api/keygen generates a SECRET_KEY and
+# must never be probed by this role.
 rw_api_preflight_required_scopes:
   - hosts:*
   - nodes:*
@@ -32,3 +34,4 @@ rw_api_preflight_required_scopes:
   - external-squads:*
   - subscription-page-configs:*
   - system:read
+  - keygen:get
