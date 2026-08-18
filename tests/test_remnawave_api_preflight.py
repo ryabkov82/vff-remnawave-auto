@@ -28,6 +28,7 @@ REQUIRED_SCOPES = [
     "external-squads:*",
     "subscription-page-configs:*",
     "system:read",
+    "keygen:get",
 ]
 
 REQUIRED_GETS = [
@@ -176,6 +177,19 @@ class PreflightReadOnlyTests(unittest.TestCase):
         self.assertIn("NOT the 3.2.3 token-scope preflight", UPGRADE_VER)
         self.assertIn("DO NOT run new vff-remnawave-auto mutations", DOCS)
         self.assertIn("make remnawave-api-preflight", DOCS)
+
+    def test_keygen_scope_is_checklist_only_never_probed(self) -> None:
+        self.assertIn("keygen:get", DEFAULTS["rw_api_preflight_required_scopes"])
+        self.assertIn("keygen:get", TASKS)
+        self.assertIn("GET /api/keygen intentionally is NOT probed", TASKS)
+        self.assertIn("generates a new node certificate / SECRET_KEY", TASKS)
+        self.assertIn("must be verified manually", TASKS)
+        rows = self._check_rows()
+        probed_paths = [path for path, _token, _scope in rows]
+        self.assertNotIn("/keygen", probed_paths)
+        self.assertNotIn("/api/keygen", probed_paths)
+        self.assertNotRegex(TASKS, r"path:\s*/(?:api/)?keygen\b")
+        self.assertTrue(all("keygen" not in path for path in probed_paths))
 
     def test_delegate_localhost_run_once(self) -> None:
         self.assertIn("delegate_to: localhost", TASKS)

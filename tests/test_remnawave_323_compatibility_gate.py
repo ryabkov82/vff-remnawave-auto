@@ -125,6 +125,7 @@ class ActiveCompatibilityGateTests(unittest.TestCase):
         self.assertIn("external-squads:*", preflight)
         self.assertIn("subscription-page-configs:*", preflight)
         self.assertIn("system:read", preflight)
+        self.assertIn("keygen:get", preflight)
 
     def test_antiblock_squad_invariant_tests_exist(self) -> None:
         antiblock = (REPO / "tests/test_antiblock_cdn_playbook.py").read_text(

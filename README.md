@@ -137,17 +137,16 @@ make sub-portalbase LIMIT=subscription
 > Declarative JSON v7: `roles/remnawave_subscription_page_config/files/base.json` + `files/brands/*.patch.json`
 
 ### Развернуть ноду
-Перед развёртыванием ноды необходимо:
 
-1. В панели на вкладке **Nodes → Add Node** создать ноду и скопировать её `SECRET_KEY` (строку вида `eyJu...`).
-2. Сохранить этот ключ в vault конкретной ноды:
-   ```bash
-   inventory/host_vars/de-fra-1/vault.yml
-   ```
-   пример:
-   ```yaml
-   remnawave_secret_key: "eyJu..."
-   ```
+Для **новой** ноды per-node `vault.yml` с `remnawave_secret_key` больше не
+обязателен. `make nodes LIMIT=<new-node>` сам получает ключ через
+`GET /api/keygen` и сохраняет его в `/opt/remnanode/.env`. Повторный запуск
+читает `.env`, не генерирует новый ключ и не перезаписывает файл.
+
+Существующие Vault-секреты поддерживаются и имеют приоритет над `.env` и API.
+Старые ноды не перегенерируются.
+
+API token панели должен иметь scope `keygen:get`.
 
 После этого можно запускать ноду:
 ```bash

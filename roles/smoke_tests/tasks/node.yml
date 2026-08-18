@@ -7,16 +7,28 @@
     _smoke_node_port: "{{ smoke_node_port | default(2222) }}"
     _smoke_node_container: "{{ smoke_node_container | default('remnanode') }}"
 
-- name: Node | Container is running
-  ansible.builtin.command: "docker ps --format '{{ \"{{.Names}}\" }}' --filter name={{ _smoke_node_container }}"
-  register: _ps
+- name: Node | Inspect container state
+  ansible.builtin.command: >-
+    docker inspect {{ _smoke_node_container }}
+    --format {{ "'{{json .State}}'" }}
+  register: _smoke_node_state_raw
   changed_when: false
+
+- name: Node | Parse container state
+  ansible.builtin.set_fact:
+    _smoke_node_state: "{{ _smoke_node_state_raw.stdout | from_json }}"
 
 - name: Node | Fail if container not running
   ansible.builtin.assert:
     that:
-      - _ps.stdout is search(_smoke_node_container)
-    fail_msg: "Container {{ _smoke_node_container }} is not running"
+      - _smoke_node_state.Running | bool
+      - not (_smoke_node_state.Restarting | default(false) | bool)
+      - _smoke_node_state.Status == 'running'
+    fail_msg: >-
+      Container {{ _smoke_node_container }} is not running.
+      Status={{ _smoke_node_state.Status | default('unknown') }},
+      Running={{ _smoke_node_state.Running | default(false) }},
+      Restarting={{ _smoke_node_state.Restarting | default(false) }}.
 
 - name: Node | TCP is listening
   ansible.builtin.wait_for:

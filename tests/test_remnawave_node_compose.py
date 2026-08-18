@@ -11,6 +11,8 @@ from jinja2 import Environment, FileSystemLoader
 
 REPO = Path(__file__).resolve().parents[1]
 ROLE = REPO / "roles/remnawave_node"
+COMPOSE_TASKS = (ROLE / "tasks/compose.yml").read_text(encoding="utf-8")
+SMOKE_NODE = (REPO / "roles/smoke_tests/tasks/node.yml").read_text(encoding="utf-8")
 DEFAULTS = yaml.safe_load((ROLE / "defaults/main.yml").read_text(encoding="utf-8"))
 UPGRADE_NODES = (REPO / "roles/remnawave_upgrade/tasks/upgrade_nodes.yml").read_text(
     encoding="utf-8"
@@ -167,6 +169,34 @@ class AntiblockCdnVolumeWiringTests(unittest.TestCase):
             certs["keyFile"],
             "/etc/letsencrypt/live/digitalstreamers.xyz/privkey.pem",
         )
+
+
+class RemnawaveNodeSmokeStateTests(unittest.TestCase):
+    def test_compose_smoke_uses_inspect_state_not_docker_ps(self) -> None:
+        self.assertIn("json .State", COMPOSE_TASKS)
+        self.assertIn("_rw_node_container_state.Running", COMPOSE_TASKS)
+        self.assertIn("_rw_node_container_state.Status == 'running'", COMPOSE_TASKS)
+        self.assertIn(
+            "not (_rw_node_container_state.Restarting | default(false) | bool)",
+            COMPOSE_TASKS,
+        )
+        self.assertNotIn("docker ps --format", COMPOSE_TASKS)
+
+    def test_smoke_node_uses_inspect_state_not_docker_ps(self) -> None:
+        self.assertIn("json .State", SMOKE_NODE)
+        self.assertIn("_smoke_node_state.Running", SMOKE_NODE)
+        self.assertIn("_smoke_node_state.Status == 'running'", SMOKE_NODE)
+        self.assertIn(
+            "not (_smoke_node_state.Restarting | default(false) | bool)",
+            SMOKE_NODE,
+        )
+        self.assertNotIn("docker ps --format", SMOKE_NODE)
+
+    def test_restarting_is_not_treated_as_running(self) -> None:
+        for source in (COMPOSE_TASKS, SMOKE_NODE):
+            self.assertIn(".Restarting", source)
+            self.assertIn(".Status == 'running'", source)
+            self.assertIn(".Running", source)
 
 
 if __name__ == "__main__":

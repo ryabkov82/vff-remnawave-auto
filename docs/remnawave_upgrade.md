@@ -59,10 +59,13 @@ Write scope математически не доказывается без muta
 
 | token variable | required scopes |
 |---|---|
-| `remnawave_panel_api_token` | `hosts:*` `nodes:*` `config-profiles:*` `internal-squads:*` `system:read` |
+| `remnawave_panel_api_token` | `hosts:*` `nodes:*` `config-profiles:*` `internal-squads:*` `system:read` `keygen:get` |
 | `remnawave_inbounds_cache_api_token` | `config-profiles:*` |
 | `remnawave_external_squads_api_token` | `external-squads:*` `subscription-page-configs:*` |
 | `remnawave_subpage_config_api_token` | `subscription-page-configs:*` |
+
+`keygen:get` проверяется только вручную: `GET /api/keygen` preflight **не**
+вызывает, потому что этот HTTP GET генерирует новый Node SECRET_KEY.
 
 `remnawave_external_squads` использует **один** token для `GET /external-squads`
 и `GET /subscription-page-configs`. `remnawave_subpage_config_api_token` — другая

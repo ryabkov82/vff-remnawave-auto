@@ -7,12 +7,12 @@
 
 - name: Wait HAProxy Bind After Reload
   ansible.builtin.wait_for:
-    host: "{{ haproxy_bind_addr }}"
+    host: "{{ '127.0.0.1' if haproxy_bind_addr == '0.0.0.0' else ('::1' if haproxy_bind_addr == '::' else haproxy_bind_addr) }}"
     port: "{{ haproxy_bind_port }}"
     state: started
     timeout: 15
   register: _hap_bind_after_reload
-  failed_when: false
+  ignore_errors: true
   listen: HAProxy Reconfigure
 
 - name: Restart HAProxy (Fallback)
@@ -24,7 +24,7 @@
 
 - name: Wait HAProxy Bind After Restart
   ansible.builtin.wait_for:
-    host: "{{ haproxy_bind_addr }}"
+    host: "{{ '127.0.0.1' if haproxy_bind_addr == '0.0.0.0' else ('::1' if haproxy_bind_addr == '::' else haproxy_bind_addr) }}"
     port: "{{ haproxy_bind_port }}"
     state: started
     timeout: 15

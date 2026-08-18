@@ -3,6 +3,8 @@
 # DO NOT COMMIT main.yml
 
 # --- Node runtime ---
+# remnawave_secret_key is optional for new nodes: the role reads existing
+# /opt/remnanode/.env or GET /api/keygen. Existing Vault values still win.
 remnawave_node_write_env: true
 remnawave_node_port: 2222
 
