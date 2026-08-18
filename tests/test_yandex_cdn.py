@@ -271,7 +271,156 @@ class ResourcePlanTests(unittest.TestCase):
         )
         self.assertEqual(merged["ipAddressAcl"], current["ipAddressAcl"])
         self.assertTrue(merged["hostOptions"]["host"]["enabled"])
-        self.assertIn("edgeCacheSettings", merged)
+        self.assertEqual(merged["edgeCacheSettings"], {"enabled": False})
+        self.assertEqual(merged["browserCacheSettings"], {"enabled": False})
+
+
+class CacheSettingsTests(unittest.TestCase):
+    """CDN/browser cache-off matches production de-fra-2 GET, not disableCache."""
+
+    def setUp(self) -> None:
+        self.ok = _load("resource_ok.json")
+        self.kwargs = {
+            "public_hostname": PUBLIC,
+            "origin_group_id": "og-fixture-1",
+            "origin_hostname": ORIGIN,
+            "certificate_id": "fpq-wildcard-runtime",
+            "manage_cert": False,
+        }
+
+    def _se_sto_like(self) -> dict:
+        resource = copy.deepcopy(self.ok)
+        resource["options"]["edgeCacheSettings"] = {
+            "enabled": True,
+            "defaultValue": "86400",
+        }
+        resource["options"].pop("browserCacheSettings", None)
+        resource["options"].pop("disableCache", None)
+        return resource
+
+    def test_a_desired_cache_toggles_are_disabled(self) -> None:
+        opts = ycdn.desired_managed_options(ORIGIN)
+        self.assertEqual(opts["edgeCacheSettings"], {"enabled": False})
+        self.assertEqual(opts["browserCacheSettings"], {"enabled": False})
+        self.assertFalse(opts["edgeCacheSettings"]["enabled"])
+        self.assertFalse(opts["browserCacheSettings"]["enabled"])
+        self.assertNotIn("disableCache", opts)
+
+    def test_b_enabled_edge_cache_plans_update(self) -> None:
+        resource = self._se_sto_like()
+        plan = ycdn.plan_resource(resource, **self.kwargs)
+        self.assertEqual(plan["action"], "update")
+        self.assertIn("edgeCacheSettings", plan["drift"])
+        self.assertNotIn("disableCache", plan.get("drift") or [])
+
+    def test_c_disabled_cache_toggles_are_not_drift(self) -> None:
+        resource = copy.deepcopy(self.ok)
+        resource["options"]["edgeCacheSettings"] = {"enabled": False}
+        resource["options"]["browserCacheSettings"] = {"enabled": False}
+        plan = ycdn.plan_resource(resource, **self.kwargs)
+        self.assertNotIn("edgeCacheSettings", plan.get("drift") or [])
+        self.assertNotIn("browserCacheSettings", plan.get("drift") or [])
+        self.assertNotIn("disableCache", plan.get("drift") or [])
+
+    def test_d_update_overlays_cache_keeps_unmanaged(self) -> None:
+        resource = self._se_sto_like()
+        resource["options"]["ipAddressAcl"] = {"enabled": True, "policyType": "ALLOW"}
+        captured: dict[str, object] = {}
+
+        def _capture(method, url, token, body, *, allow_writes):
+            captured["method"] = method
+            captured["body"] = body
+            return {"id": "op-1"}
+
+        with mock.patch.object(ycdn, "_cdn_request", side_effect=_capture):
+            with mock.patch.object(yc, "wait_operation", return_value={}):
+                with mock.patch.object(ycdn, "get_resource", return_value=self.ok):
+                    ycdn.update_resource(
+                        "t",
+                        resource,
+                        origin_group_id="og-fixture-1",
+                        origin_hostname=ORIGIN,
+                        certificate_id=None,
+                        manage_cert=False,
+                        allow_writes=True,
+                        operation_timeout=1,
+                        poll_interval=0.1,
+                    )
+        body = captured["body"]
+        self.assertEqual(captured["method"], "PATCH")
+        self.assertEqual(body["options"]["edgeCacheSettings"], {"enabled": False})
+        self.assertEqual(body["options"]["browserCacheSettings"], {"enabled": False})
+        self.assertEqual(body["options"]["ipAddressAcl"], resource["options"]["ipAddressAcl"])
+        self.assertNotIn("disableCache", body["options"])
+        self.assertEqual(
+            body["options"]["queryParamsOptions"]["ignoreQueryString"],
+            {"enabled": True, "value": True},
+        )
+
+    def test_e_create_sends_cache_disabled(self) -> None:
+        captured: dict[str, object] = {}
+
+        def _capture(method, url, token, body, *, allow_writes):
+            captured["method"] = method
+            captured["body"] = body
+            return {"id": "op-1"}
+
+        with mock.patch.object(ycdn, "_cdn_request", side_effect=_capture):
+            with mock.patch.object(yc, "wait_operation", return_value={"id": "res-new"}):
+                with mock.patch.object(ycdn, "get_resource", return_value=self.ok):
+                    ycdn.create_resource(
+                        "t",
+                        folder_id="folder",
+                        public_hostname=PUBLIC,
+                        origin_group_id="og-fixture-1",
+                        origin_hostname=ORIGIN,
+                        certificate_id=None,
+                        manage_cert=False,
+                        allow_writes=True,
+                        operation_timeout=1,
+                        poll_interval=0.1,
+                    )
+        opts = captured["body"]["options"]
+        self.assertEqual(captured["method"], "POST")
+        self.assertEqual(opts["edgeCacheSettings"], {"enabled": False})
+        self.assertEqual(opts["browserCacheSettings"], {"enabled": False})
+        self.assertNotIn("disableCache", opts)
+
+    def test_f_query_params_ignore_string_stays_true(self) -> None:
+        opts = ycdn.desired_managed_options(ORIGIN)
+        ignore = opts["queryParamsOptions"]["ignoreQueryString"]
+        self.assertTrue(ignore["enabled"])
+        self.assertTrue(ignore["value"])
+        self.assertIs(ignore["value"], True)
+        resource = copy.deepcopy(self.ok)
+        plan = ycdn.plan_resource(resource, **self.kwargs)
+        self.assertNotIn("queryParamsOptions", plan.get("drift") or [])
+
+    def test_g_de_fra_2_fixture_has_no_cache_drift(self) -> None:
+        plan = ycdn.plan_resource(self.ok, **self.kwargs)
+        self.assertEqual(plan["action"], "none")
+        self.assertFalse(plan.get("drift"))
+        self.assertEqual(self.ok["options"]["edgeCacheSettings"], {"enabled": False})
+        self.assertEqual(self.ok["options"]["browserCacheSettings"], {"enabled": False})
+        self.assertNotIn("disableCache", self.ok["options"])
+
+    def test_h_se_sto_like_updates_only_cache_fields(self) -> None:
+        resource = self._se_sto_like()
+        plan = ycdn.plan_resource(resource, **self.kwargs)
+        self.assertEqual(plan["action"], "update")
+        self.assertEqual(plan["drift"], ["edgeCacheSettings"])
+        for field in (
+            "origin_group_id",
+            "origin_protocol",
+            "tls",
+            "ssl_certificate",
+            "hostOptions",
+            "customServerName",
+            "allowedHttpMethods",
+            "queryParamsOptions",
+            "ignoreCookie",
+        ):
+            self.assertNotIn(field, plan["drift"])
 
 
 class CertificateLookupTests(unittest.TestCase):

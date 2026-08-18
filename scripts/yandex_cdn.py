@@ -38,6 +38,8 @@ CERT_MODE_LEGACY = "legacy_existing"
 WRITE_METHODS = frozenset({"POST", "PATCH", "PUT", "DELETE"})
 
 MANAGED_OPTION_KEYS = (
+    "edgeCacheSettings",
+    "browserCacheSettings",
     "queryParamsOptions",
     "hostOptions",
     "allowedHttpMethods",
@@ -45,6 +47,10 @@ MANAGED_OPTION_KEYS = (
     "ignoreCookie",
     "secureKey",
 )
+
+# Production de-fra-2 omits options.disableCache. Cache-off is
+# edgeCacheSettings.enabled=false and browserCacheSettings.enabled=false.
+CACHE_TOGGLE_KEYS = ("edgeCacheSettings", "browserCacheSettings")
 
 
 def normalize_host(value: Any) -> str:
@@ -93,9 +99,21 @@ def signing_disabled(secure_key: Any) -> bool:
     return enabled is not True
 
 
+def _normalize_cache_toggle(value: Any) -> dict[str, Any]:
+    """Compare CDN/browser cache only by enabled. Missing/{} means disabled."""
+    enabled = False
+    if isinstance(value, dict):
+        enabled = bool(value.get("enabled"))
+    return {"enabled": enabled}
+
+
 def desired_managed_options(origin_hostname: str) -> dict[str, Any]:
     host = str(origin_hostname).strip().rstrip(".")
     return {
+        # Transport/front, not a content cache. Matches working de-fra-2 GET:
+        # edge/browser {enabled: false}; disableCache is absent on that resource.
+        "edgeCacheSettings": {"enabled": False},
+        "browserCacheSettings": {"enabled": False},
         "queryParamsOptions": {
             "ignoreQueryString": {"enabled": True, "value": True},
         },
@@ -119,6 +137,9 @@ def normalize_managed_options(options: dict[str, Any] | None) -> dict[str, Any]:
         value = raw.get(key)
         if key == "secureKey":
             out[key] = {"disabled": signing_disabled(value)}
+            continue
+        if key in CACHE_TOGGLE_KEYS:
+            out[key] = _normalize_cache_toggle(value)
             continue
         if key == "allowedHttpMethods":
             methods = []
@@ -145,7 +166,7 @@ def merge_resource_options(
 ) -> dict[str, Any]:
     """Overlay managed fields onto the current options object.
 
-    Unmanaged keys (edgeCacheSettings, compression, ACLs, …) are preserved.
+    Unmanaged keys (compression, ACLs, …) are preserved.
     Empty default objects stay as they are so PATCH is not destructive.
     """
     merged = dict(current or {})

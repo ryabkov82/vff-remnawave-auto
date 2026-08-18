@@ -19,8 +19,12 @@
     "profile": "PROFILE_COMPATIBLE"
   },
   "options": {
-    "edgeCacheSettings": {},
-    "browserCacheSettings": {},
+    "edgeCacheSettings": {
+      "enabled": false
+    },
+    "browserCacheSettings": {
+      "enabled": false
+    },
     "slice": {},
     "staticHeaders": {},
     "staticRequestHeaders": {},
