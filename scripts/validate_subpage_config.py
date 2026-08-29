@@ -53,7 +53,23 @@ LEGACY_KEYS = {
 
 FORBIDDEN_LOCALES = {"zh", "fa", "fr"}
 
-IOS_ORDER = ["OneXray", "Shadowrocket", "Happ", "v2RayTun", "Streisand"]
+IOS_ORDER = ["INCY", "OneXray", "Shadowrocket", "Happ", "v2RayTun", "Streisand", "Stash"]
+ANDROID_ORDER = ["INCY", "Happ", "v2RayTun", "Hiddify", "Clash Meta", "FlClashX", "v2rayNG"]
+WINDOWS_ORDER = [
+    "INCY",
+    "Happ",
+    "v2RayTun",
+    "Hiddify",
+    "Clash Verge",
+    "FlClashX",
+    "Koala Clash",
+    "Prizrak-Box",
+]
+INCY_PLATFORMS = ("android", "ios", "windows")
+INCY_IMPORT_LINK = "incy://import/{{SUBSCRIPTION_LINK}}"
+STANDARD_FORBIDDEN_MARKERS = ("incy://crypt1/", "{{INCY_CRYPT1_LINK}}")
+# Premium protected path /incy/<token>, not App Store /app/incy/.
+PROTECTED_INCY_PATH = re.compile(r"(?<!/app)/incy/")
 
 DEFAULT_CONFIG_PATH = (
     Path(__file__).resolve().parents[1]
@@ -214,6 +230,31 @@ def validate_config(data: dict[str, Any]) -> None:
 
     walk_placeholders(data["platforms"], "platforms")
 
+    serialized = json.dumps(data, ensure_ascii=False)
+    for marker in STANDARD_FORBIDDEN_MARKERS:
+        if marker in serialized:
+            fail(f"Standard config must not contain {marker}")
+    if PROTECTED_INCY_PATH.search(serialized):
+        fail("Standard config must not contain protected /incy/ subscription path")
+
+    hide_get_link = data.get("baseSettings", {}).get("hideGetLinkButton")
+    if hide_get_link is not False:
+        fail(f"baseSettings.hideGetLinkButton must be false, got {hide_get_link!r}")
+
+    android_names = [app["name"] for app in platforms["android"]["apps"]]
+    if android_names[: len(ANDROID_ORDER)] != ANDROID_ORDER:
+        fail(
+            f"Android app order must start with {ANDROID_ORDER}, "
+            f"got prefix {android_names[: len(ANDROID_ORDER)]}"
+        )
+
+    windows_names = [app["name"] for app in platforms["windows"]["apps"]]
+    if windows_names[: len(WINDOWS_ORDER)] != WINDOWS_ORDER:
+        fail(
+            f"Windows app order must start with {WINDOWS_ORDER}, "
+            f"got prefix {windows_names[: len(WINDOWS_ORDER)]}"
+        )
+
     ios_apps = platforms["ios"]["apps"]
     ios_names = [app["name"] for app in ios_apps]
     if ios_names[: len(IOS_ORDER)] != IOS_ORDER:
@@ -222,6 +263,27 @@ def validate_config(data: dict[str, Any]) -> None:
         )
     if len(set(ios_names)) != len(ios_names):
         fail(f"iOS duplicate app.name values: {ios_names}")
+
+    for platform_name in INCY_PLATFORMS:
+        apps = platforms[platform_name]["apps"]
+        if not apps:
+            fail(f"platforms.{platform_name}.apps must not be empty")
+        incy = apps[0]
+        app_path = f"platforms.{platform_name}.apps[0]"
+        if incy.get("name") != "INCY":
+            fail(f"{app_path}.name must be 'INCY', got {incy.get('name')!r}")
+        if incy.get("featured") is not True:
+            fail(f"{app_path}.featured must be true")
+        import_links = [
+            btn.get("link")
+            for block in incy.get("blocks", [])
+            for btn in block.get("buttons", [])
+            if btn.get("type") == "subscriptionLink"
+        ]
+        if INCY_IMPORT_LINK not in import_links:
+            fail(f"{app_path} must contain subscriptionLink {INCY_IMPORT_LINK}")
+        if any(link != INCY_IMPORT_LINK for link in import_links):
+            fail(f"{app_path} has unexpected INCY import link: {import_links}")
 
     ios_by_name = {app["name"]: app for app in ios_apps}
 

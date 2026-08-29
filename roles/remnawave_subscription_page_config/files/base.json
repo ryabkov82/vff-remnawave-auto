@@ -17,6 +17,72 @@
       "svgIconKey": "AppleIcon",
       "apps": [
         {
+          "name": "INCY",
+          "blocks": [
+            {
+              "title": {
+                "en": "App Installation",
+                "ru": "Установка приложения"
+              },
+              "buttons": [
+                {
+                  "link": "https://apps.apple.com/ru/app/incy/id6756943388",
+                  "text": {
+                    "en": "Open in App Store",
+                    "ru": "Открыть в App Store"
+                  },
+                  "type": "external",
+                  "svgIconKey": "ExternalLink"
+                }
+              ],
+              "svgIconKey": "DownloadIcon",
+              "description": {
+                "en": "Recommended client. Install INCY, then add the subscription with one tap.",
+                "ru": "Рекомендуемый клиент. Установите INCY, затем добавьте подписку одним нажатием."
+              },
+              "svgIconColor": "violet"
+            },
+            {
+              "title": {
+                "en": "Add Subscription",
+                "ru": "Добавление подписки"
+              },
+              "buttons": [
+                {
+                  "link": "incy://import/{{SUBSCRIPTION_LINK}}",
+                  "text": {
+                    "en": "Add Subscription",
+                    "ru": "Добавить подписку"
+                  },
+                  "type": "subscriptionLink",
+                  "svgIconKey": "Plus"
+                }
+              ],
+              "svgIconKey": "CloudDownload",
+              "description": {
+                "en": "Click the button below — the app will open and the subscription will be added automatically",
+                "ru": "Нажмите кнопку ниже — приложение откроется, и подписка добавится автоматически."
+              },
+              "svgIconColor": "cyan"
+            },
+            {
+              "title": {
+                "en": "Connect and use",
+                "ru": "Подключение и использование"
+              },
+              "buttons": [],
+              "svgIconKey": "Check",
+              "description": {
+                "en": "Select a server and connect.",
+                "ru": "Выберите сервер и подключитесь."
+              },
+              "svgIconColor": "teal"
+            }
+          ],
+          "featured": true,
+          "svgIconKey": "DownloadIcon"
+        },
+        {
           "name": "OneXray",
           "blocks": [
             {
@@ -1506,6 +1572,81 @@
       "svgIconKey": "Android",
       "apps": [
         {
+          "name": "INCY",
+          "blocks": [
+            {
+              "title": {
+                "en": "App Installation",
+                "ru": "Установка приложения"
+              },
+              "buttons": [
+                {
+                  "link": "https://play.google.com/store/apps/details?id=llc.itdev.incy",
+                  "text": {
+                    "en": "Open in Google Play",
+                    "ru": "Открыть в Google Play"
+                  },
+                  "type": "external",
+                  "svgIconKey": "ExternalLink"
+                },
+                {
+                  "link": "https://github.com/INCY-DEV/incy-platforms/releases/latest/download/Incy.apk",
+                  "text": {
+                    "en": "Download APK",
+                    "ru": "Скачать APK"
+                  },
+                  "type": "external",
+                  "svgIconKey": "ExternalLink"
+                }
+              ],
+              "svgIconKey": "DownloadIcon",
+              "description": {
+                "en": "Recommended client. Install INCY, then add the subscription with one tap.",
+                "ru": "Рекомендуемый клиент. Установите INCY, затем добавьте подписку одним нажатием."
+              },
+              "svgIconColor": "violet"
+            },
+            {
+              "title": {
+                "en": "Add Subscription",
+                "ru": "Добавление подписки"
+              },
+              "buttons": [
+                {
+                  "link": "incy://import/{{SUBSCRIPTION_LINK}}",
+                  "text": {
+                    "en": "Add Subscription",
+                    "ru": "Добавить подписку"
+                  },
+                  "type": "subscriptionLink",
+                  "svgIconKey": "Plus"
+                }
+              ],
+              "svgIconKey": "CloudDownload",
+              "description": {
+                "en": "Click the button below — the app will open and the subscription will be added automatically",
+                "ru": "Нажмите кнопку ниже — приложение откроется, и подписка добавится автоматически."
+              },
+              "svgIconColor": "cyan"
+            },
+            {
+              "title": {
+                "en": "Connect and use",
+                "ru": "Подключение и использование"
+              },
+              "buttons": [],
+              "svgIconKey": "Check",
+              "description": {
+                "en": "Open the app and connect to the server",
+                "ru": "Откройте приложение и подключитесь к серверу"
+              },
+              "svgIconColor": "teal"
+            }
+          ],
+          "featured": true,
+          "svgIconKey": "DownloadIcon"
+        },
+        {
           "name": "Happ",
           "blocks": [
             {
@@ -2225,6 +2366,72 @@
       },
       "svgIconKey": "Windows",
       "apps": [
+        {
+          "name": "INCY",
+          "blocks": [
+            {
+              "title": {
+                "en": "App Installation",
+                "ru": "Установка приложения"
+              },
+              "buttons": [
+                {
+                  "link": "https://github.com/INCY-DEV/incy-platforms/releases/latest/download/incy-windows-setup.exe",
+                  "text": {
+                    "en": "Download INCY for Windows",
+                    "ru": "Скачать INCY для Windows"
+                  },
+                  "type": "external",
+                  "svgIconKey": "ExternalLink"
+                }
+              ],
+              "svgIconKey": "DownloadIcon",
+              "description": {
+                "en": "Recommended client. Install INCY, then add the subscription with one tap.",
+                "ru": "Рекомендуемый клиент. Установите INCY, затем добавьте подписку одним нажатием."
+              },
+              "svgIconColor": "violet"
+            },
+            {
+              "title": {
+                "en": "Add Subscription",
+                "ru": "Добавление подписки"
+              },
+              "buttons": [
+                {
+                  "link": "incy://import/{{SUBSCRIPTION_LINK}}",
+                  "text": {
+                    "en": "Add Subscription",
+                    "ru": "Добавить подписку"
+                  },
+                  "type": "subscriptionLink",
+                  "svgIconKey": "Plus"
+                }
+              ],
+              "svgIconKey": "CloudDownload",
+              "description": {
+                "en": "Click the button below — the app will open and the subscription will be added automatically",
+                "ru": "Нажмите кнопку ниже — приложение откроется, и подписка добавится автоматически."
+              },
+              "svgIconColor": "cyan"
+            },
+            {
+              "title": {
+                "en": "Connect and use",
+                "ru": "Подключение и использование"
+              },
+              "buttons": [],
+              "svgIconKey": "Check",
+              "description": {
+                "en": "Open INCY, select the added profile and connect to VPN.",
+                "ru": "Откройте INCY, выберите добавленный профиль и подключитесь к VPN."
+              },
+              "svgIconColor": "teal"
+            }
+          ],
+          "featured": true,
+          "svgIconKey": "DownloadIcon"
+        },
         {
           "name": "Happ",
           "blocks": [

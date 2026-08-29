@@ -28,7 +28,8 @@ FORBIDDEN_URL_PATTERNS = (
     re.compile(r"placeholder", re.I),
 )
 
-IOS_CUSTOM_ORDER = ["OneXray", "Shadowrocket", "Happ", "v2RayTun", "Streisand"]
+IOS_CUSTOM_ORDER = ["INCY", "OneXray", "Shadowrocket", "Happ", "v2RayTun", "Streisand", "Stash"]
+BRAND_BUILD_SCRIPT = ROOT / "scripts/build_subpage_config.py"
 
 
 def canonicalize(config: dict) -> dict:
@@ -133,9 +134,17 @@ class VpnForFriendsPlatformMergeTest(unittest.TestCase):
         built_2 = self._run_build(second)
         self.assertEqual(canonicalize(built_1), canonicalize(built_2))
 
+    def _run_brand_build(self, output: Path) -> dict:
+        subprocess.run(
+            [sys.executable, str(BRAND_BUILD_SCRIPT), "--brand", "vff", "--output", str(output)],
+            check=True,
+            cwd=ROOT,
+        )
+        return json.loads(output.read_text(encoding="utf-8"))
+
     def test_committed_desired_matches_generator_canonical(self) -> None:
         generated = Path("/tmp/vpn-for-friends.canonical-check.json")
-        built = self._run_build(generated)
+        built = self._run_brand_build(generated)
         self.assertEqual(canonicalize(self.desired), canonicalize(built))
 
     def test_custom_ios_apps_preserved(self) -> None:
@@ -173,7 +182,7 @@ class VpnForFriendsPlatformMergeTest(unittest.TestCase):
 
     def test_validator_accepts_generated_config(self) -> None:
         output = Path("/tmp/vpn-for-friends.validator-check.json")
-        self._run_build(output)
+        self._run_brand_build(output)
         result = subprocess.run(
             [sys.executable, str(VALIDATE_SCRIPT), str(output)],
             cwd=ROOT,
