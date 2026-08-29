@@ -165,10 +165,14 @@ ansible-playbook -i inventory/hosts.ini playbooks/subscription.yml \
 | Upstream | `http://127.0.0.1:3011` |
 | Site file | `/etc/nginx/sites-available/subscription-portalbase.conf` |
 | Certificate | `/etc/letsencrypt/live/sub.portalbase.link/` |
-| Health check | `https://sub.portalbase.link/VZLHkrKwsj0Qs82e` |
+| Health check | TCP `127.0.0.1:3011` + `GET https://sub.portalbase.link/healthz` → `200` / `ok` |
 
 Не изменяет `sub.vpn-for-friends.com`, `sub-next.vpn-for-friends.com`, `SUB_PUBLIC_DOMAIN`,
 контейнеры Subscription Page и production cutover.
+
+Deploy health-check **не** зависит от пользовательской подписки: TCP на configured
+upstream (`remnawave_sub_portalbase_upstream_host`:`remnawave_sub_portalbase_upstream_port`)
+и публичный `GET /healthz` (Nginx `return 200`, без proxy в Subscription Page).
 
 ```bash
 make sub-portalbase-check LIMIT=subscription
@@ -177,6 +181,36 @@ make sub-portalbase LIMIT=subscription
 
 Первый apply без сертификата: HTTP bootstrap → `nginx -t` + reload → certbot webroot →
 HTTPS vhost → `nginx -t` + reload → public health check.
+
+### INCY protected subscription endpoint
+
+Отдельный HTTPS location только на `sub.portalbase.link` для клиентов INCY.
+Обычные subscription URL не меняются.
+
+| | |
+|--|--|
+| Public | `https://sub.portalbase.link/incy/<shortUuid>` |
+| Upstream | `http://127.0.0.1:3011/<shortUuid>` |
+| Отличие ответа | заголовок `hide-url: 1` |
+
+Nginx **не** модифицирует body Subscription Page: prefix только снимается перед
+`proxy_pass` (trailing slash у `proxy_pass`). Заголовок `hide-url` — client-side
+protection hint для INCY, а не cryptographic secret protection.
+
+Endpoint предназначен для дальнейшего использования с `incy://crypt1/...` в vpnbot.
+
+Обычные URL (`https://sub.portalbase.link/<shortUuid>`) остаются без `hide-url`
+и без изменения path.
+
+Переменные (только portalbase vhost; default — выключено):
+
+```yaml
+remnawave_sub_portalbase_incy_enabled: false
+remnawave_sub_portalbase_incy_prefix: "/incy/"
+```
+
+Production inventory включает feature (`true` / `/incy/`). Другие домены
+(`sub.vpn-for-friends.com`, `sub-next.vpn-for-friends.com`) не затрагиваются.
 
 ## API-конфигурация (роль `remnawave_subscription_page_config`)
 
@@ -400,16 +434,9 @@ make sub-next-config-plan LIMIT=subscription ANSIBLE_FLAGS="--ask-vault-pass"
 
 ```bash
 docker compose -f /opt/remnasub-next/docker-compose.yml ps
-curl -v http://127.0.0.1:3011/VZLHkrKwsj0Qs82e \
-  -H 'Host: sub.portalbase.link' \
-  -H 'X-Forwarded-Host: sub.portalbase.link' \
-  -H 'X-Forwarded-Proto: https' \
-  -H 'X-Forwarded-Port: 443' \
-  -H 'X-Real-IP: 127.0.0.1' \
-  -H 'X-Forwarded-For: 127.0.0.1'
-curl -v https://sub.portalbase.link/VZLHkrKwsj0Qs82e
+ss -tlnp | grep -E ':443|:3011'
+curl -v https://sub.portalbase.link/healthz
 nginx -t
-ss -tlnp | grep ':443'
 ```
 
 Проверка, что production не затронут:

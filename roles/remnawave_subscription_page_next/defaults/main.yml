@@ -56,7 +56,11 @@ remnawave_sub_portalbase_ssl_fullchain: >-
 remnawave_sub_portalbase_ssl_privkey: >-
   /etc/letsencrypt/live/{{ remnawave_sub_portalbase_domain }}/privkey.pem
 remnawave_sub_portalbase_letsencrypt_email: "admin@portalbase.link"
-remnawave_sub_portalbase_healthcheck_short_uuid: "VZLHkrKwsj0Qs82e"
+
+# Optional INCY-protected prefix on the portalbase HTTPS vhost only.
+# Disabled by default. Regular / URLs stay unchanged and do not get hide-url.
+remnawave_sub_portalbase_incy_enabled: false
+remnawave_sub_portalbase_incy_prefix: "/incy/"
 
 # Секреты — задавать через Ansible Vault или inventory secrets
 remnawave_sub_next_api_token: ""

@@ -8,6 +8,27 @@
       - remnawave_sub_portalbase_domain | default('') | trim | length > 0
     fail_msg: remnawave_sub_portalbase_domain must be set when portalbase nginx is enabled.
 
+- name: Assert subscription portalbase INCY prefix is valid
+  ansible.builtin.assert:
+    that:
+      - remnawave_sub_portalbase_incy_prefix | default('') | trim | length > 0
+      - remnawave_sub_portalbase_incy_prefix == (remnawave_sub_portalbase_incy_prefix | trim)
+      - remnawave_sub_portalbase_incy_prefix[0] == '/'
+      - remnawave_sub_portalbase_incy_prefix[-1] == '/'
+      - remnawave_sub_portalbase_incy_prefix != '/'
+      - remnawave_sub_portalbase_incy_prefix != '/.well-known/acme-challenge/'
+      - remnawave_sub_portalbase_incy_prefix != '/healthz'
+      - remnawave_sub_portalbase_incy_prefix != '/healthz/'
+      - "'?' not in remnawave_sub_portalbase_incy_prefix"
+      - "'#' not in remnawave_sub_portalbase_incy_prefix"
+      - remnawave_sub_portalbase_incy_prefix is not search('\s')
+    fail_msg: >-
+      remnawave_sub_portalbase_incy_prefix must be a non-root path prefix
+      starting and ending with '/', without whitespace, query, or fragment,
+      and must not collide with ACME or /healthz.
+      Got: '{{ remnawave_sub_portalbase_incy_prefix | default('') }}'
+  when: remnawave_sub_portalbase_incy_enabled | bool
+
 - name: Ensure Nginx and certbot packages are installed for portalbase
   ansible.builtin.apt:
     name:
@@ -187,28 +208,33 @@
     - not ansible_check_mode
     - remnawave_sub_portalbase_ssl_ready | bool
 
-- name: Public HTTPS health check via subscription portalbase reverse proxy
+- name: Wait for subscription portalbase upstream runtime
+  ansible.builtin.wait_for:
+    host: "{{ remnawave_sub_portalbase_upstream_host }}"
+    port: "{{ remnawave_sub_portalbase_upstream_port }}"
+    timeout: 60
+    state: started
+  when:
+    - not ansible_check_mode
+    - remnawave_sub_portalbase_ssl_ready | bool
+
+- name: Public HTTPS health check via subscription portalbase /healthz
   ansible.builtin.uri:
-    url: >-
-      https://{{ remnawave_sub_portalbase_domain }}/{{ remnawave_sub_portalbase_healthcheck_short_uuid }}
+    url: "https://{{ remnawave_sub_portalbase_domain }}/healthz"
     method: GET
-    headers:
-      Accept: text/html
-      User-Agent: Mozilla/5.0 Ansible-Healthcheck
     status_code: 200
-    return_content: false
+    return_content: true
     timeout: 15
     validate_certs: true
   register: _sub_portalbase_public_https_health
   retries: 10
   delay: 3
   until: >-
-    _sub_portalbase_public_https_health.status == 200 and
-    'text/html' in (_sub_portalbase_public_https_health.content_type | default(''))
+    _sub_portalbase_public_https_health.status == 200
+    and (_sub_portalbase_public_https_health.content | default('') | trim) == 'ok'
   when:
     - not ansible_check_mode
     - remnawave_sub_portalbase_ssl_ready | bool
-    - remnawave_sub_portalbase_healthcheck_short_uuid | trim | length > 0
 
 - name: Explain subscription portalbase nginx checks skipped in check mode
   ansible.builtin.debug:

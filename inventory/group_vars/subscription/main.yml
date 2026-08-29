@@ -62,7 +62,8 @@ remnawave_sub_portalbase_nginx_enabled: true
 remnawave_sub_portalbase_domain: "sub.portalbase.link"
 remnawave_sub_portalbase_upstream_host: "127.0.0.1"
 remnawave_sub_portalbase_upstream_port: 3011
-remnawave_sub_portalbase_healthcheck_short_uuid: "VZLHkrKwsj0Qs82e"
+remnawave_sub_portalbase_incy_enabled: true
+remnawave_sub_portalbase_incy_prefix: "/incy/"
 
 # Subscription Page config upload (Remnawave API)
 remnawave_subpage_config_api_token: "{{ remnawave_panel_api_token }}"
