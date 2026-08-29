@@ -255,7 +255,10 @@ class SubscriptionPortalbaseNginxTest(unittest.TestCase):
         self.assertIn('remnawave_sub_next_domain: "sub-next.vpn-for-friends.com"', content)
         self.assertNotIn("remnawave_sub_portalbase_healthcheck_short_uuid", content)
         self.assertNotIn("remnawave_sub_portalbase_healthcheck_short_uuid", inventory)
-        self.assertEqual(inventory["remnawave_sub_next_healthcheck_short_uuid"], "VZLHkrKwsj0Qs82e")
+        self.assertEqual(
+            inventory["remnawave_sub_next_healthcheck_short_uuid"],
+            "{{ remnawave_subscription_healthcheck_short_uuid }}",
+        )
 
     def test_portalbase_files_do_not_reference_forbidden_concepts(self) -> None:
         for path in (TEMPLATE, TASKS):

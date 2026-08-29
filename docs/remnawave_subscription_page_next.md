@@ -89,7 +89,7 @@ remnawave_sub_next_domain: "sub-next.vpn-for-friends.com"
 remnawave_sub_next_upstream_host: "127.0.0.1"
 remnawave_sub_next_upstream_port: 3011
 remnawave_sub_next_nginx_enabled: true
-remnawave_sub_next_healthcheck_short_uuid: "VZLHkrKwsj0Qs82e"
+remnawave_sub_next_healthcheck_short_uuid: "{{ remnawave_subscription_healthcheck_short_uuid }}"
 ```
 
 ## Переменные контейнера
@@ -341,6 +341,9 @@ Remnawave backend перед сохранением нормализует ло�
 - сервис: `remnawave-subscription-page-next` в `/opt/remnasub-next` (`remnawave_subpage_config_compose_dir`);
 - **HTML health check** выполняется при каждом обычном apply (не в check mode), если задан
   `remnawave_subpage_config_healthcheck_short_uuid` — даже когда PATCH не требуется.
+  ShortUuid принадлежит dedicated synthetic Standard subscription
+  (`remnawave_subscription_healthcheck_short_uuid` в inventory), а не клиентскому сервису.
+  Проверка идёт на `GET /<shortUuid>` (200 + `text/html`), не на `/healthz`.
 
 ### Переменные
 
@@ -362,9 +365,12 @@ Remnawave backend перед сохранением нормализует ло�
 ### Inventory (subscription)
 
 ```yaml
+remnawave_subscription_healthcheck_short_uuid: "<dedicated synthetic Standard shortUuid>"
+remnawave_sub_next_healthcheck_short_uuid: "{{ remnawave_subscription_healthcheck_short_uuid }}"
+remnawave_subpage_config_healthcheck_short_uuid: "{{ remnawave_subscription_healthcheck_short_uuid }}"
+remnawave_subscription_prod_healthcheck_short_uuid: "{{ remnawave_subscription_healthcheck_short_uuid }}"
 remnawave_subpage_config_uuid: "f24bc0b1-2386-4473-9bde-9cd7b384641c"
 remnawave_subpage_config_api_token: "{{ remnawave_panel_api_token }}"
-remnawave_subpage_config_healthcheck_short_uuid: "VZLHkrKwsj0Qs82e"
 remnawave_sub_next_config_uuid: "{{ remnawave_subpage_config_uuid }}"
 ```
 
