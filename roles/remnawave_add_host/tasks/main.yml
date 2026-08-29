@@ -39,7 +39,7 @@
                 'sni': (rw_host_sni | default('')),
                 'host': (rw_host_host | default('')),
                 'alpn': (rw_host_alpn | default(None)),
-                'fingerprint': (rw_host_fingerprint | default('chrome')),
+                'fingerprint': (rw_host_fingerprint | default('qq')),
                 'securityLayer': (rw_host_security_layer | default('DEFAULT')),
                 'serverDescription': (rw_host_server_description | default('')),
                 'isHidden': (rw_host_is_hidden | default(false)),

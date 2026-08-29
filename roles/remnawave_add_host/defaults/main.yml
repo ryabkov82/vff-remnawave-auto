@@ -12,7 +12,7 @@ rw_host_path: ""
 rw_host_sni: "{{ remnawave_host_sni }}"
 rw_host_host: ""
 rw_host_alpn: null
-rw_host_fingerprint: "chrome"       # default per request
+rw_host_fingerprint: "qq"       # default per request
 rw_host_security_layer: DEFAULT     # DEFAULT | TLS | NONE
 
 # Cosmetic/flags

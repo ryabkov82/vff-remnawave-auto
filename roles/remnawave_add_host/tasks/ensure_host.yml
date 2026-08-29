@@ -238,7 +238,7 @@
       sni: "{{ _rw_sni_csv }}"
       host: "{{ rw_item.host | default('') }}"
       alpn: "{{ rw_item.alpn | default(None) }}"
-      fingerprint: "{{ rw_item.fingerprint | default('chrome') }}"
+      fingerprint: "{{ rw_item.fingerprint | default(rw_host_fingerprint | default('qq')) }}"
       securityLayer: "{{ rw_item.securityLayer | default('DEFAULT') }}"
       inbound:
         configProfileUuid: "{{ _profile_uuid }}"

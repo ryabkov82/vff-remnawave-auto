@@ -38,7 +38,6 @@ remnawave_host_profiles:
     port: 443
     patch_reality_servernames: true
     include_in_sni_map: true
-    fingerprint: "chrome"
     securityLayer: "DEFAULT"
     shuffleHost: true
 
@@ -46,7 +45,6 @@ remnawave_host_profiles:
     port: 443
     patch_reality_servernames: false
     include_in_sni_map: true
-    fingerprint: "chrome"
     securityLayer: "DEFAULT"
     shuffleHost: true
 
