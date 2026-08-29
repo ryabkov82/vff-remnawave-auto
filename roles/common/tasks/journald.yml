@@ -1,0 +1,19 @@
+---
+- name: Ensure journald drop-in directory exists
+  ansible.builtin.file:
+    path: "{{ common_journald_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  tags: [common, journald]
+
+- name: Deploy journald persistent size limits
+  ansible.builtin.template:
+    src: journald-disk-limits.conf.j2
+    dest: "{{ common_journald_conf_dir }}/{{ common_journald_dropin }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart systemd-journald
+  tags: [common, journald]

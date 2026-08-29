@@ -16,6 +16,11 @@
     update_cache: true
   tags: [common]
 
+- name: Include journald persistent size limits
+  ansible.builtin.import_tasks: journald.yml
+  when: common_journald_manage | bool
+  tags: [common, journald]
+
 - name: Include OS upgrade tasks
   ansible.builtin.import_tasks: upgrade.yml
   when: common_upgrade | bool

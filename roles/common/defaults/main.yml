@@ -4,3 +4,10 @@ common_autoremove: true        # apt autoremove/clean
 common_reboot_if_needed: true  # перезагружать, если требуется
 common_reboot_timeout: 900     # секунд ждать после reboot
 common_apt_noninteractive: true
+
+# Persistent journald disk caps (drop-in, does not rewrite journald.conf).
+common_journald_manage: true
+common_journald_system_max_use: "250M"
+common_journald_system_keep_free: "1G"
+common_journald_conf_dir: /etc/systemd/journald.conf.d
+common_journald_dropin: 99-disk-limits.conf
