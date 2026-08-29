@@ -4,37 +4,53 @@ remnawave_node_env_content: |
   NODE_PORT={{ remnawave_node_port }}
   SECRET_KEY={{ remnawave_secret_key }}
 
-remnawave_node_address: "77.239.127.199"
+remnawave_node_address: "147.45.63.41"
 remnawave_node_name: "{{ inventory_hostname }}"
-
 remnawave_node_country_code: "DE"
 
 remnawave_hosts:
-  - remark: "🇩🇪 1 vpn-for-friends"
+  # -------------------------------------------------------
+  # VLESS TCP REALITY
+  # -------------------------------------------------------
+  - remark: "🇩🇪 Germany 1"
     address: "edge-fra-01.digitalstreamers.xyz"
-    # inbound resolution
     inbound_tag: "VLESS TCP REALITY (DS)"
-    # SNI для Reality
     sni:
       - "edge-fra-01.digitalstreamers.xyz"
       - "stream-fra-01.digitalstreamers.xyz"
       - "cache-fra-01.digitalstreamers.xyz"
       - "segment-fra-01.digitalstreamers.xyz"
 
-# Набор записей для этой ноды
-cf_dns_records:
-  - { name: "www",               type: "A", proxied: false }
-  - { name: "site",              type: "A", proxied: false }
-  - { name: "edge-fra-01",       type: "A", proxied: false }
-  - { name: "stream-fra-01",     type: "A", proxied: false }
-  - { name: "cache-fra-01",      type: "A", proxied: false }
-  - { name: "segment-fra-01",    type: "A", proxied: false }      
+  # -------------------------------------------------------
+  # xHTTP
+  # -------------------------------------------------------
+  - remark: "🇩🇪 Germany 1 (xHTTP)"
+    address: "api-fra-01.digitalstreamers.xyz"
+    inbound_tag: "VLESS xHTTP (behind nginx)"
 
-# домены, по которым нода должна отдавать свой nginx (через HAProxy)
+remnawave_inbound_tags:
+  - "VLESS TCP REALITY (DS)"
+  - "VLESS xHTTP (behind nginx)"
+
+remnawave_node_inbounds_mode: "replace"
+
+cf_dns_records:
+  # Общие записи могут указывать сразу на несколько нод.
+  - { name: "www",              type: "A", proxied: false }
+  - { name: "site",             type: "A", proxied: false }
+
+  # Уникальные endpoints de-fra-1.
+  - { name: "edge-fra-01",      type: "A", proxied: false, solo: true }
+  - { name: "stream-fra-01",    type: "A", proxied: false, solo: true }
+  - { name: "cache-fra-01",     type: "A", proxied: false, solo: true }
+  - { name: "segment-fra-01",   type: "A", proxied: false, solo: true }
+  - { name: "api-fra-01",       type: "A", proxied: false, solo: true }
+
 haproxy_node_nginx_sni_domains:
   - site.digitalstreamers.xyz
   - www.digitalstreamers.xyz
 
-# адрес nginx на ноде (тот же, что nginx_https_bind в remnawave_node_nginx)
 haproxy_node_nginx_host: "127.0.0.1"
 haproxy_node_nginx_port: 4443
+
+remnawave_node_enable_qos: false
