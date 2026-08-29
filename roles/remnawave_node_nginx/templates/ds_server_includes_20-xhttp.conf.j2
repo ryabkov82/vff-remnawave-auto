@@ -1,5 +1,6 @@
 # xHTTP endpoint (HTTP/2 upstream)
 location {{ nginx_xhttp_location }} {
+    access_log off;
     client_max_body_size 0;
 
     grpc_set_header Host              $host;
