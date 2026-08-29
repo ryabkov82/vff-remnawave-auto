@@ -342,7 +342,9 @@ Remnawave backend перед сохранением нормализует ло�
 - **HTML health check** выполняется при каждом обычном apply (не в check mode), если задан
   `remnawave_subpage_config_healthcheck_short_uuid` — даже когда PATCH не требуется.
   ShortUuid принадлежит dedicated synthetic Standard subscription
-  (`remnawave_subscription_healthcheck_short_uuid` в inventory), а не клиентскому сервису.
+  (`username: monitoring`). Значение хранится только в Ansible Vault
+  (`vault_remnawave_subscription_healthcheck_short_uuid`) и подставляется в
+  `remnawave_subscription_healthcheck_short_uuid`. Это не клиентский сервис.
   Проверка идёт на `GET /<shortUuid>` (200 + `text/html`), не на `/healthz`.
 
 ### Переменные
@@ -365,7 +367,7 @@ Remnawave backend перед сохранением нормализует ло�
 ### Inventory (subscription)
 
 ```yaml
-remnawave_subscription_healthcheck_short_uuid: "<dedicated synthetic Standard shortUuid>"
+remnawave_subscription_healthcheck_short_uuid: "{{ vault_remnawave_subscription_healthcheck_short_uuid }}"
 remnawave_sub_next_healthcheck_short_uuid: "{{ remnawave_subscription_healthcheck_short_uuid }}"
 remnawave_subpage_config_healthcheck_short_uuid: "{{ remnawave_subscription_healthcheck_short_uuid }}"
 remnawave_subscription_prod_healthcheck_short_uuid: "{{ remnawave_subscription_healthcheck_short_uuid }}"

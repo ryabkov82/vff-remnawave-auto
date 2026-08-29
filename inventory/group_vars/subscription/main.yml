@@ -55,7 +55,8 @@ remnawave_sub_next_nginx_enabled: true
 
 # Dedicated synthetic Standard subscription (username: monitoring).
 # Used only for HTML healthchecks. Not a customer service.
-remnawave_subscription_healthcheck_short_uuid: "***REMOVED-REVOKED-SUBSCRIPTION-CREDENTIAL***"
+# shortUuid is a bearer credential; live value lives in Ansible Vault.
+remnawave_subscription_healthcheck_short_uuid: "{{ vault_remnawave_subscription_healthcheck_short_uuid }}"
 remnawave_sub_next_healthcheck_short_uuid: "{{ remnawave_subscription_healthcheck_short_uuid }}"
 
 # Dedicated Nginx vhost: sub.portalbase.link -> 127.0.0.1:3011
