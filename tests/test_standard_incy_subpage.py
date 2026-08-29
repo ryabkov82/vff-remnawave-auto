@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""INCY as the recommended Standard Subscription Page client."""
+"""INCY placement on the Standard Subscription Page."""
 
 from __future__ import annotations
 
@@ -23,11 +23,11 @@ sys.path.insert(0, str(SCRIPTS))
 from subpage_branding import assert_only_brand_diffs, deep_merge  # noqa: E402
 
 INCY_IMPORT = "incy://import/{{SUBSCRIPTION_LINK}}"
-ANDROID_ORDER = ["INCY", "Happ", "v2RayTun", "Hiddify", "Clash Meta", "FlClashX", "v2rayNG"]
+ANDROID_ORDER = ["Happ", "INCY", "v2RayTun", "Hiddify", "Clash Meta", "FlClashX", "v2rayNG"]
 IOS_ORDER = ["INCY", "OneXray", "Shadowrocket", "Happ", "v2RayTun", "Streisand", "Stash"]
 WINDOWS_ORDER = [
-    "INCY",
     "Happ",
+    "INCY",
     "v2RayTun",
     "Hiddify",
     "Clash Verge",
@@ -35,7 +35,7 @@ WINDOWS_ORDER = [
     "Koala Clash",
     "Prizrak-Box",
 ]
-INCY_PLATFORMS = ("android", "ios", "windows")
+INCY_INDEX = {"ios": 0, "android": 1, "windows": 1}
 OTHER_PLATFORMS = ("macos", "linux", "appleTV", "androidTV")
 PREMIUM_MARKERS = ("incy://crypt1/", "{{INCY_CRYPT1_LINK}}")
 PROTECTED_INCY_PATH = re.compile(r"(?<!/app)/incy/")
@@ -85,6 +85,10 @@ def collect_typed_links(app: dict, button_type: str) -> list[str]:
     return links
 
 
+def incy_app(config: dict, platform: str) -> dict:
+    return config["platforms"][platform]["apps"][INCY_INDEX[platform]]
+
+
 class StandardIncySubpageTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -92,29 +96,34 @@ class StandardIncySubpageTest(unittest.TestCase):
         cls.fc = deep_merge(load(BASE), load(FC_PATCH))
         cls.configs = {"vff": cls.vff, "fc": cls.fc}
 
-    def test_incy_is_first_featured_app(self) -> None:
+    def test_incy_position_and_featured(self) -> None:
         for brand, config in self.configs.items():
-            for platform in INCY_PLATFORMS:
-                app = config["platforms"][platform]["apps"][0]
-                self.assertEqual(app["name"], "INCY", f"{brand}/{platform}")
-                self.assertTrue(app["featured"], f"{brand}/{platform}")
+            ios = config["platforms"]["ios"]["apps"][0]
+            self.assertEqual(ios["name"], "INCY", brand)
+            self.assertTrue(ios["featured"], brand)
+
+            android_happ = config["platforms"]["android"]["apps"][0]
+            android_incy = config["platforms"]["android"]["apps"][1]
+            self.assertEqual(android_happ["name"], "Happ", brand)
+            self.assertEqual(android_incy["name"], "INCY", brand)
+            self.assertTrue(android_incy["featured"], brand)
+
+            windows_happ = config["platforms"]["windows"]["apps"][0]
+            windows_incy = config["platforms"]["windows"]["apps"][1]
+            self.assertEqual(windows_happ["name"], "Happ", brand)
+            self.assertEqual(windows_incy["name"], "INCY", brand)
+            self.assertTrue(windows_incy["featured"], brand)
 
     def test_incy_import_is_official_raw_subscription_link(self) -> None:
         for brand, config in self.configs.items():
-            for platform in INCY_PLATFORMS:
-                imports = collect_typed_links(
-                    config["platforms"][platform]["apps"][0],
-                    "subscriptionLink",
-                )
+            for platform in INCY_INDEX:
+                imports = collect_typed_links(incy_app(config, platform), "subscriptionLink")
                 self.assertEqual(imports, [INCY_IMPORT], f"{brand}/{platform}")
 
     def test_incy_official_install_urls(self) -> None:
         for brand, config in self.configs.items():
             for platform, expected in INCY_INSTALL.items():
-                links = collect_typed_links(
-                    config["platforms"][platform]["apps"][0],
-                    "external",
-                )
+                links = collect_typed_links(incy_app(config, platform), "external")
                 self.assertEqual(tuple(links), expected, f"{brand}/{platform}")
 
     def test_resulting_app_order(self) -> None:
@@ -134,9 +143,9 @@ class StandardIncySubpageTest(unittest.TestCase):
                 names = [app["name"] for app in config["platforms"][platform]["apps"]]
                 self.assertNotIn("INCY", names, f"{brand}/{platform}")
 
-    def test_android_happ_stays_at_index_one(self) -> None:
+    def test_android_happ_stays_first(self) -> None:
         for brand, config in self.configs.items():
-            happ = config["platforms"]["android"]["apps"][1]
+            happ = config["platforms"]["android"]["apps"][0]
             self.assertEqual(happ["name"], "Happ", brand)
             links = collect_button_links(happ)
             for expected in HAPP_ANDROID_INSTALL:
@@ -151,19 +160,19 @@ class StandardIncySubpageTest(unittest.TestCase):
             self.assertEqual(collect_typed_links(happ, "subscriptionLink"), [HAPP_IMPORT])
             self.assertEqual(happ["svgIconKey"], "Happ")
 
-    def test_windows_happ_is_index_one_with_brand_redirect(self) -> None:
-        self.assertEqual(self.vff["platforms"]["windows"]["apps"][1]["name"], "Happ")
-        self.assertEqual(self.fc["platforms"]["windows"]["apps"][1]["name"], "Happ")
-        vff_link = self.vff["platforms"]["windows"]["apps"][1]["blocks"][1]["buttons"][0]["link"]
-        fc_link = self.fc["platforms"]["windows"]["apps"][1]["blocks"][1]["buttons"][0]["link"]
+    def test_windows_happ_is_index_zero_with_brand_redirect(self) -> None:
+        self.assertEqual(self.vff["platforms"]["windows"]["apps"][0]["name"], "Happ")
+        self.assertEqual(self.fc["platforms"]["windows"]["apps"][0]["name"], "Happ")
+        vff_link = self.vff["platforms"]["windows"]["apps"][0]["blocks"][1]["buttons"][0]["link"]
+        fc_link = self.fc["platforms"]["windows"]["apps"][0]["blocks"][1]["buttons"][0]["link"]
         self.assertEqual(vff_link, VFF_HAPP_REDIRECT)
         self.assertEqual(fc_link, FC_HAPP_REDIRECT)
         windows_incy_vff = collect_typed_links(
-            self.vff["platforms"]["windows"]["apps"][0],
+            self.vff["platforms"]["windows"]["apps"][1],
             "subscriptionLink",
         )
         windows_incy_fc = collect_typed_links(
-            self.fc["platforms"]["windows"]["apps"][0],
+            self.fc["platforms"]["windows"]["apps"][1],
             "subscriptionLink",
         )
         self.assertEqual(windows_incy_vff, [INCY_IMPORT])
@@ -202,10 +211,13 @@ class StandardIncySubpageTest(unittest.TestCase):
                 )
                 self.assertEqual(completed.returncode, 0, completed.stderr)
                 built = load(out)
-                self.assertEqual(built["platforms"]["android"]["apps"][0]["name"], "INCY")
                 self.assertEqual(built["platforms"]["ios"]["apps"][0]["name"], "INCY")
-                self.assertEqual(built["platforms"]["windows"]["apps"][0]["name"], "INCY")
-                self.assertEqual(built["platforms"]["windows"]["apps"][1]["name"], "Happ")
+                self.assertEqual(built["platforms"]["android"]["apps"][0]["name"], "Happ")
+                self.assertEqual(built["platforms"]["android"]["apps"][1]["name"], "INCY")
+                self.assertEqual(built["platforms"]["windows"]["apps"][0]["name"], "Happ")
+                self.assertEqual(built["platforms"]["windows"]["apps"][1]["name"], "INCY")
+                self.assertTrue(built["platforms"]["android"]["apps"][1]["featured"])
+                self.assertTrue(built["platforms"]["windows"]["apps"][1]["featured"])
 
 
 if __name__ == "__main__":

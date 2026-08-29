@@ -138,7 +138,7 @@ ALLOWED_BRAND_DIFF_PATHS = frozenset(
         "$.brandingSettings.title",
         "$.brandingSettings.supportUrl",
         "$.baseSettings.metaTitle",
-        "$.platforms.windows.apps[1].blocks[1].buttons[0].link",
+        "$.platforms.windows.apps[0].blocks[1].buttons[0].link",
     }
 )
 

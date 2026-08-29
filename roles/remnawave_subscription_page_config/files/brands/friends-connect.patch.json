@@ -9,7 +9,6 @@
   "platforms": {
     "windows": {
       "apps": [
-        {},
         {
           "blocks": [
             {},

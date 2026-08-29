@@ -45,7 +45,7 @@ External Squad "Friends-Connect"  →  Subpage Config "Friends Connect"
 | `$.brandingSettings.logoUrl` | `https://remna.st/img/logo.svg` (общий, в `base.json`) | то же |
 | `$.brandingSettings.supportUrl` | `https://t.me/friends_connect_support` | `https://t.me/friends_connect_support` |
 | `$.baseSettings.metaTitle` | `VPN for friends` | `Friends Connect` |
-| `$.platforms.windows.apps[1].blocks[1].buttons[0].link` | `https://vff.portalbase.link/redirect.html?...` | `https://fc.portalbase.link/redirect.html?...` |
+| `$.platforms.windows.apps[0].blocks[1].buttons[0].link` | `https://vff.portalbase.link/redirect.html?...` | `https://fc.portalbase.link/redirect.html?...` |
 
 Инструкции приложений, списки клиентов и общие тексты **не** считаются брендовыми.
 

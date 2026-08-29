@@ -79,9 +79,9 @@ class DeepMergeTests(unittest.TestCase):
     def test_brand_happ_redirect_links(self) -> None:
         vff = deep_merge(load(BASE), load(VFF_PATCH))
         fc = deep_merge(load(BASE), load(FC_PATCH))
-        path = ("platforms", "windows", "apps", 1, "blocks", 1, "buttons", 0, "link")
-        vff_link = vff["platforms"]["windows"]["apps"][1]["blocks"][1]["buttons"][0]["link"]
-        fc_link = fc["platforms"]["windows"]["apps"][1]["blocks"][1]["buttons"][0]["link"]
+        path = ("platforms", "windows", "apps", 0, "blocks", 1, "buttons", 0, "link")
+        vff_link = vff["platforms"]["windows"]["apps"][0]["blocks"][1]["buttons"][0]["link"]
+        fc_link = fc["platforms"]["windows"]["apps"][0]["blocks"][1]["buttons"][0]["link"]
         self.assertEqual(
             vff_link,
             "https://vff.portalbase.link/redirect.html?url=happ://add/{{SUBSCRIPTION_LINK}}",
@@ -98,7 +98,7 @@ class DeepMergeTests(unittest.TestCase):
         unexpected = assert_only_brand_diffs(vff, fc)
         self.assertEqual(unexpected, [])
         self.assertIn(
-            "$.platforms.windows.apps[1].blocks[1].buttons[0].link",
+            "$.platforms.windows.apps[0].blocks[1].buttons[0].link",
             collect_diff_paths(vff, fc),
         )
 
@@ -107,7 +107,7 @@ class DeepMergeTests(unittest.TestCase):
             "$.brandingSettings.title",
             "$.brandingSettings.supportUrl",
             "$.baseSettings.metaTitle",
-            "$.platforms.windows.apps[1].blocks[1].buttons[0].link",
+            "$.platforms.windows.apps[0].blocks[1].buttons[0].link",
         }
         self.assertEqual(set(ALLOWED_BRAND_DIFF_PATHS), expected)
 

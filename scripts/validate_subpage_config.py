@@ -54,10 +54,10 @@ LEGACY_KEYS = {
 FORBIDDEN_LOCALES = {"zh", "fa", "fr"}
 
 IOS_ORDER = ["INCY", "OneXray", "Shadowrocket", "Happ", "v2RayTun", "Streisand", "Stash"]
-ANDROID_ORDER = ["INCY", "Happ", "v2RayTun", "Hiddify", "Clash Meta", "FlClashX", "v2rayNG"]
+ANDROID_ORDER = ["Happ", "INCY", "v2RayTun", "Hiddify", "Clash Meta", "FlClashX", "v2rayNG"]
 WINDOWS_ORDER = [
-    "INCY",
     "Happ",
+    "INCY",
     "v2RayTun",
     "Hiddify",
     "Clash Verge",
@@ -65,7 +65,7 @@ WINDOWS_ORDER = [
     "Koala Clash",
     "Prizrak-Box",
 ]
-INCY_PLATFORMS = ("android", "ios", "windows")
+INCY_INDEX = {"ios": 0, "android": 1, "windows": 1}
 INCY_IMPORT_LINK = "incy://import/{{SUBSCRIPTION_LINK}}"
 STANDARD_FORBIDDEN_MARKERS = ("incy://crypt1/", "{{INCY_CRYPT1_LINK}}")
 # Premium protected path /incy/<token>, not App Store /app/incy/.
@@ -264,12 +264,12 @@ def validate_config(data: dict[str, Any]) -> None:
     if len(set(ios_names)) != len(ios_names):
         fail(f"iOS duplicate app.name values: {ios_names}")
 
-    for platform_name in INCY_PLATFORMS:
+    for platform_name, incy_index in INCY_INDEX.items():
         apps = platforms[platform_name]["apps"]
-        if not apps:
-            fail(f"platforms.{platform_name}.apps must not be empty")
-        incy = apps[0]
-        app_path = f"platforms.{platform_name}.apps[0]"
+        if len(apps) <= incy_index:
+            fail(f"platforms.{platform_name}.apps must contain INCY at index {incy_index}")
+        incy = apps[incy_index]
+        app_path = f"platforms.{platform_name}.apps[{incy_index}]"
         if incy.get("name") != "INCY":
             fail(f"{app_path}.name must be 'INCY', got {incy.get('name')!r}")
         if incy.get("featured") is not True:
@@ -284,6 +284,8 @@ def validate_config(data: dict[str, Any]) -> None:
             fail(f"{app_path} must contain subscriptionLink {INCY_IMPORT_LINK}")
         if any(link != INCY_IMPORT_LINK for link in import_links):
             fail(f"{app_path} has unexpected INCY import link: {import_links}")
+        if platform_name in {"android", "windows"} and apps[0].get("name") != "Happ":
+            fail(f"platforms.{platform_name}.apps[0].name must be 'Happ'")
 
     ios_by_name = {app["name"]: app for app in ios_apps}
 
