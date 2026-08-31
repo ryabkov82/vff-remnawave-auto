@@ -19,6 +19,11 @@ BUILD_SCRIPT = ROOT / "scripts/build_vpn_for_friends_subpage_config.py"
 VALIDATE_SCRIPT = ROOT / "scripts/validate_subpage_config.py"
 
 sys.path.insert(0, str(ROOT / "roles/remnawave_subscription_page_config/filter_plugins"))
+sys.path.insert(0, str(ROOT / "scripts"))
+from build_vpn_for_friends_subpage_config import (  # noqa: E402
+    HWID_COMPATIBLE_APPS,
+    merge_platform_apps,
+)
 from remnawave_subpage_config import FilterModule  # noqa: E402
 
 FORBIDDEN_URL_PATTERNS = (
@@ -28,7 +33,18 @@ FORBIDDEN_URL_PATTERNS = (
     re.compile(r"placeholder", re.I),
 )
 
-IOS_CUSTOM_ORDER = ["INCY", "OneXray", "Shadowrocket", "Happ", "v2RayTun", "Streisand", "Stash"]
+IOS_CUSTOM_ORDER = list(HWID_COMPATIBLE_APPS["ios"])
+STANDARD_PAGE_FORBIDDEN_APPS = (
+    "OneXray",
+    "Hiddify",
+    "Clash Meta",
+    "v2rayNG",
+    "Clash Verge",
+    "Streisand",
+    "Stash",
+    "vpn4tv",
+    "Shadowrocket",
+)
 BRAND_BUILD_SCRIPT = ROOT / "scripts/build_subpage_config.py"
 
 
@@ -170,15 +186,35 @@ class VpnForFriendsPlatformMergeTest(unittest.TestCase):
                     f"{platform_key}/{name} replaced by default",
                 )
 
-    def test_default_only_apps_added_from_upstream(self) -> None:
+    def test_upstream_apps_require_hwid_policy(self) -> None:
+        """Upstream apps reach the page only when the HWID policy allows them."""
         for platform_key in self.default_platform_order:
             default_names = {app["name"] for app in self.default["platforms"][platform_key]["apps"]}
             desired_names = {app["name"] for app in self.desired["platforms"][platform_key]["apps"]}
-            missing = default_names - desired_names
+            allowed = set(HWID_COMPATIBLE_APPS[platform_key])
+            leaked = (default_names & desired_names) - allowed
             self.assertFalse(
-                missing,
-                f"{platform_key} still missing default apps: {sorted(missing)}",
+                leaked,
+                f"{platform_key} has upstream apps outside HWID policy: {sorted(leaked)}",
             )
+            self.assertTrue(
+                desired_names <= allowed,
+                f"{platform_key} has non-policy apps: {sorted(desired_names - allowed)}",
+            )
+            for forbidden in STANDARD_PAGE_FORBIDDEN_APPS:
+                self.assertNotIn(forbidden, desired_names, f"{platform_key}/{forbidden}")
+
+    def test_merge_drops_unsupported_upstream_only_apps(self) -> None:
+        custom = [{"name": "Happ", "blocks": [{"id": "custom"}]}]
+        default = [
+            {"name": "Happ", "blocks": [{"id": "upstream"}]},
+            {"name": "Hiddify", "blocks": []},
+            {"name": "FlClashX", "blocks": []},
+            {"name": "EvilNewClient", "blocks": []},
+        ]
+        result = merge_platform_apps(custom, default, "android")
+        self.assertEqual([app["name"] for app in result], ["Happ", "FlClashX"])
+        self.assertEqual(result[0], custom[0])
 
     def test_validator_accepts_generated_config(self) -> None:
         output = Path("/tmp/vpn-for-friends.validator-check.json")

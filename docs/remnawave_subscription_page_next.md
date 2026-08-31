@@ -237,9 +237,21 @@ Production-контур (порт 3010, default UUID) не затрагивае�
 | Базовый шаблон upstream | `roles/remnawave_subscription_page_config/files/source/default-7.2.1.json` |
 | Сборка кастомного JSON | `scripts/build_vpn_for_friends_subpage_config.py` |
 
-Состав платформ и приложений наследуется из upstream-шаблона соответствующей версии
-(`files/source/default-7.2.1.json`); локальные настройки существующих платформ и приложений
-имеют приоритет; итоговый desired JSON формируется build script через merge.
+Стандартная Subscription Page намеренно показывает **только HWID-compatible клиенты**.
+Новые SHM users создаются с `hwidDeviceLimit=null` и попадают под глобальный Remnawave
+device limit; onboarding не должен предлагать клиент, который требует ручной настройки HWID
+(Shadowrocket помечен Remnawave как совместимый, но HWID у него disabled by default — его нет
+на странице).
+
+Allow-list и порядок задаются в `scripts/build_vpn_for_friends_subpage_config.py`
+(`HWID_COMPATIBLE_APPS`). Build script по-прежнему мержит custom-платформы с upstream
+`files/source/default-7.2.1.json` (локальные настройки существующих приложений имеют приоритет),
+но после merge на страницу попадают только приложения из policy. Обновление upstream-шаблона
+не может автоматически вернуть неподдерживаемый клиент. Новые клиенты на страницу не
+добавляются, пока их явно не внесут в policy.
+
+Existing users и Remnawave users этой фильтрацией не меняются: меняется только состав
+клиентов на Standard page. AntiBlock/Premium config не затрагивается.
 
 Переменная `remnawave_subpage_configs` задаёт список брендовых конфигураций
 (`base_file` + `patch_file`). Legacy fallback: если список пуст, используется

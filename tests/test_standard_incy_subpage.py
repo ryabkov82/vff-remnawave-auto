@@ -20,21 +20,21 @@ FC_PATCH = ROLE_FILES / "brands/friends-connect.patch.json"
 BUILD = SCRIPTS / "build_subpage_config.py"
 
 sys.path.insert(0, str(SCRIPTS))
+from build_vpn_for_friends_subpage_config import HWID_COMPATIBLE_APPS  # noqa: E402
 from subpage_branding import assert_only_brand_diffs, deep_merge  # noqa: E402
 
 INCY_IMPORT = "incy://import/{{SUBSCRIPTION_LINK}}"
-ANDROID_ORDER = ["Happ", "INCY", "v2RayTun", "Hiddify", "Clash Meta", "FlClashX", "v2rayNG"]
-IOS_ORDER = ["INCY", "OneXray", "Shadowrocket", "Happ", "v2RayTun", "Streisand", "Stash"]
-WINDOWS_ORDER = [
-    "Happ",
-    "INCY",
-    "v2RayTun",
+STANDARD_PAGE_FORBIDDEN_APPS = (
+    "OneXray",
     "Hiddify",
+    "Clash Meta",
+    "v2rayNG",
     "Clash Verge",
-    "FlClashX",
-    "Koala Clash",
-    "Prizrak-Box",
-]
+    "Streisand",
+    "Stash",
+    "vpn4tv",
+    "Shadowrocket",
+)
 INCY_INDEX = {"ios": 0, "android": 1, "windows": 1}
 OTHER_PLATFORMS = ("macos", "linux", "appleTV", "androidTV")
 PREMIUM_MARKERS = ("incy://crypt1/", "{{INCY_CRYPT1_LINK}}")
@@ -127,15 +127,27 @@ class StandardIncySubpageTest(unittest.TestCase):
                 self.assertEqual(tuple(links), expected, f"{brand}/{platform}")
 
     def test_resulting_app_order(self) -> None:
-        expected = {
-            "android": ANDROID_ORDER,
-            "ios": IOS_ORDER,
-            "windows": WINDOWS_ORDER,
+        for brand, config in self.configs.items():
+            for platform, names in HWID_COMPATIBLE_APPS.items():
+                actual = [app["name"] for app in config["platforms"][platform]["apps"]]
+                self.assertEqual(actual, list(names), f"{brand}/{platform}")
+
+    def test_standard_page_has_only_hwid_compatible_apps(self) -> None:
+        allowed = {
+            name
+            for platform_apps in HWID_COMPATIBLE_APPS.values()
+            for name in platform_apps
         }
         for brand, config in self.configs.items():
-            for platform, names in expected.items():
-                actual = [app["name"] for app in config["platforms"][platform]["apps"]]
-                self.assertEqual(actual, names, f"{brand}/{platform}")
+            for platform, platform_cfg in config["platforms"].items():
+                names = [app["name"] for app in platform_cfg.get("apps", [])]
+                policy = HWID_COMPATIBLE_APPS.get(platform, ())
+                leaked = [name for name in names if name not in policy]
+                self.assertEqual(leaked, [], f"{brand}/{platform} leaked {leaked}")
+                for forbidden in STANDARD_PAGE_FORBIDDEN_APPS:
+                    self.assertNotIn(forbidden, names, f"{brand}/{platform}")
+                unexpected = set(names) - allowed
+                self.assertFalse(unexpected, f"{brand}/{platform}: {sorted(unexpected)}")
 
     def test_incy_not_added_to_other_platforms(self) -> None:
         for brand, config in self.configs.items():
@@ -154,7 +166,7 @@ class StandardIncySubpageTest(unittest.TestCase):
 
     def test_ios_happ_stays_after_incy_prepend(self) -> None:
         for brand, config in self.configs.items():
-            happ = config["platforms"]["ios"]["apps"][3]
+            happ = config["platforms"]["ios"]["apps"][1]
             self.assertEqual(happ["name"], "Happ", brand)
             self.assertFalse(happ.get("featured"), brand)
             self.assertEqual(collect_typed_links(happ, "subscriptionLink"), [HAPP_IMPORT])

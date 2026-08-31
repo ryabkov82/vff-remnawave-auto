@@ -39,6 +39,21 @@ ICON_BY_APP = {
     "Clash Verge": "ClashVerge",
 }
 
+# Standard Subscription Page shows only clients that work with the Remnawave
+# HWID device limit without extra client-side setup. New SHM users are created
+# with hwidDeviceLimit=null and inherit the global Remnawave limit.
+# Order is the onboarding order. Upstream template updates cannot add a client
+# that is absent from this policy.
+HWID_COMPATIBLE_APPS: dict[str, tuple[str, ...]] = {
+    "android": ("Happ", "INCY", "v2RayTun", "FlClashX"),
+    "ios": ("INCY", "Happ", "v2RayTun"),
+    "windows": ("Happ", "INCY", "v2RayTun", "FlClashX", "Koala Clash", "Prizrak-Box"),
+    "linux": ("FlClashX", "Koala Clash", "Prizrak-Box"),
+    "macos": ("Happ", "FlClashX", "Koala Clash", "Prizrak-Box"),
+    "appleTV": ("Happ",),
+    "androidTV": ("Happ",),
+}
+
 LEGACY_PLATFORM_MAP = {
     "android": "android",
     "ios": "ios",
@@ -338,14 +353,30 @@ def clone_default_app(app: dict) -> dict:
     return filter_loc(deepcopy(app))
 
 
-def merge_platform_apps(custom_apps: list[dict], default_apps: list[dict]) -> list[dict]:
-    """Keep custom apps and order; append default-only apps in default order."""
+def select_hwid_compatible_apps(apps: list[dict], platform: str) -> list[dict]:
+    """Keep only HWID-compatible apps, in policy order.
+
+    Apps that exist in neither the merged set nor the policy are not created.
+    A platform without a policy entry yields no apps, so an upstream-only
+    platform cannot leak unsupported clients.
+    """
+    allowed = HWID_COMPATIBLE_APPS.get(platform, ())
+    by_name = {app["name"]: app for app in apps}
+    return [by_name[name] for name in allowed if name in by_name]
+
+
+def merge_platform_apps(
+    custom_apps: list[dict],
+    default_apps: list[dict],
+    platform: str,
+) -> list[dict]:
+    """Keep custom apps; append default-only apps; apply HWID policy last."""
     custom_names = {app["name"] for app in custom_apps}
     merged = list(custom_apps)
     for app in default_apps:
         if app["name"] not in custom_names:
             merged.append(clone_default_app(app))
-    return merged
+    return select_hwid_compatible_apps(merged, platform)
 
 
 def merge_platforms(
@@ -366,15 +397,23 @@ def merge_platforms(
             merged[key] = {
                 "displayName": custom["displayName"],
                 "svgIconKey": custom.get("svgIconKey", default_plat["svgIconKey"]),
-                "apps": merge_platform_apps(custom["apps"], default_plat["apps"]),
+                "apps": merge_platform_apps(custom["apps"], default_plat["apps"], key),
             }
         elif custom:
-            merged[key] = filter_loc(deepcopy(custom))
+            custom_copy = filter_loc(deepcopy(custom))
+            custom_copy["apps"] = select_hwid_compatible_apps(
+                custom_copy.get("apps", []),
+                key,
+            )
+            merged[key] = custom_copy
         elif default_plat:
             merged[key] = {
                 "displayName": filter_loc(default_plat["displayName"]),
                 "svgIconKey": default_plat["svgIconKey"],
-                "apps": [clone_default_app(app) for app in default_plat.get("apps", [])],
+                "apps": select_hwid_compatible_apps(
+                    [clone_default_app(app) for app in default_plat.get("apps", [])],
+                    key,
+                ),
             }
     return merged
 

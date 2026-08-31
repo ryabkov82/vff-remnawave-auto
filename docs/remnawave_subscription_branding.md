@@ -48,6 +48,11 @@ External Squad "Friends-Connect"  →  Subpage Config "Friends Connect"
 | `$.platforms.windows.apps[0].blocks[1].buttons[0].link` | `https://vff.portalbase.link/redirect.html?...` | `https://fc.portalbase.link/redirect.html?...` |
 
 Инструкции приложений, списки клиентов и общие тексты **не** считаются брендовыми.
+Brand patches **не** содержат отдельных списков приложений.
+
+Standard page намеренно показывает только HWID-compatible клиенты (новые users используют
+глобальный Remnawave device limit). Состав и порядок живут в `base.json` и задаются
+policy `HWID_COMPATIBLE_APPS` в `scripts/build_vpn_for_friends_subpage_config.py`.
 
 Golden-эталон VFF: `tests/fixtures/vpn-for-friends.golden.json`  
 (`base + vff patch` должен быть канонически эквивалентен).

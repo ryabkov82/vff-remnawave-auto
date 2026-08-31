@@ -9,6 +9,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+from build_vpn_for_friends_subpage_config import HWID_COMPATIBLE_APPS  # noqa: E402
+
 REQUIRED_ROOT_KEYS = (
     "locales",
     "version",
@@ -53,18 +58,6 @@ LEGACY_KEYS = {
 
 FORBIDDEN_LOCALES = {"zh", "fa", "fr"}
 
-IOS_ORDER = ["INCY", "OneXray", "Shadowrocket", "Happ", "v2RayTun", "Streisand", "Stash"]
-ANDROID_ORDER = ["Happ", "INCY", "v2RayTun", "Hiddify", "Clash Meta", "FlClashX", "v2rayNG"]
-WINDOWS_ORDER = [
-    "Happ",
-    "INCY",
-    "v2RayTun",
-    "Hiddify",
-    "Clash Verge",
-    "FlClashX",
-    "Koala Clash",
-    "Prizrak-Box",
-]
 INCY_INDEX = {"ios": 0, "android": 1, "windows": 1}
 INCY_IMPORT_LINK = "incy://import/{{SUBSCRIPTION_LINK}}"
 STANDARD_FORBIDDEN_MARKERS = ("incy://crypt1/", "{{INCY_CRYPT1_LINK}}")
@@ -241,28 +234,16 @@ def validate_config(data: dict[str, Any]) -> None:
     if hide_get_link is not False:
         fail(f"baseSettings.hideGetLinkButton must be false, got {hide_get_link!r}")
 
-    android_names = [app["name"] for app in platforms["android"]["apps"]]
-    if android_names[: len(ANDROID_ORDER)] != ANDROID_ORDER:
-        fail(
-            f"Android app order must start with {ANDROID_ORDER}, "
-            f"got prefix {android_names[: len(ANDROID_ORDER)]}"
-        )
-
-    windows_names = [app["name"] for app in platforms["windows"]["apps"]]
-    if windows_names[: len(WINDOWS_ORDER)] != WINDOWS_ORDER:
-        fail(
-            f"Windows app order must start with {WINDOWS_ORDER}, "
-            f"got prefix {windows_names[: len(WINDOWS_ORDER)]}"
-        )
+    for platform_name, expected in HWID_COMPATIBLE_APPS.items():
+        names = [app["name"] for app in platforms[platform_name]["apps"]]
+        if names != list(expected):
+            fail(
+                f"{platform_name} app order must be {list(expected)}, got {names}"
+            )
+        if len(set(names)) != len(names):
+            fail(f"{platform_name} duplicate app.name values: {names}")
 
     ios_apps = platforms["ios"]["apps"]
-    ios_names = [app["name"] for app in ios_apps]
-    if ios_names[: len(IOS_ORDER)] != IOS_ORDER:
-        fail(
-            f"iOS app order must start with {IOS_ORDER}, got prefix {ios_names[: len(IOS_ORDER)]}"
-        )
-    if len(set(ios_names)) != len(ios_names):
-        fail(f"iOS duplicate app.name values: {ios_names}")
 
     for platform_name, incy_index in INCY_INDEX.items():
         apps = platforms[platform_name]["apps"]
@@ -289,24 +270,6 @@ def validate_config(data: dict[str, Any]) -> None:
 
     ios_by_name = {app["name"]: app for app in ios_apps}
 
-    if not ios_by_name["OneXray"].get("featured"):
-        fail("OneXray featured must be true")
-    onexray_blob = json.dumps(ios_by_name["OneXray"], ensure_ascii=False)
-    if "onexray://" in onexray_blob.lower():
-        fail("OneXray must not contain onexray:// links")
-    onexray_buttons = [
-        btn
-        for block in ios_by_name["OneXray"]["blocks"]
-        for btn in block.get("buttons", [])
-    ]
-    if not any(
-        btn.get("type") == "copyButton" and btn.get("link") == "{{SUBSCRIPTION_LINK}}"
-        for btn in onexray_buttons
-    ):
-        fail("OneXray must contain copyButton with {{SUBSCRIPTION_LINK}}")
-
-    if not ios_by_name["Shadowrocket"].get("featured"):
-        fail("Shadowrocket featured must be true")
     if ios_by_name["Happ"].get("featured"):
         fail("Happ featured must be false")
     if ios_by_name["v2RayTun"].get("featured"):
